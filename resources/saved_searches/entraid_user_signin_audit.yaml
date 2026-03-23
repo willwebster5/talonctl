@@ -1,0 +1,92 @@
+# Entra ID User Sign-in Audit
+# Purpose: Full audit trail of user sign-ins with complete device context for legal export
+# Version: 1.0
+
+$schema: https://schemas.humio.com/query/v0.6.0
+resource_id: entraid_user_signin_audit
+name: entraid_user_signin_audit
+description: |
+  Function: $entraid_user_signin_audit(user)
+  Purpose: Full audit trail of user sign-ins with complete device context for legal export.
+  Output: @timestamp, entra.app_name, entra.device_name, entra.operating_system, entra.trust_type, entra.device_id, entra.browser, entra.is_interactive, entra.ca_status, entra.source_ip, entra.city, entra.state, entra.country, entra.outcome, entra.error_code, entra.failure_reason
+  See queryString comments for full documentation.
+queryString: |
+    // ============================================================
+    // $entraid_user_signin_audit() - Full Sign-in Audit Trail
+    // ============================================================
+    // Full audit trail of user sign-ins with complete device context
+    // for legal export. Returns chronological list of all sign-ins
+    // with comprehensive device, app, and location data.
+    //
+    // Input: Entra ID sign-in events (#Vendor=microsoft, #event.dataset=entraid.signin)
+    //
+    // Output Fields:
+    //   @timestamp     - Sign-in time
+    //   entra.app_name        - Application accessed
+    //   entra.device_name     - Device display name
+    //   entra.operating_system - Device OS
+    //   entra.trust_type      - Device trust type
+    //   entra.device_id       - Entra device ID
+    //   entra.browser        - Browser used
+    //   entra.is_interactive  - Whether sign-in was interactive
+    //   entra.ca_status       - Conditional access status
+    //   entra.source_ip       - Source IP address
+    //   entra.city           - Geo city
+    //   entra.state          - Geo region/state
+    //   entra.country        - Geo country ISO code
+    //   entra.outcome        - Sign-in outcome (success/failure)
+    //   entra.error_code      - Error code (if failed)
+    //   entra.failure_reason  - Failure reason (if failed)
+    //
+    // Parameters:
+    //   - user: User email address (e.g., "jdoe@example.com")
+    //
+    // Usage:
+    //   #Vendor=microsoft
+    //   | #event.dataset=entraid.signin
+    //   | $entraid_user_signin_audit(user="jdoe@example.com")
+    // ============================================================
+
+    | Vendor.properties.userPrincipalName = ?user
+    | select([
+        @timestamp,
+        Vendor.properties.appDisplayName,
+        Vendor.properties.deviceDetail.displayName,
+        Vendor.properties.deviceDetail.operatingSystem,
+        Vendor.properties.deviceDetail.trustType,
+        Vendor.properties.deviceDetail.deviceId,
+        Vendor.properties.deviceDetail.browser,
+        Vendor.properties.isInteractive,
+        Vendor.properties.conditionalAccessStatus,
+        source.ip,
+        source.geo.city_name,
+        source.geo.region_name,
+        source.geo.country_iso_code,
+        user_agent.original,
+        #event.outcome,
+        Vendor.properties.status.errorCode,
+        Vendor.properties.status.failureReason
+    ])
+    | rename(field=Vendor.properties.appDisplayName, as=entra.app_name)
+    | rename(field=Vendor.properties.deviceDetail.displayName, as=entra.device_name)
+    | rename(field=Vendor.properties.deviceDetail.operatingSystem, as=entra.operating_system)
+    | rename(field=Vendor.properties.deviceDetail.trustType, as=entra.trust_type)
+    | rename(field=Vendor.properties.deviceDetail.deviceId, as=entra.device_id)
+    | rename(field=Vendor.properties.deviceDetail.browser, as=entra.browser)
+    | rename(field=Vendor.properties.isInteractive, as=entra.is_interactive)
+    | rename(field=Vendor.properties.conditionalAccessStatus, as=entra.ca_status)
+    | rename(field=source.ip, as=entra.source_ip)
+    | rename(field=source.geo.city_name, as=entra.city)
+    | rename(field=source.geo.region_name, as=entra.state)
+    | rename(field=source.geo.country_iso_code, as=entra.country)
+    | rename(field=#event.outcome, as=entra.outcome)
+    | rename(field=Vendor.properties.status.errorCode, as=entra.error_code)
+    | rename(field=Vendor.properties.status.failureReason, as=entra.failure_reason)
+    | sort(@timestamp)
+_search_domain: all
+labels:
+  - entraid
+  - legal
+  - investigation
+  - device-audit
+  - full-audit

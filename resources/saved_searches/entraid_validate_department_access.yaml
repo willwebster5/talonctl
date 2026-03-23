@@ -1,0 +1,195 @@
+# Entra ID Validate Department Access
+# Purpose: Validate access based on department hierarchy and technical classifications
+# Version: 1.0
+
+$schema: https://schemas.humio.com/query/v0.6.0
+resource_id: entraid_validate_department_access
+name: entraid_validate_department_access
+description: |
+  Function: $entraid_validate_department_access
+  Purpose: Validate access based on department hierarchy and technical classifications.
+  Output: entra.department_category, entra.is_technical_access_valid, entra.dept_privilege_alignment, HierarchyViolation, BackgroundCheckRequired, BackgroundCheckWaived, entra.dept_access_risk_score, entra.dept_risk_category, entra.has_dept_violation, entra.dept_summary
+  Parameters:
+    - validate_technical: "true" to validate technical role requirements
+    - strict_hierarchy: "true" to enforce strict department hierarchy rules
+  See queryString comments for full documentation.
+
+queryString: |
+    // ============================================================
+    // $entraid_validate_department_access() - Department Access Validator
+    // ============================================================
+    // Validate access based on department hierarchy and technical classifications.
+    //
+    // Prerequisite: entra.user_email field must be set before calling. Optionally entra.department field.
+    // Depends on fields from $entraid_check_privileged_groups() (entra.has_security_admin,
+    // entra.has_engineering_access, entra.has_team_access, entra.has_aws_access, entra.privilege_level_score, entra.privilege_category).
+    //
+    // Output Fields:
+    //   entra.department_category          - Department classification (from lookup or input)
+    //   entra.is_technical_access_valid        - true if technical access requirements are met
+    //   entra.dept_privilege_alignment - aligned, no_privileges, or misaligned
+    //   HierarchyViolation          - true if strict hierarchy rules are violated
+    //   BackgroundCheckRequired     - true if background check needed for privilege level
+    //   BackgroundCheckWaived       - true if background check waived (low privilege)
+    //   entra.dept_access_risk_score        - Numeric risk score (cumulative, 0-100+)
+    //   entra.dept_risk_category      - Risk category: high (>=60), medium (>=30), low (>=10), minimal
+    //   entra.has_dept_violation   - true if entra.dept_access_risk_score >= 40
+    //   entra.dept_summary           - Formatted summary string for alerting
+    //
+    // Parameters:
+    //   - validate_technical: When "true", validates technical role requirements
+    //   - strict_hierarchy: When "true", enforces strict department hierarchy rules
+    //
+    // Usage:
+    //   #repo=microsoft_graphapi #event.category="management"
+    //   | $entraid_enrich_user_identity()
+    //   | $entraid_check_privileged_groups()
+    //   | $entraid_validate_department_access(validate_technical="true", strict_hierarchy="true")
+    //
+    //   // Check for department-privilege misalignment
+    //   | $entraid_validate_department_access()
+    //   | entra.dept_privilege_alignment="misaligned"
+    //
+    //   // Filter high-risk department access
+    //   | $entraid_validate_department_access(strict_hierarchy="true")
+    //   | entra.has_dept_violation=true
+    // ============================================================
+
+    // Ensure department information is available
+    | case {
+        entra.department_category=* ;
+        entra.department=* | entra.department_category := entra.department;
+        * | entra.department_category := "unknown";
+    }
+
+    // Step 1: Lookup department hierarchy information
+    | match(file="entraid-department-hierarchy.csv",
+            field=entra.department_category,
+            column=department,
+            include=[
+                division,
+                team,
+                is_technical,
+                is_executive,
+                default_trust_level,
+                requires_background_check
+            ],
+            strict=false)
+
+    // Step 2: Set defaults for departments not in hierarchy
+    | default(value="unknown", field=[division, team, default_trust_level])
+    | default(value="false", field=[is_technical, is_executive, requires_background_check])
+
+    // Step 3: Validate technical access requirements
+    // Create composite key to avoid AND in case statement
+    | _techKey := format("%s-%s-%s", field=[validate_technical, is_technical, entra.has_engineering_access])
+    | case {
+        _techKey="true-true-true" | entra.is_technical_access_valid := true;
+        _techKey="true-true-false" | entra.is_technical_access_valid := false;
+        _techKey="true-false-true" | entra.is_technical_access_valid := true;
+        _techKey="true-false-false" | entra.is_technical_access_valid := true;
+        validate_technical!="true" | entra.is_technical_access_valid := true;
+        * | entra.is_technical_access_valid := false;
+    }
+
+    // Step 4: Check department-based privilege alignment
+    // Use composite keys for AND conditions
+    | _deptSecKey := format("%s-%s", field=[entra.department_category, entra.has_security_admin])
+    | _deptTechKey := format("%s-%s", field=[entra.department_category, entra.has_engineering_access])
+    | _deptOpsKey := format("%s-%s", field=[entra.department_category, entra.has_team_access])
+    | case {
+        _deptSecKey="security-true" | entra.dept_privilege_alignment := "aligned";
+        _deptTechKey="technology-true" | entra.dept_privilege_alignment := "aligned";
+        _deptOpsKey="operations-true" | entra.dept_privilege_alignment := "aligned";
+        entra.privilege_category="no_groups" | entra.dept_privilege_alignment := "no_privileges";
+        * | entra.dept_privilege_alignment := "misaligned";
+    }
+
+    // Step 5: Apply strict hierarchy validation if enabled
+    // Create composite keys for complex AND conditions
+    | _hierExecKey := format("%s-%s", field=[strict_hierarchy, is_executive])
+    | _hierTechKey := format("%s-%s-%s", field=[strict_hierarchy, is_technical, entra.has_engineering_access])
+    | _hierFinKey := format("%s-%s-%s", field=[strict_hierarchy, entra.department_category, entra.has_aws_access])
+    // Check executive hierarchy violation (need low privilege score)
+    | case {
+        _hierExecKey="true-true" | _checkExecPriv := true;
+        * | _checkExecPriv := false;
+    }
+    | case {
+        test(entra.privilege_level_score < 3) | _lowPrivScore := true;
+        * | _lowPrivScore := false;
+    }
+    | _execViolKey := format("%s-%s", field=[_checkExecPriv, _lowPrivScore])
+    | case {
+        _execViolKey="true-true" | HierarchyViolation := true;
+        _hierTechKey="true-false-true" | HierarchyViolation := true;
+        _hierFinKey="true-finance-true" | HierarchyViolation := true;
+        * | HierarchyViolation := false;
+    }
+
+    // Step 6: Check background check requirements
+    // Evaluate privilege level first
+    | case {
+        test(entra.privilege_level_score >= 3) | _highPriv := true;
+        * | _highPriv := false;
+    }
+    | _bgCheckKey := format("%s-%s", field=[requires_background_check, _highPriv])
+    | case {
+        _bgCheckKey="true-true" | BackgroundCheckRequired := true;
+        _bgCheckKey="true-false" | BackgroundCheckWaived := true;
+        * | BackgroundCheckRequired := false;
+    }
+    | default(value=false, field=[BackgroundCheckWaived])
+
+    // Step 7: Calculate department access risk score
+    | entra.dept_access_risk_score := 0
+    | case {
+        entra.is_technical_access_valid=false | entra.dept_access_risk_score := 30;
+        * ;
+    }
+    | case {
+        entra.dept_privilege_alignment="misaligned" | entra.dept_access_risk_score := entra.dept_access_risk_score + 20;
+        * ;
+    }
+    | case {
+        HierarchyViolation=true | entra.dept_access_risk_score := entra.dept_access_risk_score + 40;
+        * ;
+    }
+    | case {
+        BackgroundCheckRequired=true | entra.dept_access_risk_score := entra.dept_access_risk_score + 10;
+        * ;
+    }
+    | case {
+        entra.department_category="unknown" | entra.dept_access_risk_score := entra.dept_access_risk_score + 25;
+        * ;
+    }
+
+    // Step 8: Categorize department access risk
+    | case {
+        test(entra.dept_access_risk_score >= 60) | entra.dept_risk_category := "high";
+        test(entra.dept_access_risk_score >= 30) | entra.dept_risk_category := "medium";
+        test(entra.dept_access_risk_score >= 10) | entra.dept_risk_category := "low";
+        * | entra.dept_risk_category := "minimal";
+    }
+
+    // Step 9: Add access validation flags
+    | case {
+        test(entra.dept_access_risk_score >= 40) | entra.has_dept_violation := true;
+        * | entra.has_dept_violation := false;
+    }
+
+    // Step 10: Create department summary for alerting
+    | entra.dept_summary := format("Dept: %s (%s), Risk: %d (%s), Technical: %s, Alignment: %s",
+        field=[entra.department_category, division, entra.dept_access_risk_score, entra.dept_risk_category,
+               entra.is_technical_access_valid, entra.dept_privilege_alignment])
+
+    // Cleanup temp fields
+    | drop([_techKey, _deptSecKey, _deptTechKey, _deptOpsKey, _hierExecKey, _hierTechKey, _hierFinKey, _checkExecPriv, _lowPrivScore, _execViolKey, _highPriv, _bgCheckKey])
+
+_search_domain: all
+labels:
+  - identity
+  - enrichment
+  - entraid
+  - department
+  - access-validation

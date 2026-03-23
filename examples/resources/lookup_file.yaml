@@ -1,0 +1,16 @@
+# Example: Lookup File
+# Tor exit node IP addresses for network correlation.
+# The actual CSV data is not included — deploy your own or source from Query-Hub.
+
+resource_id: tor_exit_nodes
+name: tor_exit_nodes.csv
+description: |
+  Known Tor exit node IPs for network connection matching.
+  Single column: ip. ~2,176 entries.
+  Use to flag connections to/from Tor exit nodes in DNS, network, and proxy events.
+  Example:
+    | match(file="tor_exit_nodes.csv", field=RemoteAddressIP4, column="ip", strict=false)
+  Source: Query-Hub (open-source review)
+format: csv
+source: resources/lookup_files/crowdstrike/tor_exit_nodes.csv
+_search_domain: all

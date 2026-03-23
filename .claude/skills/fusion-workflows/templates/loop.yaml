@@ -1,0 +1,80 @@
+# Template: Loop workflow (trigger → Loop(CreateVariable → action → UpdateVariable) → output)
+# Adapted for our IaC resource schema — includes resource_id and description fields.
+#
+# WARNING: This template uses PLACEHOLDER_ markers to show YAML structure only.
+# Do NOT copy PLACEHOLDER_ values into your workflow YAML.
+# - Action IDs: MUST be resolved via action_search.py BEFORE writing YAML
+# - config_id: MUST be obtained from the user (CID-specific)
+# - Names/labels/params: Choose your own descriptive values
+
+resource_id: PLACEHOLDER_RESOURCE_ID
+name: 'PLACEHOLDER_WORKFLOW_NAME'
+description: PLACEHOLDER_DESCRIPTION
+trigger:
+    next:
+        - Loop
+    name: On demand
+    parameters:
+        $schema: https://json-schema.org/draft-07/schema
+        properties:
+            PLACEHOLDER_ARRAY_PARAM:
+                items:
+                    type: string
+                type: array
+                title: PLACEHOLDER_ARRAY_TITLE
+                description: PLACEHOLDER_ARRAY_DESCRIPTION
+                minItems: 1
+        required:
+            - PLACEHOLDER_ARRAY_PARAM
+        type: object
+    type: On demand
+loops:
+    Loop:
+        display: For each PLACEHOLDER_ARRAY_TITLE; Sequentially
+        name: For each PLACEHOLDER_ARRAY_TITLE; Sequentially
+        for:
+            input: PLACEHOLDER_ARRAY_PARAM
+            continue_on_partial_execution: false
+            sequential: true
+        trigger:
+            next:
+                - CreateVariable
+        actions:
+            CreateVariable:
+                id: 702d15788dbbffdf0b68d8e2f3599aa4
+                class: CreateVariable
+                name: Create variable
+                next:
+                    - PLACEHOLDER_ACTION_LABEL
+                properties:
+                    variable_schema:
+                        properties:
+                            PLACEHOLDER_RESULT_FIELD_1:
+                                type: string
+                            PLACEHOLDER_RESULT_FIELD_2:
+                                type: boolean
+                        required:
+                            - PLACEHOLDER_RESULT_FIELD_1
+                        type: object
+                version_constraint: ~1
+            PLACEHOLDER_ACTION_LABEL:
+                id: PLACEHOLDER_ACTION_ID
+                name: PLACEHOLDER_ACTION_DISPLAY_NAME
+                next:
+                    - UpdateVariable
+                properties:
+                    PLACEHOLDER_INPUT_FIELD: ${data['PLACEHOLDER_ARRAY_PARAM.#']}
+            UpdateVariable:
+                id: 6c6eab39063fa3b72d98c82af60deb8a
+                class: UpdateVariable
+                name: Update variable
+                properties:
+                    WorkflowCustomVariable:
+                        PLACEHOLDER_RESULT_FIELD_1: ${data['PLACEHOLDER_ARRAY_PARAM.#']}
+                        PLACEHOLDER_RESULT_FIELD_2: true
+                version_constraint: ~1
+        output_fields:
+            - WorkflowCustomVariable.PLACEHOLDER_RESULT_FIELD_1
+            - WorkflowCustomVariable.PLACEHOLDER_RESULT_FIELD_2
+output_fields:
+    - Loop.output

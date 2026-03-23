@@ -1,0 +1,20 @@
+$schema: https://schemas.humio.com/query/v0.6.0
+resource_id: hunt_ntlmv1_authentications
+name: hunt_ntlmv1_authentications
+description: |
+  Detects NTLMv1 authentication events via Falcon Identity Protection telemetry.
+  NTLMv1 is deprecated and cryptographically weak — any usage may indicate misconfigured
+  legacy clients or deliberate downgrade attacks. Group by source user, source host,
+  and target server to identify which systems are still using NTLMv1.
+  Source: Query-Hub (ByteRay GmbH)
+queryString: |
+  #event.dataset="falcon.identity"
+  | network.protocol="ntlm_v1"
+  | groupBy([SourceAccountUserName, host.hostname, TargetServerHostName])
+_search_domain: all
+labels:
+  - hunting
+  - identity
+  - ntlm
+  - legacy-auth
+  - compliance

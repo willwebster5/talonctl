@@ -1,0 +1,29 @@
+$schema: https://schemas.humio.com/query/v0.6.0
+resource_id: qh___port_scan_detection
+name: qh___port_scan_detection
+description: |
+  Detects hosts initiating connections across a high number of unique ports (>25),
+  indicating port scanning, network reconnaissance, or malicious enumeration.
+  Aggregates by host and process with filenames, command lines, and user context.
+  Source: Query-Hub (CrowdStrike) — MITRE T1595, T1046
+queryString: |
+  #event_simpleName=/^(NetworkConnectIP4|ProcessRollup2)$/
+  | falconPID:=TargetProcessId | falconPID:=ContextProcessId
+  | UserID:=UserSid | UserID:=UID
+  | selfJoinFilter(field=[aid, falconPID], where=[{#event_simpleName=NetworkConnectIP4}, {#event_simpleName=ProcessRollup2}])
+  | groupBy([aid, ComputerName, falconPID], function=([
+  	collect([FileName, CommandLine, UserName, UserID]),
+  	count(RemotePort, as=uniquePortCount),
+  	collect([RemotePort], separator=", ", limit=25),
+  	count(RemoteAddressIP4, distinct=true, as=remoteIPcount)
+  	]), limit=max)
+  | FileName=* RemotePort=*
+  | test(uniquePortCount>25)
+_search_domain: all
+labels:
+  - hunting
+  - endpoint
+  - network
+  - reconnaissance
+  - T1595
+  - T1046

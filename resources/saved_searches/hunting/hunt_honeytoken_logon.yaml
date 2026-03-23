@@ -1,0 +1,20 @@
+$schema: https://schemas.humio.com/query/v0.6.0
+resource_id: hunt_honeytoken_logon
+name: hunt_honeytoken_logon
+description: |
+  Detects logon activity for honeytoken/decoy accounts. Currently targets the built-in
+  local Administrator SID (S-1-5-21-*-500) as a default honeytoken — update the UserSid
+  regex to match your actual honeytoken account SID(s).
+  Any logon to a honeytoken account is a high-confidence indicator of compromise.
+  Source: Query-Hub (ByteRay GmbH) — MITRE T1078
+queryString: |
+  // Detects logins involving default administrator / honeytoken accounts
+  #event_simpleName=/UserLogon.*/i
+  // TODO: Replace with your actual honeytoken account SID(s)
+  | UserSid = /S-1-5-21-\d*-\d*-\d*-500/i
+_search_domain: all
+labels:
+  - hunting
+  - identity
+  - honeytoken
+  - T1078

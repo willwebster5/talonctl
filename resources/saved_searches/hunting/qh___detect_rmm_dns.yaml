@@ -1,0 +1,20 @@
+$schema: https://schemas.humio.com/query/v0.6.0
+resource_id: qh___detect_rmm_dns
+name: qh___detect_rmm_dns
+description: |
+  Detects DNS requests to known RMM tool domains (AnyDesk, TeamViewer, ConnectWise,
+  ScreenConnect, Splashtop, etc.). Adversaries abuse legitimate RMM utilities as
+  living-off-the-land remote access backdoors for persistence and data exfiltration.
+  Source: Query-Hub (ByteRay GmbH) — MITRE T1219.002
+queryString: |
+  #event_simpleName=DnsRequest
+  | DomainName=/anydesk\.com|action1\.com|beamyourscreen\.com|snapview\.de|rustdesk\.com|fleetdeck\.io|tailscale\.com|dwservice\.net|secure\.logmein\.com|teamviewer\.com|screenconnect\.com|fixme\.it|n-able\.com|domotz\.com|datto\.com|level\.io|itarian\.com|pulseway\.com|zoho\.com|manageengine\.com|bomgarcloud\.com|bomgar\.com|zabbix\.com/i
+  | groupBy([DomainName],function=[collect(ContextBaseFileName), count(aid,distinct=true,as=HostCount)])
+  | sort(HostCount,order=asc)
+_search_domain: all
+labels:
+  - hunting
+  - endpoint
+  - network
+  - rmm
+  - T1219

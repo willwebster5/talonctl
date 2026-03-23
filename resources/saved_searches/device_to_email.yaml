@@ -1,0 +1,50 @@
+$schema: https://schemas.humio.com/query/v0.6.0
+resource_id: device_to_email
+name: device_to_email
+description: |
+  Function: $device_to_email()
+  Purpose: Resolve a device name to the associated user email address via SASE Device snapshot.
+  Input: DeviceName field (must be set by caller before calling this function)
+  Output: user.email (user email address), user.display_name (user display name)
+  See queryString comments for full documentation.
+queryString: |
+    // ============================================================
+    // $device_to_email() - Device Name to User Email Resolution
+    // ============================================================
+    // Resolves a device hostname to the email address of the user
+    // associated with that device in the SASE Device snapshot.
+    //
+    // Input:
+    //   DeviceName - device hostname (set by caller)
+    //
+    // Output:
+    //   user.email        - email of the device owner (null if not found)
+    //   user.display_name - display name of the device owner (null if not found)
+    //
+    // Source: sase-users.csv (snapshot_deviceName → snapshot_info_email, user_name_lookup)
+    //
+    // Usage:
+    //   | DeviceName := ComputerName
+    //   | $device_to_email()
+    //   | user.email=*    // filter to resolved devices only
+    // ============================================================
+
+    // Lookup device name → user email in SASE Device snapshot
+    | match(file="sase-users.csv",
+            field=DeviceName,
+            column=snapshot_deviceName,
+            include=[snapshot_info_email, user_name_lookup],
+            strict=false)
+
+    | user.email := lower(snapshot_info_email)
+    | user.display_name := user_name_lookup
+
+    // Drop intermediate fields
+    | drop([snapshot_info_email, user_name_lookup])
+_search_domain: all
+labels:
+  - sase
+  - identity
+  - device
+  - lookup
+  - enrichment

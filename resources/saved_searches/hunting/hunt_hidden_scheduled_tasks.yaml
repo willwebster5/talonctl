@@ -1,0 +1,21 @@
+$schema: https://schemas.humio.com/query/v0.6.0
+resource_id: hunt_hidden_scheduled_tasks
+name: hunt_hidden_scheduled_tasks
+description: |
+  Finds scheduled tasks registered with Hidden=true in their XML configuration.
+  Hidden tasks are a persistence technique used to conceal malicious scheduled jobs
+  from standard Task Scheduler UI views.
+  Source: Query-Hub (CrowdStrike) — MITRE T1053.005
+queryString: |
+  #event_simpleName=ScheduledTaskRegistered
+  | parseXml(TaskXml)
+  | Hidden:=rename(Task.Settings.Hidden)
+  | Hidden=/true/i
+  | table([aid, Hidden, TaskXml], limit=1000)
+_search_domain: all
+labels:
+  - hunting
+  - endpoint
+  - persistence
+  - scheduled-tasks
+  - T1053

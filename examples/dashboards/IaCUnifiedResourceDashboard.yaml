@@ -1,0 +1,630 @@
+$schema: https://schemas.humio.com/dashboard/v0.23.0
+name: IaC Unified Resource Management Dashboard
+updateFrequency: never
+timeSelector: {}
+sharedTimeInterval:
+  enabled: true
+  isLive: false
+  start: 7d
+sections:
+  section-deployment-summary:
+    collapsed: false
+    order: 0
+    title: Deployment Summary (7 Days)
+    widgetIds:
+    - widget-deployments-by-resource-type
+    - widget-deployments-by-action
+    - widget-api-client-usage
+  section-deployment-details:
+    collapsed: false
+    order: 1
+    title: Deployment Activity
+    widgetIds:
+    - widget-deployment-timeline
+    - widget-recent-resource-changes
+  section-errors:
+    collapsed: false
+    order: 2
+    title: Errors & Failures
+    widgetIds:
+    - widget-workflow-errors
+  section-pipeline-internals:
+    collapsed: true
+    order: 3
+    title: Pipeline Internals (State Sync, Validation)
+    widgetIds:
+    - widget-operations-by-phase
+    - widget-resource-operations-by-type
+    - widget-operation-success-rate
+  section-performance:
+    collapsed: true
+    order: 4
+    title: Performance Metrics
+    widgetIds:
+    - widget-pipeline-health
+    - widget-performance-metrics
+widgets:
+  widget-deployments-by-resource-type:
+    x: 0
+    y: 0
+    height: 4
+    width: 4
+    title: Deployments by Resource Type
+    type: query
+    visualization: pie-chart
+    isLive: false
+    start: 7d
+    end: now
+    options:
+      innerRadius: 0
+    queryString: |
+      // Get deployment operations only (excludes state sync GETs)
+      #repo=detections
+      #event_simpleName=Event_APIActivityAuditEvent
+      | Success=true
+
+      // Filter to IaC API clients only
+      | in(field="Attributes.APIClientID", values=[your_local_api_client_id_here, your_cicd_api_client_id_here])
+
+      // Only deployment methods (POST, PATCH, DELETE) - excludes GET state sync
+      | Attributes.request_method=/^(POST|PATCH|DELETE)$/
+
+      // Create composite key for method+path matching
+      | _OpKey := format("%s|%s", field=[Attributes.request_method, Attributes.request_path])
+
+      // Categorize by resource type (deployment operations only)
+      | case {
+          _OpKey=/.*\/ngsiem-content\/entities\/savedqueries-template/ | ResourceType:="Saved_Search";
+          _OpKey=/.*\/correlation-rules\/entities\/rules/ | ResourceType:="Detection";
+          _OpKey=/.*\/ngsiem-content\/entities\/lookupfiles/ | ResourceType:="Lookup_File";
+          _OpKey=/.*\/workflows\/entities\/(import|definitions)/ | ResourceType:="Workflow";
+          _OpKey=/.*\/real-time-response\/entities\/scripts/ | ResourceType:="RTR_Script";
+          _OpKey=/.*\/real-time-response\/entities\/put-files/ | ResourceType:="RTR_Put_File";
+          * | ResourceType:="Other";
+      }
+
+      | ResourceType!="Other"
+
+      // Count by resource type
+      | groupBy([ResourceType], function=count(as=Count))
+
+  widget-deployments-by-action:
+    x: 4
+    y: 0
+    height: 4
+    width: 4
+    title: Deployments by Action
+    type: query
+    visualization: pie-chart
+    isLive: false
+    start: 7d
+    end: now
+    options:
+      innerRadius: 0
+    queryString: |
+      // Get deployment operations only
+      #repo=detections
+      #event_simpleName=Event_APIActivityAuditEvent
+      | Success=true
+
+      // Filter to IaC API clients only
+      | in(field="Attributes.APIClientID", values=[your_local_api_client_id_here, your_cicd_api_client_id_here])
+
+      // Only deployment methods - excludes GET state sync
+      | Attributes.request_method=/^(POST|PATCH|DELETE)$/
+
+      // Filter to IaC resource endpoints only
+      | Attributes.request_path=/\/(correlation-rules|ngsiem-content|workflows|real-time-response)\/entities\//
+
+      // Categorize by action
+      | case {
+          Attributes.request_method="POST" | Action:="Created";
+          Attributes.request_method=/^(PATCH|PUT)$/ | Action:="Updated";
+          Attributes.request_method="DELETE" | Action:="Deleted";
+          * | Action:="Other";
+      }
+
+      | Action!="Other"
+
+      // Count by action
+      | groupBy([Action], function=count(as=Count))
+
+  widget-deployment-timeline:
+    x: 0
+    y: 4
+    height: 5
+    width: 12
+    title: Deployment Activity Timeline
+    type: query
+    visualization: time-chart
+    isLive: false
+    start: 7d
+    end: now
+    options:
+      series: {}
+      interpolation: step
+      connect-points: true
+      maxSeriesCount: 20
+      regression: false
+      imputation: none
+    queryString: |
+      // Get deployment operations only (excludes state sync)
+      #repo=detections
+      #event_simpleName=Event_APIActivityAuditEvent
+      | Success=true
+
+      // Filter to IaC API clients only
+      | in(field="Attributes.APIClientID", values=[your_local_api_client_id_here, your_cicd_api_client_id_here])
+
+      // Only deployment methods
+      | Attributes.request_method=/^(POST|PATCH|DELETE)$/
+
+      // Create composite key for method+path matching
+      | _OpKey := format("%s|%s", field=[Attributes.request_method, Attributes.request_path])
+
+      // Categorize by resource type and action
+      | case {
+          _OpKey=/POST\|.*\/ngsiem-content\/entities\/savedqueries-template/ | Operation:="SavedSearch_Create";
+          _OpKey=/PATCH\|.*\/ngsiem-content\/entities\/savedqueries-template/ | Operation:="SavedSearch_Update";
+          _OpKey=/DELETE\|.*\/ngsiem-content\/entities\/savedqueries/ | Operation:="SavedSearch_Delete";
+          _OpKey=/POST\|.*\/correlation-rules\/entities\/rules/ | Operation:="Detection_Create";
+          _OpKey=/PATCH\|.*\/correlation-rules\/entities\/rules/ | Operation:="Detection_Update";
+          _OpKey=/DELETE\|.*\/correlation-rules\/entities\/rules/ | Operation:="Detection_Delete";
+          _OpKey=/POST\|.*\/ngsiem-content\/entities\/lookupfiles/ | Operation:="LookupFile_Create";
+          _OpKey=/PATCH\|.*\/ngsiem-content\/entities\/lookupfiles/ | Operation:="LookupFile_Update";
+          _OpKey=/DELETE\|.*\/ngsiem-content\/entities\/lookupfiles/ | Operation:="LookupFile_Delete";
+          _OpKey=/POST\|.*\/workflows\/entities\/import/ | Operation:="Workflow_Deploy";
+          _OpKey=/DELETE\|.*\/workflows\/entities\/definitions/ | Operation:="Workflow_Delete";
+          _OpKey=/(POST|PATCH)\|.*\/real-time-response\/entities\/scripts/ | Operation:="RTRScript_Deploy";
+          _OpKey=/DELETE\|.*\/real-time-response\/entities\/scripts/ | Operation:="RTRScript_Delete";
+          _OpKey=/POST\|.*\/real-time-response\/entities\/put-files/ | Operation:="RTRPutFile_Create";
+          _OpKey=/DELETE\|.*\/real-time-response\/entities\/put-files/ | Operation:="RTRPutFile_Delete";
+          * | Operation:="Other";
+      }
+
+      | Operation!="Other"
+
+      // Create timechart by operation
+      | timeChart(
+          Operation,
+          function=count(as=Count),
+          span=4h
+      )
+
+  widget-resource-operations-by-type:
+    x: 0
+    y: 0
+    height: 4
+    width: 4
+    title: Resource Operations by Type
+    type: query
+    visualization: pie-chart
+    isLive: false
+    start: 7d
+    end: now
+    options:
+      innerRadius: 0
+    queryString: |
+      // Get all IaC resource operations
+      #repo=detections
+      #event_simpleName=Event_APIActivityAuditEvent
+      | Success=true
+
+      // Filter to IaC API clients only
+      | in(field="Attributes.APIClientID", values=[your_local_api_client_id_here, your_cicd_api_client_id_here])
+
+      // Create composite key for method+path matching
+      | _OpKey := format("%s|%s", field=[Attributes.request_method, Attributes.request_path])
+
+      // Categorize by operation (resource type + action)
+      | case {
+          // Saved Search operations
+          _OpKey=/GET\|.*\/ngsiem-content\/queries\/savedqueries/ | Operation:="SavedSearch_List";
+          _OpKey=/GET\|.*\/ngsiem-content\/entities\/savedqueries-template/ | Operation:="SavedSearch_Fetch";
+          _OpKey=/POST\|.*\/ngsiem-content\/entities\/savedqueries-template/ | Operation:="SavedSearch_Create";
+          _OpKey=/PATCH\|.*\/ngsiem-content\/entities\/savedqueries-template/ | Operation:="SavedSearch_Update";
+          _OpKey=/DELETE\|.*\/ngsiem-content\/entities\/savedqueries/ | Operation:="SavedSearch_Delete";
+          // Detection operations
+          _OpKey=/GET\|.*\/detections\/combined\/rules/ | Operation:="Detection_List";
+          _OpKey=/GET\|.*\/detections\/entities\/rules/ | Operation:="Detection_Fetch";
+          _OpKey=/POST\|.*\/correlation-rules\/entities\/rules/ | Operation:="Detection_Create";
+          _OpKey=/PATCH\|.*\/correlation-rules\/entities\/rules/ | Operation:="Detection_Update";
+          _OpKey=/DELETE\|.*\/correlation-rules\/entities\/rules/ | Operation:="Detection_Delete";
+          // Lookup File operations
+          _OpKey=/GET\|.*\/ngsiem-content\/entities\/lookupfiles/ | Operation:="LookupFile_Fetch";
+          _OpKey=/POST\|.*\/ngsiem-content\/entities\/lookupfiles/ | Operation:="LookupFile_Create";
+          _OpKey=/PATCH\|.*\/ngsiem-content\/entities\/lookupfiles/ | Operation:="LookupFile_Update";
+          _OpKey=/DELETE\|.*\/ngsiem-content\/entities\/lookupfiles/ | Operation:="LookupFile_Delete";
+          // Workflow operations
+          _OpKey=/GET\|.*\/workflows\/.*\/definitions/ | Operation:="Workflow_Fetch";
+          _OpKey=/POST\|.*\/workflows\/entities\/import/ | Operation:="Workflow_Deploy";
+          _OpKey=/DELETE\|.*\/workflows\/entities\/definitions/ | Operation:="Workflow_Delete";
+          // RTR Script operations
+          _OpKey=/GET\|.*\/real-time-response\/entities\/scripts/ | Operation:="RTRScript_Fetch";
+          _OpKey=/POST\|.*\/real-time-response\/entities\/scripts/ | Operation:="RTRScript_Create";
+          _OpKey=/PATCH\|.*\/real-time-response\/entities\/scripts/ | Operation:="RTRScript_Update";
+          _OpKey=/DELETE\|.*\/real-time-response\/entities\/scripts/ | Operation:="RTRScript_Delete";
+          // RTR Put File operations
+          _OpKey=/GET\|.*\/real-time-response\/entities\/put-files/ | Operation:="RTRPutFile_Fetch";
+          _OpKey=/POST\|.*\/real-time-response\/entities\/put-files/ | Operation:="RTRPutFile_Create";
+          _OpKey=/DELETE\|.*\/real-time-response\/entities\/put-files/ | Operation:="RTRPutFile_Delete";
+          // Query Validation
+          _OpKey=/POST\|.*\/queryjobs/ | Operation:="QueryValidation";
+          _OpKey=/POST\|.*\/query-validation/ | Operation:="QueryValidation";
+          * | Operation:="Other";
+      }
+
+      // Only count IaC-relevant operations
+      | Operation!="Other"
+
+      // Extract resource type from operation
+      | case {
+          Operation=/^SavedSearch_/ | ResourceType:="Saved_Search";
+          Operation=/^Detection_/ | ResourceType:="Detection";
+          Operation=/^LookupFile_/ | ResourceType:="Lookup_File";
+          Operation=/^Workflow_/ | ResourceType:="Workflow";
+          Operation=/^RTRScript_/ | ResourceType:="RTR_Script";
+          Operation=/^RTRPutFile_/ | ResourceType:="RTR_Put_File";
+          Operation="QueryValidation" | ResourceType:="Validation";
+          * | ResourceType:="Other";
+      }
+
+      // Count by resource type
+      | groupBy([ResourceType], function=count(as=OperationCount))
+
+  widget-operations-by-phase:
+    x: 4
+    y: 0
+    height: 4
+    width: 4
+    title: Operations by Pipeline Phase
+    type: query
+    visualization: pie-chart
+    isLive: false
+    start: 7d
+    end: now
+    options:
+      innerRadius: 0
+    queryString: |
+      // Get all IaC resource operations
+      #repo=detections
+      #event_simpleName=Event_APIActivityAuditEvent
+      | Success=true
+
+      // Filter to IaC API clients only
+      | in(field="Attributes.APIClientID", values=[your_local_api_client_id_here, your_cicd_api_client_id_here])
+
+      // Create composite key for method+path matching
+      | _OpKey := format("%s|%s", field=[Attributes.request_method, Attributes.request_path])
+
+      // Categorize by pipeline phase based on operation pattern
+      | case {
+          // Discovery phase - listing resources
+          _OpKey=/GET\|.*\/(queries|combined)\/.*/ | Phase:="1_Discovery";
+          // State Sync phase - fetching individual resources (high volume)
+          _OpKey=/GET\|.*\/entities\/.*/ | Phase:="2_StateSync";
+          // Validation phase - query validation
+          _OpKey=/POST\|.*\/(queryjobs|query-validation)/ | Phase:="3_Validation";
+          // Deployment phase - actual changes
+          _OpKey=/(POST|PATCH|DELETE)\|.*\/entities\/.*/ | Phase:="4_Deployment";
+          * | Phase:="Other";
+      }
+
+      | Phase!="Other"
+
+      // Count by phase
+      | groupBy([Phase], function=count(as=OperationCount))
+
+  widget-api-client-usage:
+    x: 8
+    y: 0
+    height: 4
+    width: 4
+    title: API Client Usage (Local vs CICD)
+    type: query
+    visualization: pie-chart
+    isLive: false
+    start: 7d
+    end: now
+    options:
+      innerRadius: 0
+    queryString: |
+      // Get DEPLOYMENT operations only (excludes state sync)
+      #repo=detections
+      #event_simpleName=Event_APIActivityAuditEvent
+      | Success=true
+
+      // Filter to IaC API clients only
+      | in(field="Attributes.APIClientID", values=[your_local_api_client_id_here, your_cicd_api_client_id_here])
+
+      // Only deployment methods - excludes GET state sync
+      | Attributes.request_method=/^(POST|PATCH|DELETE)$/
+
+      // Filter to IaC resource endpoints only
+      | Attributes.request_path=/\/(correlation-rules|ngsiem-content|workflows|real-time-response)\/entities\//
+
+      // Extract API client ID
+      | APIClient:=Attributes.APIClientID
+
+      // Categorize by known workflow client
+      | case {
+          APIClient="your_cicd_api_client_id_here" | ClientType:="IaC_CICD";
+          APIClient="your_local_api_client_id_here" | ClientType:="IaC_Local";
+          * | ClientType:="Other";
+      }
+
+      // Count operations by client type
+      | groupBy([ClientType], function=count(as=OperationCount))
+
+  widget-operation-success-rate:
+    x: 0
+    y: 4
+    height: 4
+    width: 12
+    title: Operation Success Rate
+    type: query
+    visualization: table-view
+    isLive: false
+    start: 7d
+    end: now
+    options:
+      cell-overflow: wrap-text
+      configured-columns: {}
+      row-numbers-enabled: false
+    queryString: |
+      // Get all IaC resource operations
+      #repo=detections
+      #event_simpleName=Event_APIActivityAuditEvent
+
+      // Filter to IaC API clients only
+      | in(field="Attributes.APIClientID", values=[your_local_api_client_id_here, your_cicd_api_client_id_here])
+
+      // Filter to IaC-managed endpoints (savedqueries-template for create/update, savedqueries for delete)
+      | Attributes.request_path=/\/(correlation-rules|ngsiem-content\/entities\/(savedqueries-template|savedqueries|lookupfiles)|workflows\/entities|real-time-response\/entities)/
+
+      // Categorize by resource type
+      | case {
+          Attributes.request_path=/\/correlation-rules/ | ResourceType:="Detection";
+          Attributes.request_path=/\/ngsiem-content\/entities\/(savedqueries-template|savedqueries)/ | ResourceType:="Saved_Search";
+          Attributes.request_path=/\/ngsiem-content\/entities\/lookupfiles/ | ResourceType:="Lookup_File";
+          Attributes.request_path=/\/workflows\/entities/ | ResourceType:="Workflow";
+          Attributes.request_path=/\/real-time-response\/entities\/scripts/ | ResourceType:="RTR_Script";
+          Attributes.request_path=/\/real-time-response\/entities\/put-files/ | ResourceType:="RTR_Put_File";
+          * | ResourceType:="Other";
+      }
+
+      | ResourceType!="Other"
+
+      // Count successes and failures per resource type
+      | groupBy([ResourceType, Success], function=count(as=Count))
+
+      // Pivot to get success/fail columns
+      | case {
+          Success=true | SuccessCount:=Count | FailCount:=0;
+          Success=false | SuccessCount:=0 | FailCount:=Count;
+      }
+
+      | groupBy([ResourceType], function=[sum(SuccessCount, as=Successes), sum(FailCount, as=Failures)])
+
+      // Calculate success rate
+      | Total:=Successes+Failures
+      | SuccessRate:=(Successes/Total)*100
+      | SuccessRate:=format("%.1f%%", field=[SuccessRate])
+
+  widget-pipeline-health:
+    x: 0
+    y: 13
+    height: 5
+    width: 6
+    title: Deployment Pipeline Health
+    type: query
+    visualization: bar-chart
+    isLive: false
+    start: 7d
+    end: now
+    queryString: |
+      // Get all IaC workflow API calls
+      #repo=detections
+      #event_simpleName=Event_APIActivityAuditEvent
+      | Success=true
+
+      // Filter to IaC API clients only
+      | in(field="Attributes.APIClientID", values=[your_local_api_client_id_here, your_cicd_api_client_id_here])
+
+      // Create composite key for method+path matching
+      | _OpKey := format("%s|%s", field=[Attributes.request_method, Attributes.request_path])
+
+      // Categorize by workflow step across all resource types
+      | case {
+          _OpKey=/POST\|.*\/queryjobs/ | WorkflowStep:="1_Query_Validation";
+          _OpKey=/POST\|.*\/correlation-rules\/entities\/rules/ | WorkflowStep:="2a_Detection_Create";
+          _OpKey=/PATCH\|.*\/correlation-rules\/entities\/rules/ | WorkflowStep:="2b_Detection_Update";
+          _OpKey=/POST\|.*\/ngsiem-content\/entities\/savedqueries-template/ | WorkflowStep:="2c_SavedSearch_Create";
+          _OpKey=/PATCH\|.*\/ngsiem-content\/entities\/savedqueries-template/ | WorkflowStep:="2d_SavedSearch_Update";
+          _OpKey=/POST\|.*\/ngsiem-content\/entities\/lookupfiles/ | WorkflowStep:="2e_LookupFile_Create";
+          _OpKey=/PATCH\|.*\/ngsiem-content\/entities\/lookupfiles/ | WorkflowStep:="2f_LookupFile_Update";
+          _OpKey=/POST\|.*\/workflows\/entities\/import/ | WorkflowStep:="2g_Workflow_Deploy";
+          _OpKey=/POST\|.*\/real-time-response\/entities\/scripts/ | WorkflowStep:="2h_RTRScript_Create";
+          _OpKey=/PATCH\|.*\/real-time-response\/entities\/scripts/ | WorkflowStep:="2i_RTRScript_Update";
+          _OpKey=/POST\|.*\/real-time-response\/entities\/put-files/ | WorkflowStep:="2j_RTRPutFile_Create";
+          _OpKey=/DELETE\|.*\/entities\// | WorkflowStep:="3_Delete";
+          * | WorkflowStep:="Other";
+      }
+
+      // Only count deployment operations (not fetches/lists)
+      | WorkflowStep!="Other"
+
+      // Count operations by step
+      | groupBy([WorkflowStep], function=count(as=OperationCount))
+
+      // Sort to show pipeline order
+      | sort(WorkflowStep, order=asc)
+
+  widget-performance-metrics:
+    x: 6
+    y: 13
+    height: 5
+    width: 6
+    title: API Performance by Resource Type
+    type: query
+    visualization: table-view
+    isLive: false
+    start: 7d
+    end: now
+    options:
+      cell-overflow: wrap-text
+      configured-columns: {}
+      row-numbers-enabled: false
+    queryString: |
+      // Get IaC workflow API calls with timing
+      #repo=detections
+      #event_simpleName=Event_APIActivityAuditEvent
+      | Success=true
+
+      // Filter to IaC API clients only
+      | in(field="Attributes.APIClientID", values=[your_local_api_client_id_here, your_cicd_api_client_id_here])
+
+      // Filter and categorize by resource type
+      | case {
+          Attributes.request_path=/\/correlation-rules/ | ResourceType:="Detection";
+          Attributes.request_path=/\/ngsiem-content\/entities\/(savedqueries-template|savedqueries)/ | ResourceType:="Saved_Search";
+          Attributes.request_path=/\/ngsiem-content\/entities\/lookupfiles/ | ResourceType:="Lookup_File";
+          Attributes.request_path=/\/workflows\/entities/ | ResourceType:="Workflow";
+          Attributes.request_path=/\/real-time-response\/entities\/scripts/ | ResourceType:="RTR_Script";
+          Attributes.request_path=/\/real-time-response\/entities\/put-files/ | ResourceType:="RTR_Put_File";
+          Attributes.request_path=/\/queryjobs/ | ResourceType:="Query_Validation";
+          * | ResourceType:="Skip";
+      }
+
+      | ResourceType!="Skip"
+
+      // Extract elapsed time in milliseconds
+      | ElapsedMs:=Attributes.elapsed_microseconds
+      | ElapsedMs:=(ElapsedMs/1000)
+
+      // Calculate statistics by resource type
+      | groupBy([ResourceType], function=[
+          avg(ElapsedMs, as=AvgResponseTime),
+          min(ElapsedMs, as=MinResponseTime),
+          max(ElapsedMs, as=MaxResponseTime),
+          count(as=TotalCalls)
+      ])
+
+      // Format for readability
+      | AvgResponseTime:=format("%.2f ms", field=[AvgResponseTime])
+      | MinResponseTime:=format("%.2f ms", field=[MinResponseTime])
+      | MaxResponseTime:=format("%.2f ms", field=[MaxResponseTime])
+
+  widget-recent-resource-changes:
+    x: 0
+    y: 18
+    height: 5
+    width: 12
+    title: Recent Resource Changes (All Types)
+    type: query
+    visualization: table-view
+    isLive: false
+    start: 7d
+    end: now
+    options:
+      cell-overflow: wrap-text
+      configured-columns: {}
+      row-numbers-enabled: false
+    queryString: |
+      // Get all resource modification events
+      #repo=detections
+      #event_simpleName=Event_APIActivityAuditEvent
+      | Success=true
+
+      // Filter to IaC API clients only
+      | in(field="Attributes.APIClientID", values=[your_local_api_client_id_here, your_cicd_api_client_id_here])
+
+      // Only modification operations
+      | Attributes.request_method="POST" OR Attributes.request_method="PATCH" OR Attributes.request_method="PUT" OR Attributes.request_method="DELETE"
+
+      // Categorize by resource type
+      | case {
+          Attributes.request_path=/\/correlation-rules\/entities\/(rules|latest-rules)/ | ResourceType:="Detection";
+          Attributes.request_path=/\/ngsiem-content\/entities\/(savedqueries-template|savedqueries)/ | ResourceType:="Saved_Search";
+          Attributes.request_path=/\/ngsiem-content\/entities\/lookupfiles/ | ResourceType:="Lookup_File";
+          Attributes.request_path=/\/workflows\/entities\/(import|definitions)/ | ResourceType:="Workflow";
+          Attributes.request_path=/\/real-time-response\/entities\/scripts/ | ResourceType:="RTR_Script";
+          Attributes.request_path=/\/real-time-response\/entities\/put-files/ | ResourceType:="RTR_Put_File";
+          * | ResourceType:="Skip";
+      }
+
+      | ResourceType!="Skip"
+
+      // Categorize operation
+      | case {
+          Attributes.request_method="POST" | Operation:="Create";
+          Attributes.request_method=/^(PATCH|PUT)$/ | Operation:="Update";
+          Attributes.request_method="DELETE" | Operation:="Delete";
+          * | Operation:="Other";
+      }
+
+      // Extract details
+      | ChangeTime:=formatTime("%Y-%m-%d %H:%M:%S", field=@timestamp)
+      | APIClient:=Attributes.APIClientID
+      | SourceIP:=UserIp
+      | Endpoint:=Attributes.request_path
+
+      // Get most recent changes
+      | tail(30)
+      | sort(ChangeTime, order=desc)
+
+      | table([ChangeTime, ResourceType, Operation, APIClient, SourceIP])
+
+  widget-workflow-errors:
+    x: 0
+    y: 23
+    height: 5
+    width: 12
+    title: Resource Operation Errors
+    type: query
+    visualization: table-view
+    isLive: false
+    start: 7d
+    end: now
+    options:
+      cell-overflow: wrap-text
+      configured-columns: {}
+      row-numbers-enabled: false
+    queryString: |
+      // Get all IaC API calls including failures
+      #repo=detections
+      #event_simpleName=Event_APIActivityAuditEvent
+
+      // Filter to IaC API clients only
+      | in(field="Attributes.APIClientID", values=[your_local_api_client_id_here, your_cicd_api_client_id_here])
+
+      // Filter to IaC-managed endpoints
+      | Attributes.request_path=/\/(correlation-rules|ngsiem-content\/entities\/(savedqueries-template|savedqueries|lookupfiles)|workflows\/entities|real-time-response\/entities|queryjobs)/
+
+      // Only show failures
+      | Success=false
+
+      // Categorize by resource type
+      | case {
+          Attributes.request_path=/\/correlation-rules/ | ResourceType:="Detection";
+          Attributes.request_path=/\/ngsiem-content\/entities\/(savedqueries-template|savedqueries)/ | ResourceType:="Saved_Search";
+          Attributes.request_path=/\/ngsiem-content\/entities\/lookupfiles/ | ResourceType:="Lookup_File";
+          Attributes.request_path=/\/workflows\/entities/ | ResourceType:="Workflow";
+          Attributes.request_path=/\/real-time-response\/entities\/scripts/ | ResourceType:="RTR_Script";
+          Attributes.request_path=/\/real-time-response\/entities\/put-files/ | ResourceType:="RTR_Put_File";
+          Attributes.request_path=/\/queryjobs/ | ResourceType:="Query_Validation";
+          * | ResourceType:="Other";
+      }
+
+      // Extract error details
+      | ErrorTime:=formatTime("%Y-%m-%d %H:%M:%S", field=@timestamp)
+      | Endpoint:=Attributes.request_path
+      | Method:=Attributes.request_method
+      | StatusCode:=Attributes.status_code
+      | SourceIP:=UserIp
+
+      // Get recent errors
+      | tail(50)
+      | sort(ErrorTime, order=desc)
+
+      | table([ErrorTime, ResourceType, Method, StatusCode, Endpoint])

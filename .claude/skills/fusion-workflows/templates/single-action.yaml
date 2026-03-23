@@ -1,0 +1,34 @@
+# Template: Single action workflow (trigger → action → output)
+# Adapted for our IaC resource schema — includes resource_id and description fields.
+#
+# WARNING: This template uses PLACEHOLDER_ markers to show YAML structure only.
+# Do NOT copy PLACEHOLDER_ values into your workflow YAML.
+# - Action IDs: MUST be resolved via action_search.py BEFORE writing YAML
+# - config_id: MUST be obtained from the user (CID-specific)
+# - Names/labels/params: Choose your own descriptive values
+
+resource_id: PLACEHOLDER_RESOURCE_ID
+name: 'PLACEHOLDER_WORKFLOW_NAME'
+description: PLACEHOLDER_DESCRIPTION
+trigger:
+    next:
+        - PLACEHOLDER_ACTION_LABEL
+    name: On demand
+    parameters:
+        $schema: https://json-schema.org/draft-07/schema
+        properties:
+            PLACEHOLDER_PARAM_1:
+                type: string
+                title: PLACEHOLDER_PARAM_1_TITLE
+                description: PLACEHOLDER_PARAM_1_DESCRIPTION
+        required:
+            - PLACEHOLDER_PARAM_1
+        type: object
+    type: On demand
+actions:
+    PLACEHOLDER_ACTION_LABEL:
+        id: PLACEHOLDER_ACTION_ID
+        name: PLACEHOLDER_ACTION_DISPLAY_NAME
+        properties:
+            PLACEHOLDER_INPUT_FIELD: ${data['PLACEHOLDER_PARAM_1']}
+output_fields: []

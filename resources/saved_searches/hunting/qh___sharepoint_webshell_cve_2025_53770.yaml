@@ -1,0 +1,35 @@
+$schema: https://schemas.humio.com/query/v0.6.0
+resource_id: qh___sharepoint_webshell_cve_2025_53770
+name: qh___sharepoint_webshell_cve_2025_53770
+description: |
+  Detects CVE-2025-53770 SharePoint webshell attack chain using correlate():
+  w3wp.exe -> cmd.exe -> powershell.exe -> .aspx file write. Sequences three events
+  within 5 minutes on the same host.
+  Source: Query-Hub (CrowdStrike) — MITRE T1190, T1620
+queryString: |
+  // CVE-2025-53770 - WebShell Discovery from w3wp.exe
+
+  correlate(
+      cmd: {
+          #event_simpleName=ProcessRollup2 event_platform=Win FileName="cmd.exe" ParentBaseFileName="w3wp.exe"
+            } include: [aid, ComputerName, TargetProcessId, ParentBaseFileName, FileName, CommandLine],
+      pwsh: {
+          #event_simpleName=ProcessRollup2 event_platform=Win FileName="powershell.exe"
+            | aid <=> cmd.aid
+            | ParentProcessId <=> cmd.TargetProcessId
+            } include: [aid, ComputerName, TargetProcessId, ParentBaseFileName, FileName, CommandLine],
+      aspx: {
+          #event_simpleName=/^(NewScriptWritten|WebScriptFileWritten)$/ event_platform=Win FileName=/\.aspx/i
+            | aid <=> cmd.aid
+            | ContextProcessId <=> pwsh.TargetProcessId
+            } include: [aid, ComputerName, TargetFileName],
+  sequence=true, within=5m)
+_search_domain: all
+labels:
+  - hunting
+  - endpoint
+  - webshell
+  - cve
+  - correlate
+  - T1190
+  - T1620

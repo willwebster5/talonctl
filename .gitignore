@@ -1,0 +1,32 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+dist/
+build/
+.eggs/
+*.egg
+venv/
+.venv/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# WSL artifacts
+*:Zone.Identifier
+
+# Project state (user-specific, created by setup/import)
+.crowdstrike/deployed_state.json
+.crowdstrike/backups/
+data/
+discovery_results.json
+
+# Credentials (NEVER commit)
+credentials.json
+
+# OS
+.DS_Store
+Thumbs.db

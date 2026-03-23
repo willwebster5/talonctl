@@ -1,0 +1,18 @@
+$schema: https://schemas.humio.com/query/v0.6.0
+resource_id: hunt_lolbin_certutil
+name: hunt_lolbin_certutil
+description: |
+  Detects certutil.exe being used to download content over HTTP/HTTPS — a common
+  living-off-the-land technique for file delivery, payload staging, and encoding/decoding.
+  Reference: https://lolbas-project.github.io/lolbas/Binaries/Certutil/
+  Source: Query-Hub (ByteRay GmbH) — MITRE T1105, T1564.004, T1027.013, T1140
+queryString: |
+  in(#event_simpleName, values=["ProcessRollup2", "ProcessBlocked"])
+  | event_platform=Win and ImageFileName=/certutil\.exe/i and CommandLine=/(https?:)/i
+_search_domain: all
+labels:
+  - hunting
+  - endpoint
+  - lolbin
+  - certutil
+  - T1105

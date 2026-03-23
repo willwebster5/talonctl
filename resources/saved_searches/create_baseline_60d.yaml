@@ -1,0 +1,109 @@
+# Create Baseline 60d
+# Purpose: Create 60-day baseline for stable, long-term patterns
+# Version: 1.0
+
+$schema: https://schemas.humio.com/query/v0.6.0
+resource_id: create_baseline_60d
+name: create_baseline_60d
+description: |
+  Function: $create_baseline_60d
+  Purpose: Create 60-day baseline for stable, long-term pattern detection using defineTable.
+  Output: baseline_stats table with baseline.entity_id, baseline.event_type, baseline.avg, baseline.std_dev, baseline.max, baseline.min, baseline.data_points, baseline.p_50-P_99.
+  See queryString comments for full documentation.
+queryString: |
+    // ============================================================
+    // $create_baseline_60d() - 60-Day Baseline Builder
+    // ============================================================
+    // Create 60-day baseline for stable, long-term pattern detection
+    // using defineTable. Builds a lookup table of per-entity, per-event
+    // statistical baselines for anomaly detection.
+    //
+    // Output Fields (baseline_stats table):
+    //   baseline.entity_id       - User/host identifier extracted from event
+    //   baseline.event_type      - Event name/method from source
+    //   baseline.avg    - Average hourly event count over 60 days
+    //   baseline.std_dev - Standard deviation of hourly counts
+    //   baseline.max    - Maximum hourly count observed
+    //   baseline.min    - Minimum hourly count observed
+    //   baseline.data_points     - Number of hourly data points
+    //   baseline.p_50   - 50th percentile (median) hourly count
+    //   baseline.p_75   - 75th percentile hourly count
+    //   baseline.p_90   - 90th percentile hourly count
+    //   baseline.p_95   - 95th percentile hourly count
+    //   baseline.p_99   - 99th percentile hourly count
+    //
+    // Parameters: None (uses @repo variable)
+    //
+    // Limitations:
+    //   Creates a defineTable lookup -- not a standard enrichment function.
+    //
+    // Usage:
+    //   #repo=cloudtrail
+    //   | $create_baseline_60d()
+    //   | match(file="baseline_stats", field=[baseline.entity_id, baseline.event_type],
+    //       include=[baseline.avg, baseline.std_dev])
+    // ============================================================
+
+    defineTable(
+        query={
+            #repo=@repo
+            | case {
+                @Vendor="AWS" | #Vendor=AWS;
+                @Vendor="GCP" | #Vendor=GCP;
+                @Vendor="Azure" | #Vendor=Azure;
+                * ;
+            }
+
+            // Extract entity identifier
+            | case {
+                userIdentity.arn=* | baseline.entity_id := userIdentity.arn;
+                userIdentity.userName=* | baseline.entity_id := userIdentity.userName;
+                user.email=* | baseline.entity_id := lower(user.email);
+                UserName=* | baseline.entity_id := lower(UserName);
+                aid=* | baseline.entity_id := aid;
+                ComputerName=* | baseline.entity_id := lower(ComputerName);
+                * | baseline.entity_id := "unknown";
+            }
+
+            // Extract event type
+            | case {
+                eventName=* | baseline.event_type := eventName;
+                protoPayload.methodName=* | baseline.event_type := protoPayload.methodName;
+                operationName.value=* | baseline.event_type := operationName.value;
+                #event_simpleName=* | baseline.event_type := #event_simpleName;
+                * | baseline.event_type := "unknown";
+            }
+
+            // Create time buckets (including daily for long-term)
+            | HourBucket := formatTime("%Y-%m-%d %H", field=@timestamp)
+            | DayBucket := formatTime("%Y-%m-%d", field=@timestamp)
+
+            // Hourly statistics
+            | groupBy([baseline.entity_id, baseline.event_type, HourBucket],
+                      function=count(as=HourlyCount))
+
+            // Calculate comprehensive baseline
+            | groupBy([baseline.entity_id, baseline.event_type],
+                      function=[
+                          avg(HourlyCount, as=baseline.avg),
+                          stdDev(HourlyCount, as=baseline.std_dev),
+                          max(HourlyCount, as=baseline.max),
+                          min(HourlyCount, as=baseline.min),
+                          count(as=baseline.data_points),
+                          percentile(field=HourlyCount, percentiles=[50, 75, 90, 95, 99], as=baseline.p)
+                      ])
+        },
+        name="baseline_stats",
+        start="60d",
+        end="1h",
+        include=[baseline.entity_id, baseline.event_type, baseline.avg, baseline.std_dev,
+                baseline.max, baseline.min, baseline.data_points,
+                baseline.p_50, baseline.p_75, baseline.p_90, baseline.p_95, baseline.p_99]
+    )
+_search_domain: all
+labels:
+  - baseline
+  - analytics
+  - multi-vendor
+  - anomaly-detection
+  - long-term

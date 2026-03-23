@@ -1,0 +1,157 @@
+# Entra ID Lookup Trust Level
+# Purpose: Add user trust levels and privilege information via single lookup
+# Version: 1.0
+
+$schema: https://schemas.humio.com/query/v0.6.0
+resource_id: entraid_lookup_trust_level
+name: entraid_lookup_trust_level
+description: |
+  Function: $entraid_lookup_trust_level()
+  Purpose: Add user trust levels and privilege information via single efficient lookup.
+  Output: entra.trust_level, entra.trust_score, entra.privilege_tier, entra.risk_score, entra.combined_risk_score, entra.risk_category
+  Requires: entra.user_email field (use $entraid_enrich_user_identity first)
+  See queryString comments for full documentation.
+queryString: |
+    // ============================================================
+    // $entraid_lookup_trust_level() - Trust Level Lookup
+    // ============================================================
+    // Add user trust levels and privilege information via single
+    // efficient lookup.
+    //
+    // Output Fields:
+    //   entra.trust_level       - User trust classification (critical/high/medium/low/service/none/unknown)
+    //   entra.trust_score       - Numeric trust score from lookup
+    //   entra.privilege_tier    - User privilege tier classification
+    //   entra.risk_score        - Base risk score from lookup
+    //   entra.risk_level        - Entra ID risk level (high/medium/low/none)
+    //   entra.risk_state        - Entra ID risk state
+    //   entra.trust_level_score   - Normalized numeric trust level (5=critical to -1=unknown)
+    //   entra.risk_score_normalized    - Numeric Entra risk (0-100)
+    //   entra.is_admin           - Boolean: user has admin access
+    //   entra.has_prod_access     - Boolean: user has production access
+    //   entra.is_quarantined     - Boolean: user is quarantined
+    //   entra.requires_pim       - Boolean: user requires PIM activation
+    //   entra.combined_risk_score - Composite risk score (entra.risk_score_normalized + risk_score + adjustments)
+    //   entra.risk_category      - Risk classification (critical/high/medium/low/minimal)
+    //
+    // Requires: entra.user_email field (use $entraid_enrich_user_identity first)
+    // Lookup file: entraid-user-trust.csv
+    //
+    // Usage:
+    //   #repo=microsoft_graphapi
+    //   | $entraid_enrich_user_identity()
+    //   | $entraid_lookup_trust_level()
+    //   | groupBy([entra.trust_level, entra.privilege_tier], function=count())
+    // ============================================================
+
+    // Ensure user identity is available
+    | case {
+        entra.user_email=* ;
+        * | entra.user_email := "unknown";
+    }
+
+    // Step 1: Lookup preprocessed trust data (single lookup for performance)
+    | match(file="entraid-user-trust.csv",
+            field=entra.user_email,
+            column=user_email,
+            include=[
+                trust_level,
+                trust_score,
+                privilege_tier,
+                risk_score,
+                entra_risk_level,
+                entra_risk_state,
+                has_admin_access,
+                has_prod_access,
+                has_team_access,
+                is_quarantined,
+                requires_pim,
+                group_count,
+                account_type
+            ],
+            strict=false)
+
+    // Step 2: Set safe defaults for users not in trust lookup
+    | default(value="unknown", field=[trust_level, privilege_tier, entra_risk_level, entra_risk_state, account_type])
+    | default(value=0, field=[trust_score, risk_score, group_count])
+    | default(value="false", field=[has_admin_access, has_prod_access, has_team_access, is_quarantined, requires_pim])
+
+    // Rename CSV fields to ECS-style output names
+    | rename(field=trust_level, as=entra.trust_level)
+    | rename(field=trust_score, as=entra.trust_score)
+    | rename(field=privilege_tier, as=entra.privilege_tier)
+    | rename(field=risk_score, as=entra.risk_score)
+    | rename(field=entra_risk_level, as=entra.risk_level)
+    | rename(field=entra_risk_state, as=entra.risk_state)
+
+    // Step 3: Normalize trust level to numeric score for calculations
+    | case {
+        entra.trust_level="critical" | entra.trust_level_score := 5;
+        entra.trust_level="high" | entra.trust_level_score := 4;
+        entra.trust_level="medium" | entra.trust_level_score := 3;
+        entra.trust_level="low" | entra.trust_level_score := 2;
+        entra.trust_level="service" | entra.trust_level_score := 1;
+        entra.trust_level="none" | entra.trust_level_score := 0;
+        entra.trust_level="unknown" | entra.trust_level_score := -1;
+        * | entra.trust_level_score := -1;
+    }
+
+    // Step 4: Convert Entra risk level to numeric score
+    | case {
+        entra.risk_level="high" | entra.risk_score_normalized := 80;
+        entra.risk_level="medium" | entra.risk_score_normalized := 50;
+        entra.risk_level="low" | entra.risk_score_normalized := 20;
+        entra.risk_level="none" | entra.risk_score_normalized := 0;
+        * | entra.risk_score_normalized := 100;  // Unknown risk = high caution
+    }
+
+    // Step 5: Add convenience flags for common checks
+    | case {
+        has_admin_access="true" | entra.is_admin := true;
+        * | entra.is_admin := false;
+    }
+
+    | case {
+        has_prod_access="true" | entra.has_prod_access := true;
+        * | entra.has_prod_access := false;
+    }
+
+    | case {
+        is_quarantined="true" | entra.is_quarantined := true;
+        * | entra.is_quarantined := false;
+    }
+
+    | case {
+        requires_pim="true" | entra.requires_pim := true;
+        * | entra.requires_pim := false;
+    }
+
+    // Step 6: Calculate combined risk score
+    | entra.combined_risk_score := entra.risk_score_normalized + entra.risk_score
+    | case {
+        entra.is_quarantined=true | entra.combined_risk_score := entra.combined_risk_score + 50;
+        entra.trust_level_score < 2 | entra.combined_risk_score := entra.combined_risk_score + 30;
+        group_count = 0 | entra.combined_risk_score := entra.combined_risk_score + 20;
+        * ;
+    }
+
+    // Step 7: Risk category classification
+    | case {
+        entra.combined_risk_score >= 100 | entra.risk_category := "critical";
+        entra.combined_risk_score >= 70 | entra.risk_category := "high";
+        entra.combined_risk_score >= 40 | entra.risk_category := "medium";
+        entra.combined_risk_score >= 20 | entra.risk_category := "low";
+        * | entra.risk_category := "minimal";
+    }
+_search_domain: all
+labels:
+  - entraid
+  - entra-id
+  - identity
+  - trust
+  - privilege
+  - risk
+  - lookup
+  - microsoft
+dependencies:
+  - saved_search.entraid_enrich_user_identity

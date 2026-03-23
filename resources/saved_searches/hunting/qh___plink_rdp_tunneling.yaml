@@ -1,0 +1,22 @@
+$schema: https://schemas.humio.com/query/v0.6.0
+resource_id: qh___plink_rdp_tunneling
+name: qh___plink_rdp_tunneling
+description: |
+  Detects Plink (PuTTY Link) establishing remote/local port forwarding tunnels targeting
+  RDP (port 3389). Threat actors use this for lateral movement or to bypass firewall
+  restrictions by tunneling RDP over SSH.
+  Source: Query-Hub (cap10) — MITRE T1572, T1021.004
+queryString: |
+  #event_simpleName=ProcessRollup2
+  | ImageFileName=/\\plink(64)?\.exe$/i
+  | CommandLine=/\s-(R|L).*:3389/i
+  | table([aid, ComputerName, UserName, ImageFileName, CommandLine, ParentBaseFileName])
+  | sort(@timestamp, order=desc)
+_search_domain: all
+labels:
+  - hunting
+  - endpoint
+  - lateral-movement
+  - tunneling
+  - T1572
+  - T1021

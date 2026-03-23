@@ -1,0 +1,176 @@
+# AWS Classify Identity Type
+# Purpose: Classify AWS identities into detailed human/service/system categories
+# Version: 1.0
+
+$schema: https://schemas.humio.com/query/v0.6.0
+resource_id: aws_classify_identity_type
+name: aws_classify_identity_type
+description: |
+  Function: $aws_classify_identity_type
+  Purpose: Classify AWS identities into detailed human/service/system categories.
+  Output: aws.is_human_identity, aws.identity_category, aws.identity_risk_score, aws.identity_risk_level, aws.identity_classification, aws.is_team_session, aws.team_role_name
+  Parameters:
+    - include_service_detection: "true" to integrate with $aws_service_account_detector
+  See queryString comments for full documentation.
+queryString: |
+    // ============================================================
+    // $aws_classify_identity_type() - Identity Type Classification
+    // ============================================================
+    // Classify AWS identities into detailed human/service/system categories.
+    //
+    // Input: Events with user identity enrichment ($aws_enrich_user_identity)
+    //
+    // Output Fields:
+    //   aws.is_human_identity         - true/false whether identity represents a human
+    //   aws.identity_category        - Detailed category (see below)
+    //   aws.identity_risk_score            - Numeric risk score (0-100)
+    //   aws.identity_risk_level               - critical, high, medium, low, or minimal
+    //   aws.identity_classification  - Summary: "Category: X, Human: Y, Risk: Z"
+    //   aws.is_team_session          - true/false whether identity is a TEAM elevated session
+    //   aws.team_role_name           - Extracted TEAM role name (e.g., "Administrator", "PlatformAdmin") or "none"
+    //
+    // Identity Categories:
+    //   aws_service        - AWS service making calls on behalf of resources
+    //   root_account       - AWS account root user (high risk)
+    //   service_account    - Detected by $aws_service_account_detector
+    //   cross_account      - Cross-account access (AWSAccount type)
+    //   sso_team_elevated  - SSO user with TEAM elevated access (temporary privileged session)
+    //   sso_user           - SSO/federated user via identity provider
+    //   federated_user     - SAML or Web Identity Federation user
+    //   service_iam_user   - IAM user with service naming convention
+    //   human_iam_user     - IAM user (human)
+    //   aws_managed_role   - AWS-managed role (e.g. AWSServiceRole*)
+    //   application_role   - Role with GUID session (application/automation)
+    //   human_assumed_role - Role assumed by human (email in session)
+    //   admin_role         - Admin/SSO reserved roles
+    //   assumed_role       - Other assumed roles (default non-human)
+    //   unknown            - Unclassified identity
+    //
+    // Parameters:
+    //   include_service_detection - "true" to run $aws_service_account_detector
+    //
+    // Usage:
+    //   #repo=cloudtrail
+    //   | $aws_enrich_user_identity()
+    //   | $aws_classify_identity_type(include_service_detection="true")
+    // ============================================================
+
+    // Ensure user identity is enriched first
+    | case {
+        aws.user_identity=* ;
+        * | $aws_enrich_user_identity();
+    }
+
+    // Step 1: Run service account detection if enabled
+    | case {
+        include_service_detection="true" | $aws_service_account_detector();
+        * ;
+    }
+
+    // Step 2: Classify identity category
+    | case {
+        // AWS Service identities
+        aws.user_type="AWSService" | aws.identity_category := "aws_service" | aws.is_human_identity := false;
+
+        // Root account (high risk)
+        aws.user_type="Root" | aws.identity_category := "root_account" | aws.is_human_identity := true;
+
+        // Service accounts detected by detector
+        aws.is_service_account=true | aws.identity_category := "service_account" | aws.is_human_identity := false;
+
+        // Cross-account access
+        aws.user_type="AWSAccount" | aws.identity_category := "cross_account" | aws.is_human_identity := false;
+
+        // SSO users - check for TEAM elevated sessions first
+        aws.identity_source="sso_federation" |
+            case {
+                aws.role_name=~/^AWSReservedSSO_TEAM_/
+                    | aws.identity_category := "sso_team_elevated"
+                    | aws.is_human_identity := true
+                    | aws.is_team_session := true
+                    | aws.role_name=~/^AWSReservedSSO_TEAM_(?<aws.team_role_name>[^_]+)_/
+                    ;
+                * | aws.identity_category := "sso_user" | aws.is_human_identity := true;
+            }
+            ;
+        aws.identity_source="federated_user" | aws.identity_category := "federated_user" | aws.is_human_identity := true;
+
+        // IAM Users
+        aws.user_type="IAMUser" |
+            case {
+                aws.actual_user_name=~/^(svc|service|app|automation|bot|system)[-_]/ |
+                    aws.identity_category := "service_iam_user" | aws.is_human_identity := false;
+                * | aws.identity_category := "human_iam_user" | aws.is_human_identity := true;
+            }
+            ;
+
+        // AssumedRole - complex classification
+        aws.user_type="AssumedRole" |
+            case {
+                aws.role_name=~/^(AWS|aws)/ | aws.identity_category := "aws_managed_role" | aws.is_human_identity := false;
+                aws.identity_source="role_session_guid" | aws.identity_category := "application_role" | aws.is_human_identity := false;
+                aws.identity_source="role_session_email" | aws.identity_category := "human_assumed_role" | aws.is_human_identity := true;
+                aws.role_name=~/^(OrganizationAccountAccessRole|AWSReservedSSO)/ | aws.identity_category := "admin_role" | aws.is_human_identity := true;
+                * | aws.identity_category := "assumed_role" | aws.is_human_identity := false;  // Default to non-human for safety
+            }
+            ;
+
+        // Unknown
+        * | aws.identity_category := "unknown" | aws.is_human_identity := false;
+    }
+
+    // Set defaults for TEAM session fields
+    | case {
+        aws.is_team_session=* ;
+        * | aws.is_team_session := false | aws.team_role_name := "none";
+    }
+
+    // Step 3: Calculate identity risk score
+    | case {
+        aws.identity_category="root_account" | aws.identity_risk_score := 90;
+        aws.identity_category="unknown" | aws.identity_risk_score := 80;
+        aws.identity_category="cross_account" | aws.identity_risk_score := 70;
+        aws.identity_category="aws_service" | aws.identity_risk_score := 10;
+        aws.identity_category="service_account" | aws.identity_risk_score := 20;
+        aws.identity_category="service_iam_user" | aws.identity_risk_score := 30;
+        aws.identity_category="aws_managed_role" | aws.identity_risk_score := 15;
+        aws.identity_category="application_role" | aws.identity_risk_score := 25;
+        aws.identity_category="sso_team_elevated" | aws.identity_risk_score := 55;
+        aws.identity_category="sso_user" | aws.identity_risk_score := 35;
+        aws.identity_category="human_iam_user" | aws.identity_risk_score := 40;
+        aws.identity_category="federated_user" | aws.identity_risk_score := 45;
+        aws.identity_category="human_assumed_role" | aws.identity_risk_score := 35;
+        aws.identity_category="admin_role" | aws.identity_risk_score := 50;
+        aws.identity_category="assumed_role" | aws.identity_risk_score := 30;
+        * | aws.identity_risk_score := 60;
+    }
+
+    // Step 4: Add credential type risk modifier
+    | case {
+        aws.credential_type="long_term" | aws.identity_risk_score := aws.identity_risk_score + 10;
+        * ;
+    }
+
+    // Step 5: Categorize risk level
+    | case {
+        aws.identity_risk_score >= 80 | aws.identity_risk_level := "critical";
+        aws.identity_risk_score >= 60 | aws.identity_risk_level := "high";
+        aws.identity_risk_score >= 40 | aws.identity_risk_level := "medium";
+        aws.identity_risk_score >= 20 | aws.identity_risk_level := "low";
+        * | aws.identity_risk_level := "minimal";
+    }
+
+    // Step 6: Create classification summary
+    | aws.identity_classification := format("Category: %s, Human: %s, Risk: %s",
+        field=[aws.identity_category, aws.is_human_identity, aws.identity_risk_level])
+_search_domain: all
+labels:
+  - aws
+  - cloudtrail
+  - identity
+  - classification
+  - enrichment
+  - risk
+dependencies:
+  - saved_search.aws_enrich_user_identity
+  - saved_search.aws_service_account_detector

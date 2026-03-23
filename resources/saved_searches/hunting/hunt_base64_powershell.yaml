@@ -1,0 +1,36 @@
+$schema: https://schemas.humio.com/query/v0.6.0
+resource_id: hunt_base64_powershell
+name: hunt_base64_powershell
+description: |
+  Identifies PowerShell processes using encoded command flags, extracts and base64-decodes
+  the payload (UTF-16LE), and handles nested encodings. Groups by decoded command with
+  execution count and unique endpoint count — sort by rarest to find novel threats,
+  sort by most common to prioritize volume.
+  Source: Query-Hub (CrowdStrike) — MITRE T1059.001, T1027
+queryString: |
+  #event_simpleName=ProcessRollup2 event_platform=Win ImageFileName=/.*\\powershell\.exe/
+  | CommandLine=/\s+\-(e|encoded|encodedcommand|enc)\s+/i
+  | CommandLine=/\-(?<psEncFlag>(e|encoded|encodedcommand|enc))\s+/i
+  | length("CommandLine", as="cmdLength")
+  | groupby([psEncFlag, cmdLength, CommandLine], function=stats([count(aid, distinct=true, as="uniqueEndpointCount"), count(aid, as="executionCount")]), limit=max)
+  | EncodedString := splitString(field=CommandLine, by="-e* ", index=1)
+  | CmdLinePrefix := splitString(field=CommandLine, by="-e* ", index=0)
+  | DecodedString := base64Decode(EncodedString, charset="UTF-16LE")
+  // Decode nested encodings if present
+  | case {
+    DecodedString = /encoded/i
+    | SubEncodedString := splitString(field=DecodedString, by="-EncodedCommand ", index=1)
+    | SubCmdLinePrefix := splitString(field=EncodedString, by="-EncodedCommand ", index=0)
+    | SubDecodedString := base64Decode(SubEncodedString, charset="UTF-16LE");
+    *
+  }
+  | table([executionCount, uniqueEndpointCount, cmdLength, DecodedString, CommandLine])
+  | sort(executionCount, order=desc)
+_search_domain: all
+labels:
+  - hunting
+  - endpoint
+  - powershell
+  - obfuscation
+  - T1059
+  - T1027

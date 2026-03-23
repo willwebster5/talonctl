@@ -1,0 +1,22 @@
+$schema: https://schemas.humio.com/query/v0.6.0
+resource_id: qh___generic_user_account_usage
+name: qh___generic_user_account_usage
+description: |
+  Detects use of generic/shared user accounts (admin, test, root, etc.) by matching
+  logon events against the generic_usernames lookup file. Flags compliance violations
+  for ISO 27001, SOC 2, PCI DSS, HIPAA, and NIST 800-53.
+  Prerequisite: generic_usernames.csv lookup file deployed.
+  Source: Query-Hub (ByteRay GmbH) — MITRE T1078
+queryString: |
+  "#event_simpleName" = UserLogon | user.name := lower("user.name") | groupBy(user.name,ComputerName) | match(file="generic_usernames.csv", field=[user.name], column=[username])
+  | table([user.name, ComputerName, _count])
+  | User := rename(user.name)
+  | Host := rename(ComputerName)
+  | LogonCount := rename(_count)
+_search_domain: all
+labels:
+  - hunting
+  - endpoint
+  - compliance
+  - identity
+  - T1078

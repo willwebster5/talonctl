@@ -1,0 +1,97 @@
+# Entra ID Enrich User Identity
+# Purpose: Extract and normalize user identity from Entra ID events
+# Version: 1.1
+
+$schema: https://schemas.humio.com/query/v0.6.0
+resource_id: entraid_enrich_user_identity
+name: entraid_enrich_user_identity
+description: |
+  Function: $entraid_enrich_user_identity
+  Purpose: Extract and normalize user identity from Entra ID events.
+  Output: entra.user_email, entra.user_type, entra.user_identifier, entra.user_domain.
+  See queryString comments for full documentation.
+queryString: |
+    // ============================================================
+    // $entraid_enrich_user_identity() - User Identity Extraction
+    // ============================================================
+    // Extract and normalize user identity from Entra ID events.
+    // Resolves user email from multiple possible source fields,
+    // creates a normalized identifier, classifies user type by
+    // email pattern, and extracts domain information.
+    //
+    // Output Fields:
+    //   entra.user_email      - Normalized (lowercased) user email address
+    //   entra.user_type       - Initial type classification (see types below)
+    //   entra.user_identifier - Username portion (before @) of the email
+    //   entra.user_domain     - Domain portion (after @) of the email
+    //
+    // User Types:
+    //   service_account     - Matches svc-/service- patterns
+    //   application_account - Matches app-/application- patterns
+    //   external_account    - Matches contractor/external/vendor/temp
+    //   guest_account       - *.onmicrosoft.com domains
+    //   user_account        - Standard email format
+    //   unknown_account     - No user identity resolved
+    //   system_account      - Fallback for unmatched patterns
+    //
+    // Parameters: None
+    //
+    // Usage:
+    //   #repo=microsoft_graphapi
+    //   | $entraid_enrich_user_identity()
+    //   | groupBy([entra.user_type], function=count())
+    // ============================================================
+
+    // Step 1: Extract user email identifier from multiple possible sources
+    | case {
+        // Microsoft Graph API events
+        user.email=* | entra.user_email := lower(user.email);
+        user.full_name=* | entra.user_email := lower(user.full_name);
+        // Entra ID signin events
+        Vendor.userPrincipalName=* | entra.user_email := lower(Vendor.userPrincipalName);
+        Vendor.userDisplayName=* | entra.user_email := lower(Vendor.userDisplayName);
+        // Azure events with different field names
+        Vendor.identity.claims.upn=* | entra.user_email := lower(Vendor.identity.claims.upn);
+        Vendor.identity.claims.unique_name=* | entra.user_email := lower(Vendor.identity.claims.unique_name);
+        // Legacy field mappings
+        userPrincipalName=* | entra.user_email := lower(userPrincipalName);
+        userEmail=* | entra.user_email := lower(userEmail);
+        // Fallback to any user.name field
+        user.name=* | entra.user_email := lower(user.name);
+        // Unknown user
+        * | entra.user_email := "unknown";
+    }
+
+    // Step 2: Create normalized user identifier (strip domain for consistency)
+    // Using regex extraction with named capture group
+    | case {
+        entra.user_email =~ /@/ | entra.user_email=/^(?<entra.user_identifier>[^@]+)@.*$/;
+        entra.user_email != "unknown" | entra.user_identifier := entra.user_email;
+        * | entra.user_identifier := "unknown";
+    }
+
+    // Step 3: Initial user type classification based on email patterns
+    | case {
+        entra.user_email =~ /^svc[-_]|[-_]svc@|service[-_]|[-_]service@/ | entra.user_type := "service_account";
+        entra.user_email =~ /^app[-_]|[-_]app@|application[-_]/ | entra.user_type := "application_account";
+        entra.user_email =~ /contractor|external|vendor|temp/ | entra.user_type := "external_account";
+        entra.user_email =~ /@.*\.onmicrosoft\.com$/ | entra.user_type := "guest_account";
+        entra.user_email =~ /@[^.]+\.[^.]+$/ | entra.user_type := "user_account";
+        entra.user_email = "unknown" | entra.user_type := "unknown_account";
+        * | entra.user_type := "system_account";
+    }
+
+    // Step 4: Extract domain information for additional context
+    // Using regex extraction with named capture group
+    | case {
+        entra.user_email =~ /@(.+)$/ | entra.user_email=/@(?<entra.user_domain>.+)$/;
+        * | entra.user_domain := "unknown";
+    }
+_search_domain: all
+labels:
+  - entraid
+  - entra-id
+  - identity
+  - enrichment
+  - microsoft
+  - azure

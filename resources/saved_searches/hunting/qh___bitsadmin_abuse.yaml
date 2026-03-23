@@ -1,0 +1,75 @@
+$schema: https://schemas.humio.com/query/v0.6.0
+resource_id: qh___bitsadmin_abuse
+name: qh___bitsadmin_abuse
+description: |
+  Multi-hypothesis threat hunting for Windows BITS abuse. Classifies telemetry into
+  four detection hypotheses: H1 direct bitsadmin execution, H2 PowerShell BitsTransfer,
+  H3 BITS persistence mechanisms, H4 proxy reconnaissance via getieproxy.
+  Source: Query-Hub (Oussama AZRARA) — MITRE T1197
+queryString: |
+  | case {
+      #event_simpleName=ProcessRollup2
+      AND (ImageFileName=/\\bitsadmin\.exe$/i OR OriginalFilename="bitsadmin.exe")
+      AND (
+          CommandLine=/\/transfer/i
+          OR CommandLine=/\/addfile/i
+          OR CommandLine=/\/download/i
+          OR CommandLine=/\/SetNotifyCmdLine/i
+          OR CommandLine=/\/resume/i
+          OR CommandLine=/https?:\/\//i
+          OR CommandLine=/ftp:\/\//i
+      )
+      AND NOT (
+          ParentBaseFileName=svchost.exe
+          OR ParentBaseFileName=msiexec.exe
+      )
+      | hunt_hypothesis := "H1_BITSADMIN_DIRECT_EXEC" ;
+      #event_simpleName=ScriptControlScanV2 OR #event_simpleName=CommandHistory
+      AND (
+          ScriptContent=/Start-BitsTransfer/i
+          OR ScriptContent=/Import-Module\s+BitsTransfer/i
+          OR ScriptContent=/BITS\.IBackgroundCopyManager/i
+      )
+      AND (
+          ScriptContent=/https?:\/\//i
+          OR ScriptContent=/\-Source/i
+          OR ScriptContent=/\-Destination/i
+      )
+      | hunt_hypothesis := "H2_POWERSHELL_BITSTRANSFER" ;
+      #event_simpleName=ProcessRollup2
+      AND (
+          CommandLine=/SetNotifyCmdLine/i
+          OR CommandLine=/SetMinRetryDelay/i
+          OR CommandLine=/SetNoProgressTimeout/i
+      )
+      AND NOT CommandLine=/Windows.Update/i
+      | hunt_hypothesis := "H3_BITS_PERSISTENCE" ;
+      #event_simpleName=ProcessRollup2
+      AND ImageFileName=/\\bitsadmin\.exe$/i
+      AND CommandLine=/getieproxy/i
+      | hunt_hypothesis := "H4_BITS_PROXY_RECON" ;
+      * | hunt_hypothesis := "NO_MATCH" ;
+  }
+  // Exclude non-matches
+  | hunt_hypothesis != "NO_MATCH"
+  | select([
+      @timestamp,
+      hunt_hypothesis,
+      ComputerName,
+      UserName,
+      UserSid,
+      ImageFileName,
+      CommandLine,
+      ParentBaseFileName,
+      ParentCommandLine,
+      ScriptContent,
+      SHA256HashData
+  ])
+  | sort(@timestamp, order=desc)
+_search_domain: all
+labels:
+  - hunting
+  - endpoint
+  - bits
+  - persistence
+  - T1197

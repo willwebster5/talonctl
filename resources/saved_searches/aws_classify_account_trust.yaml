@@ -1,0 +1,73 @@
+# AWS Classify Account Trust
+# Purpose: Classify an AWS account ID as internal, partner, or external
+# Version: 1.0
+
+$schema: https://schemas.humio.com/query/v0.6.0
+resource_id: aws_classify_account_trust
+name: aws_classify_account_trust
+description: |
+  Function: $aws_classify_account_trust
+  Purpose: Classify an AWS account ID as internal org, known partner, or external.
+  Output: aws.account_trust_type, aws.account_trust_risk, aws.partner_name
+  Parameters:
+    - field: field name containing AWS account ID (default: accountId)
+  See queryString comments for full documentation.
+queryString: |
+    // ============================================================
+    // $aws_classify_account_trust() - Account Trust Classification
+    // ============================================================
+    // Classify an AWS account ID as internal org, known partner, or external.
+    //
+    // Input: A field containing an AWS account ID (12-digit string)
+    //
+    // Output Fields:
+    //   aws.account_trust_type - "internal", "partner", or "external"
+    //   aws.account_trust_risk - Risk level: "low" (internal/partner) or "critical" (external)
+    //   aws.partner_name      - Name of partner org (empty if not a partner)
+    //
+    // Parameters:
+    //   field - Field name containing the AWS account ID (default: accountId)
+    //
+    // Usage:
+    //   // Extract account from policy document
+    //   | regex("arn:aws:iam::(?<accountId>\\d+):", field=Vendor.requestParameters.policyDocument)
+    //   | $aws_classify_account_trust(field=accountId)
+    //   | aws.account_trust_type="external"
+    // ============================================================
+
+    // Initialize output fields
+    | aws.account_trust_type := "external"
+    | aws.account_trust_risk := "critical"
+    | aws.partner_name := ""
+
+    // Check if internal org account
+    // Add your organization's trusted AWS account IDs below.
+    // Example format:
+    //   111111111111 - Management
+    //   222222222222 - Production
+    //   333333333333 - Dev/UAT
+    | case {
+        in(field=accountId, values=["111111111111", "222222222222", "333333333333"])
+          | aws.account_trust_type := "internal" | aws.account_trust_risk := "low";
+        *;
+    }
+
+    // Check if known partner account (only if not already internal)
+    // Add your vendor/partner AWS account IDs below.
+    // Example: monitoring vendor, data platform, security vendor, etc.
+    | case {
+        aws.account_trust_type="internal";  // Skip if already classified as internal
+        accountId="444444444444" | aws.account_trust_type := "partner" | aws.account_trust_risk := "low" | aws.partner_name := "Vendor1";
+        accountId="555555555555" | aws.account_trust_type := "partner" | aws.account_trust_risk := "low" | aws.partner_name := "Vendor2";
+        *;
+    }
+
+_search_domain: all
+labels:
+  - aws
+  - cloudtrail
+  - cross-account
+  - trust
+  - iam
+  - security
+  - enrichment

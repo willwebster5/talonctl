@@ -1,0 +1,13 @@
+# Example: RTR Put File
+# A file pushed to endpoints via Real Time Response.
+# NOTE: No put files existed in the source repo — this is a synthetic example
+# showing the YAML template format the IaC engine expects.
+
+type: rtr_put_file
+resource_id: sysmon_config
+name: sysmonconfig-export.xml
+description: |
+  Sysmon configuration file for enhanced endpoint telemetry.
+  Pushed to endpoints during IR setup or baseline hardening.
+source: resources/rtr_put_files/sysmonconfig-export.xml
+file_type: config

@@ -1,0 +1,36 @@
+# Example: Detection Rule
+# Detects TOR traffic from internal networks to the internet.
+# This is a real, deployable detection — 100% generic, no tenant-specific content.
+
+resource_id: generic___network___tor_traffic_to_the_internet
+name: Generic - Network - TOR Traffic to the Internet
+description: |
+  Detects traffic associated with TOR applications or ports commonly used by TOR,
+  which adversaries might exploit to avoid detection on the environment.
+severity: 50
+status: active
+mitre_attack: ["TA0011:T1090.003"]
+search:
+  filter: |
+    #repo!=xdr_*
+    | #Vendor =~ in(values=["akamai","aws","cisco","cloudflare","corelight",
+        "extrahop","fortinet","microsoft","netskope","nozomi","paloalto",
+        "skyhigh","zscaler"])
+    | #event.kind="event"
+    | array:contains(array="event.category[]", value="network")
+    | network.transport="tcp"
+    | case {
+        destination.port =~ in(values=["9001", "9030", "9040", "9050", "9051", "9150"]);
+        destination.port="443" network.application=/^tor/i
+    }
+    | cidr(source.ip, subnet=["10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16",
+        "fe80::/10", "169.254.0.0/16"])
+    | !cidr(destination.ip, subnet=["10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16",
+        "fe80::/10", "169.254.0.0/16"])
+  lookback: 1h0m
+  trigger_mode: summary
+  outcome: detection
+  use_ingest_time: true
+operation:
+  schedule:
+    definition: '@every 1h0m'

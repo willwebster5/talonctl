@@ -1,0 +1,32 @@
+$schema: https://schemas.humio.com/query/v0.6.0
+resource_id: hunt_tor_exit_node_connections
+name: hunt_tor_exit_node_connections
+description: |
+  Detects endpoint network connections to known Tor exit nodes by matching against a
+  lookup file (tor-exit-nodes.csv). Groups by host with connection count, unique IPs,
+  and first/last seen timestamps.
+  Prerequisite: upload tor-exit-nodes.csv as a lookup file in NGSIEM.
+  Source: Query-Hub (ByteRay GmbH) — MITRE T1090.003
+queryString: |
+  #event_simpleName=NetworkConnectIP4
+  | match(file="tor-exit-nodes.csv", field=RemoteAddressIP4, column=ip, strict=true)
+  | groupBy(
+      [aid, ComputerName],
+      function=[
+          count(aid, as=ConnectionCount),
+          count(aid, distinct=true, as=UniqueIPs),
+          collect([RemoteAddressIP4, RemotePort]),
+          min(@timestamp, as=FirstSeen),
+          max(@timestamp, as=LastSeen)
+      ]
+    )
+  | FirstSeen := formatTime(format="%Y-%m-%d %H:%M:%S", field=FirstSeen)
+  | LastSeen  := formatTime(format="%Y-%m-%d %H:%M:%S", field=LastSeen)
+  | sort(ConnectionCount, order=desc)
+_search_domain: all
+labels:
+  - hunting
+  - endpoint
+  - network
+  - proxy
+  - T1090

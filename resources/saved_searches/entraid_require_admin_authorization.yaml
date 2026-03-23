@@ -1,0 +1,75 @@
+# Entra ID Require Admin Authorization
+# Purpose: Filter events to only admin-authorized users
+# Version: 1.0
+
+$schema: https://schemas.humio.com/query/v0.6.0
+resource_id: entraid_require_admin_authorization
+name: entraid_require_admin_authorization
+description: |
+  Function: $entraid_require_admin_authorization()
+  Purpose: Filter events to only admin-authorized users (FILTERING - removes non-admin events).
+  Output: entra.admin_filtered (set to true for all passing events)
+  Requires: Trust level data ($entraid_lookup_trust_level)
+  See queryString comments for full documentation.
+queryString: |
+    // ============================================================
+    // $entraid_require_admin_authorization() - Admin Authorization Filter
+    // ============================================================
+    // Filter events to only admin-authorized users.
+    //
+    // WARNING: This is a FILTERING function -- it removes events
+    // that don't match admin authorization criteria.
+    //
+    // Output Fields:
+    //   entra.admin_filtered - Set to true for all events that pass the filter
+    //
+    // Parameters:
+    //   - strict_mode: "true" requires explicit admin access (not just high trust)
+    //   - allow_pim_eligible: "true" allows PIM-eligible users through
+    //
+    // Requires: Trust level data ($entraid_lookup_trust_level)
+    //
+    // Usage:
+    //   #repo=microsoft_graphapi #event.category="management"
+    //   | $entraid_lookup_trust_level()
+    //   | $entraid_require_admin_authorization(strict_mode="true", allow_pim_eligible="false")
+    // ============================================================
+
+    // Step 1: Add authorization context if not already present
+    | case {
+        entra.auth_status=* ;
+        * | $entraid_add_authorization_context();
+    }
+
+    // Step 2: Apply admin authorization filtering
+    | case {
+        strict_mode="true" AND allow_pim_eligible="true" |
+            test(in(field="entra.auth_status", values=["admin_authorized", "team_eligible_pim_required"]));
+
+        strict_mode="true" AND allow_pim_eligible="false" |
+            test(entra.auth_status="admin_authorized");
+
+        // Non-strict mode: allow high trust users
+        strict_mode="false" AND allow_pim_eligible="true" |
+            test(in(field="entra.auth_status", values=["admin_authorized", "team_authorized", "high_trust", "team_eligible_pim_required"]));
+
+        // Default: non-strict, admin and team only
+        * |
+            test(in(field="entra.auth_status", values=["admin_authorized", "team_authorized", "high_trust"]));
+    }
+
+    // Step 3: Ensure not quarantined
+    | test(entra.is_quarantined=false)
+
+    // Step 4: Add filtered indicator for downstream processing
+    | entra.admin_filtered := true
+_search_domain: all
+labels:
+  - entraid
+  - entra-id
+  - authorization
+  - admin
+  - filtering
+  - microsoft
+dependencies:
+  - saved_search.entraid_add_authorization_context

@@ -1,0 +1,49 @@
+# Entra ID User App Device Summary
+# Purpose: Summary of apps accessed by user and the device types used
+# Version: 1.0
+
+$schema: https://schemas.humio.com/query/v0.6.0
+resource_id: entraid_user_app_device_summary
+name: entraid_user_app_device_summary
+description: |
+  Function: $entraid_user_app_device_summary(user)
+  Purpose: Summary of apps accessed by user and the device types used.
+  Output: entra.app_name, entra.operating_system, entra.trust_type, _count
+  See queryString comments for full documentation.
+queryString: |
+    // ============================================================
+    // $entraid_user_app_device_summary() - App & Device Usage Summary
+    // ============================================================
+    // Summary of apps accessed by a user and the device types used.
+    // Groups by application, OS, and trust type with event counts.
+    //
+    // Input: Entra ID sign-in events (#Vendor=microsoft, #event.dataset=entraid.signin)
+    //
+    // Output Fields:
+    //   entra.app_name         - Application accessed
+    //   entra.operating_system - Device OS
+    //   entra.trust_type       - Device trust type (e.g., "Azure AD joined")
+    //   _count          - Number of sign-in events
+    //
+    // Parameters:
+    //   - user: User email address (e.g., "jdoe@example.com")
+    //
+    // Usage:
+    //   #Vendor=microsoft
+    //   | #event.dataset=entraid.signin
+    //   | $entraid_user_app_device_summary(user="jdoe@example.com")
+    // ============================================================
+
+    | Vendor.properties.userPrincipalName = ?user
+    | groupBy([Vendor.properties.appDisplayName, Vendor.properties.deviceDetail.operatingSystem, Vendor.properties.deviceDetail.trustType], function=[count()])
+    | rename(field=Vendor.properties.appDisplayName, as=entra.app_name)
+    | rename(field=Vendor.properties.deviceDetail.operatingSystem, as=entra.operating_system)
+    | rename(field=Vendor.properties.deviceDetail.trustType, as=entra.trust_type)
+    | sort(_count, order=desc)
+_search_domain: all
+labels:
+  - entraid
+  - legal
+  - investigation
+  - device-audit
+  - app-summary

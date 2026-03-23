@@ -1,0 +1,42 @@
+$schema: https://schemas.humio.com/query/v0.6.0
+resource_id: hunt_failed_logon_thresholding
+name: hunt_failed_logon_thresholding
+description: |
+  Identifies accounts with 5+ failed Windows logon attempts, with per-hour rate calculation
+  and human-readable SubStatus enrichment (e.g. wrong password, account locked, expired).
+  Useful for detecting brute force attempts, password sprays, or misconfigured service accounts.
+  Source: Query-Hub (CrowdStrike)
+queryString: |
+  // Get Windows UserLogonFailed events
+  event_platform=Win #event_simpleName=UserLogonFailed2
+
+  // Convert SubStatus to hex for readability
+  | SubStatus_hex:=format(field=SubStatus, "%x") | SubStatus_hex:=upper(SubStatus_hex) | SubStatus_hex:=format(format="0x%s", field=[SubStatus_hex])
+
+  // Aggregate
+  | groupBy([aid, ComputerName, UserName, LogonType, SubStatus_hex, SubStatus], function=([count(aid, as=FailCount), min(ContextTimeStamp, as=FirstLogonAttempt), max(ContextTimeStamp, as=LastLogonAttempt), collect([LocalAddressIP4, aip])]))
+
+  // Rate calculations
+  | firstLastDeltaHours:=((LastLogonAttempt-FirstLogonAttempt)/60/60) | round("firstLastDeltaHours")
+  | logonAttemptsPerHour:=(FailCount/firstLastDeltaHours) | round("logonAttemptsPerHour")
+
+  // Convert timestamps from epoch to human
+  | FirstLogonAttempt:=formatTime(format="%F %T.%L", field="FirstLogonAttempt")
+  | LastLogonAttempt:=formatTime(format="%F %T.%L", field="LastLogonAttempt")
+
+  // Threshold: 5+ failures
+  | FailCount > 5
+
+  // Sort descending
+  | sort(FailCount, order=desc, limit=2000)
+
+  // Enrich LogonType and SubStatus with human-readable descriptions
+  | $falcon/helper:enrich(field=LogonType)
+  | $falcon/helper:enrich(field=SubStatus)
+_search_domain: all
+labels:
+  - hunting
+  - endpoint
+  - identity
+  - brute-force
+  - logon

@@ -1,0 +1,167 @@
+# AWS Enrich User Identity
+# Purpose: Extract and normalize user identity from AWS CloudTrail events
+# Version: 2.0
+
+$schema: https://schemas.humio.com/query/v0.6.0
+resource_id: aws_enrich_user_identity
+name: aws_enrich_user_identity
+description: |
+    Function: $aws_enrich_user_identity
+    Purpose: Extract and normalize user identity from AWS CloudTrail events.
+    Output: aws.user_identity, aws.user_type, aws.actual_user_name, aws.identity_source, aws.user_domain, aws.user_identifier, aws.role_name, aws.credential_type, aws.identity_context
+    See queryString comments for full documentation.
+queryString: |
+        // ============================================================
+        // $aws_enrich_user_identity() - User Identity Extraction
+        // ============================================================
+        // Extract and normalize user identity from AWS CloudTrail events.
+        //
+        // Input: AWS CloudTrail events with userIdentity structure
+        //
+        // Output Fields:
+        //   aws.user_identity    - Normalized user identifier (email, username, or role)
+        //   aws.user_type        - CloudTrail identity type (AssumedRole, IAMUser, Root, etc.)
+        //   aws.actual_user_name  - Raw username from CloudTrail session or identity
+        //   aws.identity_source  - How the identity was resolved (sso_federation, iam_user, etc.)
+        //   aws.user_domain      - Domain portion of email-based identities
+        //   aws.user_identifier  - Username portion stripped of domain
+        //   aws.role_name        - Extracted role name for AssumedRole identities
+        //   aws.credential_type  - "temporary" or "long_term" based on identity type
+        //   aws.identity_context - Summary string: "Type: X, Source: Y, Credential: Z"
+        //
+        // Usage:
+        //   #repo=cloudtrail
+        //   | $aws_enrich_user_identity()
+        //   | groupBy([aws.user_type, aws.identity_source], function=count())
+        // ============================================================
+
+        // Step 1: Extract base identity fields from CloudTrail structure
+        | UserARN := Vendor.userIdentity.arn
+        | aws.user_type := Vendor.userIdentity.type
+        | PrincipalId := Vendor.userIdentity.principalId
+        | AccountId := Vendor.userIdentity.accountId
+        | AccessKeyId := Vendor.userIdentity.accessKeyId
+        
+        // Step 2: Extract session context if available (AssumedRole, FederatedUser)
+        | case {
+            Vendor.userIdentity.sessionContext.sessionIssuer.userName=* |
+                aws.actual_user_name := Vendor.userIdentity.sessionContext.sessionIssuer.userName
+                | SessionIssuerARN := Vendor.userIdentity.sessionContext.sessionIssuer.arn
+                | SessionIssuerAccountId := Vendor.userIdentity.sessionContext.sessionIssuer.accountId
+                ;
+            Vendor.userIdentity.userName=* |
+                aws.actual_user_name := Vendor.userIdentity.userName
+                ;
+            user.name=* |
+                aws.actual_user_name := user.name
+                ;
+            * | aws.actual_user_name := "unknown";
+        }
+        
+        // Step 3: Extract user identity based on identity type
+        | case {
+            // AssumedRole - Most complex case, multiple extraction strategies
+            aws.user_type="AssumedRole" |
+                case {
+                    // Strategy 1: Extract email from principalId (SSO/federated users)
+                    PrincipalId=/:[^:]*@[^:]+$/ |
+                        aws.user_identity := replace(field=PrincipalId, regex="^[^:]+:", with="")
+                        | aws.identity_source := "sso_federation"
+                        ;
+                    // Strategy 2: Extract session name from ARN (often contains user identifier)
+                    UserARN=/assumed-role\/[^\/]+\/([^\/]+)$/ |
+                        UserARN=/assumed-role\/[^\/]+\/(?<SessionName>[^\/]+)$/
+                        | case {
+                            SessionName=~/@/ | aws.user_identity := SessionName | aws.identity_source := "role_session_email";
+                            SessionName=~/^[0-9a-f]{8}-/ | aws.user_identity := aws.actual_user_name | aws.identity_source := "role_session_guid" | SessionGUID := SessionName;
+                            * | aws.user_identity := SessionName | aws.identity_source := "role_session_name";
+                        }
+                        ;
+                    // Strategy 3: Use role name if no better identifier found
+                    * | aws.user_identity := aws.actual_user_name | aws.identity_source := "assumed_role";
+                }
+                ;
+                
+            // IAMUser - Direct user account
+            aws.user_type="IAMUser" |
+                aws.user_identity := aws.actual_user_name
+                | aws.identity_source := "iam_user"
+                ;
+                
+            // Root - AWS account root user
+            aws.user_type="Root" |
+                aws.user_identity := format("root@account-%s", field=[AccountId])
+                | aws.identity_source := "root_account"
+                ;
+                
+            // FederatedUser - SAML or Web Identity Federation
+            aws.user_type="FederatedUser" |
+                case {
+                    aws.actual_user_name=~/@/ | aws.user_identity := aws.actual_user_name | aws.identity_source := "federated_user";
+                    * | aws.user_identity := format("%s@federated", field=[aws.actual_user_name]) | aws.identity_source := "federated_user";
+                }
+                ;
+                
+            // AWSService - AWS service making calls on behalf of resources
+            aws.user_type="AWSService" |
+                aws.user_identity := Vendor.userIdentity.invokedBy
+                | aws.identity_source := "aws_service"
+                ;
+                
+            // AWSAccount - Cross-account access
+            aws.user_type="AWSAccount" |
+                aws.user_identity := format("account-%s", field=[AccountId])
+                | aws.identity_source := "cross_account"
+                ;
+                
+            // Unknown or missing type
+            * | aws.user_identity := "unknown" | aws.identity_source := "unknown";
+        }
+        
+        // Step 4: Normalize user identity to lowercase for consistency
+        | aws.user_identity := lower(aws.user_identity)
+        | aws.actual_user_name := lower(aws.actual_user_name)
+        
+        // Step 5: Extract domain from email-based identities
+        | case {
+            aws.user_identity=~/@(.+)$/ | aws.user_identity=/@(?<aws.user_domain>.+)$/;
+            * | aws.user_domain := "no_domain";
+        }
+        
+        // Step 6: Create user identifier (strip domain for matching)
+        | case {
+            aws.user_identity=~/@/ | aws.user_identity=/^(?<aws.user_identifier>[^@]+)@.*$/;
+            aws.user_identity != "unknown" | aws.user_identifier := aws.user_identity;
+            * | aws.user_identifier := "unknown";
+        }
+        
+        // Step 7: Extract role name from ARN for AssumedRole
+        | case {
+            aws.user_type="AssumedRole" AND UserARN=* |
+                UserARN=/assumed-role\/(?<aws.role_name>[^\/]+)\//
+                ;
+            * | aws.role_name := "no_role";
+        }
+        
+        // Step 8: Determine if identity is long-term or temporary
+        | case {
+            aws.user_type="AssumedRole" | aws.credential_type := "temporary";
+            aws.user_type="FederatedUser" | aws.credential_type := "temporary";
+            aws.user_type="IAMUser" AND AccessKeyId=~/^ASIA/ | aws.credential_type := "temporary";
+            aws.user_type="IAMUser" | aws.credential_type := "long_term";
+            aws.user_type="Root" | aws.credential_type := "long_term";
+            * | aws.credential_type := "unknown";
+        }
+        
+        // Step 9: Add identity context summary
+        | aws.identity_context := format("Type: %s, Source: %s, Credential: %s",
+            field=[aws.user_type, aws.identity_source, aws.credential_type])
+_search_domain: all
+labels:
+  - aws
+  - user-enrichment
+  - cloudtrail
+  - identity
+  - enrichment
+  - iam
+  - security

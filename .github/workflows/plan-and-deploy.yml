@@ -1,0 +1,502 @@
+name: Deploy CrowdStrike Resources
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'resources/**/*.yaml'
+      - 'resources/**/*.yml'
+      - 'resources/rtr_scripts/scripts/**'        # RTR script files (.ps1, .sh)
+      - 'resources/rtr_put_files/binaries/**'     # RTR binary files
+  pull_request:
+    # Always run on PRs to test deployment system and show current state
+    types: [opened, synchronize, reopened]
+  workflow_dispatch:  # Allow manual trigger
+
+jobs:
+  plan:
+    runs-on: ubuntu-latest
+    outputs:
+      has_changes: ${{ steps.plan.outputs.has_changes }}
+      plan_summary: ${{ steps.plan.outputs.summary }}
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v3
+      with:
+        token: ${{ secrets.GITHUB_TOKEN }}
+        fetch-depth: 0
+
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.11'
+
+    - name: Install dependencies
+      run: |
+        pip install -r requirements.txt
+
+    - name: Set up credentials
+      run: |
+        mkdir -p ~/.config/falcon
+        cat > ~/.config/falcon/credentials.json << EOF
+        {
+          "falcon_client_id": "${{ secrets.FALCON_CLIENT_ID }}",
+          "falcon_client_secret": "${{ secrets.FALCON_CLIENT_SECRET }}",
+          "customer_id": "${{ secrets.FALCON_CUSTOMER_ID }}",
+          "base_url": "${{ secrets.FALCON_BASE_URL }}"
+        }
+        EOF
+
+    - name: Setup state management
+      run: |
+        mkdir -p .crowdstrike
+        # Try to get state from repository first
+        if [ -f .crowdstrike/deployed_state.json ]; then
+          echo "✅ Found state file in repository"
+        else
+          echo "⚠️ No state file found - will initialize empty state"
+          cat > .crowdstrike/deployed_state.json << 'EOF'
+        {
+          "version": "3.0",
+          "last_updated": null,
+          "resources": {},
+          "resource_graph": {
+            "nodes": [],
+            "edges": []
+          }
+        }
+        EOF
+        fi
+
+    - name: Validate templates
+      run: |
+        echo "🔍 Validating all resource templates..."
+        python scripts/resource_deploy.py validate | tee validation_output.txt
+
+        echo "## Template Validation" >> $GITHUB_STEP_SUMMARY
+        echo '```' >> $GITHUB_STEP_SUMMARY
+        cat validation_output.txt >> $GITHUB_STEP_SUMMARY
+        echo '```' >> $GITHUB_STEP_SUMMARY
+
+    - name: Generate deployment plan
+      id: plan
+      env:
+        COLUMNS: 200  # Ensure wide terminal output for readable logs
+        NO_COLOR: 1   # Disable color codes for clean output
+      run: |
+        # Generate plan with error handling using unified CLI (all resource types)
+        echo "🔍 Generating deployment plan for all resources..."
+        python scripts/resource_deploy.py plan --remote-state 2>&1 | tee plan_output.txt
+
+        # Check if plan succeeded (exit code 0 or 1 are both valid - 1 means validation errors but plan still generated)
+        PLAN_EXIT_CODE=${PIPESTATUS[0]}
+        if [ $PLAN_EXIT_CODE -gt 1 ]; then
+          echo "❌ Plan generation failed with exit code $PLAN_EXIT_CODE"
+          cat plan_output.txt
+          exit 1
+        fi
+
+        # Detect if there are changes by looking for action symbols in output
+        if grep -qE '^\+|^~|^-' plan_output.txt 2>/dev/null || \
+           grep -q "to create\|to update\|to delete" plan_output.txt; then
+          has_changes="true"
+
+          # Try to extract counts from summary line
+          if grep -q "Plan:" plan_output.txt; then
+            plan_summary=$(grep "Plan:" plan_output.txt | head -1 | sed 's/[^0-9a-zA-Z :,]//g')
+          else
+            plan_summary="Changes detected - see plan details below"
+          fi
+        else
+          has_changes="false"
+          plan_summary="No changes detected"
+        fi
+
+        echo "has_changes=$has_changes" >> $GITHUB_OUTPUT
+        echo "summary=$plan_summary" >> $GITHUB_OUTPUT
+
+        # Show detailed plan in step summary
+        echo "## Deployment Plan" >> $GITHUB_STEP_SUMMARY
+        echo '```' >> $GITHUB_STEP_SUMMARY
+        cat plan_output.txt >> $GITHUB_STEP_SUMMARY
+        echo '```' >> $GITHUB_STEP_SUMMARY
+
+    - name: Comment PR with deployment plan
+      if: github.event_name == 'pull_request'
+      uses: actions/github-script@v8
+      with:
+        script: |
+          const fs = require('fs');
+          const hasChanges = '${{ steps.plan.outputs.has_changes }}' === 'true';
+          const planSummary = `${{ steps.plan.outputs.summary }}`;
+
+          // Function to strip ANSI color codes
+          function stripAnsi(str) {
+            // eslint-disable-next-line no-control-regex
+            return str.replace(/\x1b\[[0-9;]*m/g, '');
+          }
+
+          // Parse plan output to extract clean summary
+          function extractPlanSummary(rawOutput) {
+            const output = stripAnsi(rawOutput);
+            const lines = output.split('\n');
+
+            let summary = {
+              toCreate: 0,
+              toUpdate: 0,
+              toDelete: 0,
+              noChange: 0,
+              changes: []
+            };
+
+            // Extract statistics
+            for (const line of lines) {
+              // Look for "Plan Summary:" line - primary source of truth
+              if (line.includes('Plan Summary:')) {
+                // Extract from patterns like "Plan Summary: 3 to create, 2 to update, 1 to delete, 551 unchanged"
+                const createMatch = line.match(/(\d+) to create/);
+                const updateMatch = line.match(/(\d+) to update/);
+                const deleteMatch = line.match(/(\d+) to delete/);
+                const unchangedMatch = line.match(/(\d+) unchanged/);
+
+                if (createMatch) summary.toCreate = parseInt(createMatch[1]);
+                if (updateMatch) summary.toUpdate = parseInt(updateMatch[1]);
+                if (deleteMatch) summary.toDelete = parseInt(deleteMatch[1]);
+                if (unchangedMatch) summary.noChange = parseInt(unchangedMatch[1]);
+              }
+
+              // Fallback: Look for "Plan complete:" log line
+              if (line.includes('Plan complete:') && line.includes('to create') && line.includes('to update') && line.includes('to delete')) {
+                const match = line.match(/(\d+) to create.*?(\d+) to update.*?(\d+) to delete/);
+                if (match) {
+                  summary.toCreate = parseInt(match[1]);
+                  summary.toUpdate = parseInt(match[2]);
+                  summary.toDelete = parseInt(match[3]);
+                }
+              }
+
+              // Fallback: Look for middle-output no-change count
+              if (line.includes('resources with no changes')) {
+                const match = line.match(/(\d+) resources with no changes/);
+                if (match) summary.noChange = parseInt(match[1]);
+              }
+
+              // Extract specific changes (creates/updates/deletes) - all resource types
+              if (line.match(/^[+~-] (detection|workflow|saved_search|lookup_file|rtr_script|rtr_put_file)\./)) {
+                const action = line[0];
+                const resource = line.substring(2).trim();
+                summary.changes.push({ action, resource });
+              }
+            }
+
+            return summary;
+          }
+
+          let planDetails = '';
+          try {
+            const rawOutput = fs.readFileSync('plan_output.txt', 'utf8');
+            const summary = extractPlanSummary(rawOutput);
+
+            // Build clean summary message
+            if (summary.toCreate + summary.toUpdate + summary.toDelete === 0) {
+              planDetails = `**No changes** - All ${summary.noChange} resources are up to date.`;
+            } else {
+              planDetails = `**Summary:**\n`;
+              if (summary.toCreate > 0) planDetails += `- ✨ ${summary.toCreate} new resource(s) to create\n`;
+              if (summary.toUpdate > 0) planDetails += `- 🔄 ${summary.toUpdate} resource(s) to update\n`;
+              if (summary.toDelete > 0) planDetails += `- 🗑️ ${summary.toDelete} resource(s) to delete\n`;
+              if (summary.noChange > 0) planDetails += `- ✅ ${summary.noChange} resource(s) unchanged\n`;
+
+              // Show changed resources
+              if (summary.changes.length > 0) {
+                const MAX_VISIBLE = 20;
+                const changeLines = summary.changes.map(change => {
+                  const icon = change.action === '+' ? '✨' : change.action === '~' ? '🔄' : '🗑️';
+                  return `${icon} \`${change.resource}\``;
+                });
+
+                if (summary.changes.length <= MAX_VISIBLE) {
+                  planDetails += `\n**Changes:**\n`;
+                  planDetails += changeLines.join('\n') + '\n';
+                } else {
+                  // Show first few inline, rest in collapsible section
+                  planDetails += `\n**Changes** (${summary.changes.length} total):\n`;
+                  planDetails += changeLines.slice(0, MAX_VISIBLE).join('\n') + '\n';
+                  planDetails += `\n<details>\n<summary>Show ${summary.changes.length - MAX_VISIBLE} more changes...</summary>\n\n`;
+                  planDetails += changeLines.slice(MAX_VISIBLE).join('\n') + '\n';
+                  planDetails += `\n</details>\n`;
+                }
+              }
+            }
+          } catch (e) {
+            planDetails = planSummary || 'Plan details not available';
+          }
+
+          const comment = hasChanges ?
+            `## 🚀 Production Deployment Plan
+
+          ${planDetails}
+
+          ---
+          > 🔒 **Deployment Process**: Changes will be deployed to production when this PR is merged (requires approval).
+          >
+          > 📋 **Full Details**: View complete logs in the [Actions workflow run](${context.payload.pull_request?.html_url}/checks).
+          ` :
+            `## ✅ No Resource Changes
+
+          No resource changes detected in this PR.
+
+          ---
+          > 📋 View current deployment status in the [Actions workflow run](${context.payload.pull_request?.html_url}/checks).
+          `;
+
+          // Update or create comment
+          const { data: comments } = await github.rest.issues.listComments({
+            owner: context.repo.owner,
+            repo: context.repo.repo,
+            issue_number: context.issue.number,
+          });
+
+          const botComment = comments.find(comment =>
+            comment.user.type === 'Bot' &&
+            comment.body.includes('Production Deployment Plan')
+          );
+
+          if (botComment) {
+            await github.rest.issues.updateComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              comment_id: botComment.id,
+              body: comment
+            });
+          } else {
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+              body: comment
+            });
+          }
+
+    - name: Cleanup credentials
+      if: always()
+      run: |
+        rm -f ~/.config/falcon/credentials.json
+        echo "✅ Credentials cleaned up"
+
+  # Deploy to production on main branch merge (requires approval)
+  deploy-production:
+    needs: plan
+    if: github.ref == 'refs/heads/main' && needs.plan.outputs.has_changes == 'true'
+    runs-on: ubuntu-latest
+    environment: production  # Requires approval
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v6
+
+    - name: Set up Python
+      uses: actions/setup-python@v6
+      with:
+        python-version: '3.11'
+
+    - name: Install dependencies
+      run: |
+        pip install -r requirements.txt
+
+    - name: Set up credentials
+      run: |
+        mkdir -p ~/.config/falcon
+        cat > ~/.config/falcon/credentials.json << EOF
+        {
+          "falcon_client_id": "${{ secrets.FALCON_CLIENT_ID }}",
+          "falcon_client_secret": "${{ secrets.FALCON_CLIENT_SECRET }}",
+          "customer_id": "${{ secrets.FALCON_CUSTOMER_ID }}",
+          "base_url": "${{ secrets.FALCON_BASE_URL }}"
+        }
+        EOF
+
+    - name: Setup state management
+      run: |
+        echo "📁 State management setup - using .crowdstrike/ directory"
+        mkdir -p .crowdstrike
+        echo "✅ State directory ready"
+
+    - name: Create backup before production deployment
+      run: |
+        echo "📦 Creating backup before production deployment..."
+        python scripts/create_backup.py create --description "Pre-production backup $(date -u '+%Y-%m-%d %H:%M:%S UTC')"
+      env:
+        GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+    - name: Deploy all resources to production
+      id: deploy
+      env:
+        COLUMNS: 200  # Ensure wide terminal output for readable logs
+      run: |
+        echo "🚀 Deploying all resources to PRODUCTION using unified CLI..."
+        echo "This will deploy: detections, workflows, saved searches, lookup files, RTR scripts, and RTR files"
+
+        # Run deployment with full progressive output visible in runner logs
+        # Capture exit code but don't fail immediately - need to save state first
+        # --remote-state syncs state to/from NGSIEM lookup file for consistency
+        set +e  # Don't exit on error
+        python scripts/resource_deploy.py apply --remote-state --auto-approve | tee production_deploy.log
+        DEPLOY_EXIT_CODE=$?
+        set -e  # Re-enable exit on error
+
+        # Store exit code for later steps
+        echo "deploy_exit_code=$DEPLOY_EXIT_CODE" >> $GITHUB_OUTPUT
+
+        # Also add results to step summary
+        echo "## Production Deployment Results" >> $GITHUB_STEP_SUMMARY
+        echo '```' >> $GITHUB_STEP_SUMMARY
+        cat production_deploy.log >> $GITHUB_STEP_SUMMARY
+        echo '```' >> $GITHUB_STEP_SUMMARY
+
+        # Show deployment status
+        if [ $DEPLOY_EXIT_CODE -eq 0 ]; then
+          echo "✅ Deployment completed successfully" | tee -a $GITHUB_STEP_SUMMARY
+        else
+          echo "⚠️ Deployment completed with errors (exit code: $DEPLOY_EXIT_CODE)" | tee -a $GITHUB_STEP_SUMMARY
+          echo "State will still be saved to maintain consistency." | tee -a $GITHUB_STEP_SUMMARY
+        fi
+
+    - name: Commit updated state and templates
+      run: |
+        echo "💾 Committing updated state and resource templates..."
+        git config --local user.email "action@github.com"
+        git config --local user.name "GitHub Action"
+
+        # Pull latest changes to avoid conflicts
+        git pull origin main || true
+
+        # Verify state file exists
+        if [ -f .crowdstrike/deployed_state.json ]; then
+          echo "✅ State file ready for commit"
+        else
+          echo "⚠️ No state file found to commit"
+        fi
+
+        # Commit both state and resource template changes (templates updated with IDs during deployment)
+        git add .crowdstrike/ resources/
+        if ! git diff --staged --quiet; then
+          git commit -m "Update deployment state and resource templates
+
+          This commit updates:
+          - Deployment state to reflect current CrowdStrike resources (all 6 types)
+          - Resource template files with IDs for future deployments
+
+          This ensures proper state management and prevents duplicate resource creation."
+
+          # Retry push up to 3 times in case of conflicts
+          for i in {1..3}; do
+            if git push; then
+              echo "✅ State and templates committed successfully"
+              break
+            else
+              echo "⚠️ Push failed, pulling and retrying... ($i/3)"
+              git pull --rebase origin main
+            fi
+          done
+        else
+          echo "ℹ️ No changes to commit"
+        fi
+
+    - name: Upload deployment logs
+      if: always()
+      uses: actions/upload-artifact@v4
+      with:
+        name: production-deployment-logs
+        path: production_deploy.log
+        retention-days: 30
+
+    - name: Show deployment state
+      if: always()
+      run: |
+        echo "📊 Deployment State (All Resources)" >> $GITHUB_STEP_SUMMARY
+        echo '```' >> $GITHUB_STEP_SUMMARY
+        python scripts/resource_deploy.py show >> $GITHUB_STEP_SUMMARY 2>&1 || echo "No state available yet" >> $GITHUB_STEP_SUMMARY
+        echo '```' >> $GITHUB_STEP_SUMMARY
+
+    - name: Upload metrics
+      if: always()
+      uses: actions/upload-artifact@v4
+      with:
+        name: deployment-metrics
+        path: ~/.crowdstrike/metrics/
+        retention-days: 90
+        if-no-files-found: ignore
+
+    - name: Check deployment status and fail if errors occurred
+      if: always()
+      run: |
+        DEPLOY_EXIT_CODE=${{ steps.deploy.outputs.deploy_exit_code }}
+        if [ "$DEPLOY_EXIT_CODE" != "0" ]; then
+          echo "❌ Deployment had errors (exit code: $DEPLOY_EXIT_CODE)"
+          echo "State has been saved but workflow is marked as failed due to deployment errors."
+          echo "Check the deployment logs above for details on which resources failed."
+          exit 1
+        else
+          echo "✅ Deployment completed successfully with no errors"
+        fi
+
+    - name: Cleanup credentials
+      if: always()
+      run: |
+        rm -f ~/.config/falcon/credentials.json
+        echo "✅ Credentials cleaned up"
+
+  # Weekly drift detection
+  drift-detection:
+    runs-on: ubuntu-latest
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v3
+
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.9'
+
+    - name: Install dependencies
+      run: |
+        pip install -r requirements.txt
+
+    - name: Set up credentials
+      run: |
+        mkdir -p ~/.config/falcon
+        cat > ~/.config/falcon/credentials.json << EOF
+        {
+          "falcon_client_id": "${{ secrets.FALCON_CLIENT_ID }}",
+          "falcon_client_secret": "${{ secrets.FALCON_CLIENT_SECRET }}",
+          "customer_id": "${{ secrets.FALCON_CUSTOMER_ID }}",
+          "base_url": "${{ secrets.FALCON_BASE_URL }}"
+        }
+        EOF
+
+    - name: Setup state management
+      run: |
+        mkdir -p .crowdstrike
+        if [ -f .crowdstrike/deployed_state.json ]; then
+          echo "✅ State file found"
+        fi
+
+    - name: Check for drift
+      run: |
+        echo "🔍 Checking for configuration drift (all resources)..."
+        echo "## Drift Detection Report (All Resources)" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo '```' >> $GITHUB_STEP_SUMMARY
+        python scripts/resource_deploy.py drift >> $GITHUB_STEP_SUMMARY 2>&1
+        echo '```' >> $GITHUB_STEP_SUMMARY
+
+    - name: Cleanup credentials
+      if: always()
+      run: |
+        rm -f ~/.config/falcon/credentials.json
+        echo "✅ Credentials cleaned up"

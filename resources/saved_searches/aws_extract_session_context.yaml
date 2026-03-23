@@ -1,0 +1,118 @@
+# AWS Session Extractor Function
+# Purpose: Extract and normalize user identity from AWS CloudTrail events
+# Version: 2.0
+
+$schema: https://schemas.humio.com/query/v0.6.0
+resource_id: aws_extract_session_context
+name: aws_extract_session_context
+description: |
+    Function: $aws_extract_session_context
+    Purpose: Extract MFA, session age, and security context from AWS CloudTrail session data.
+    Output: aws.mfa_used, aws.session_creation_time, aws.source_identity, aws.session_age_seconds, aws.session_age_category, aws.session_security_score, aws.session_security, aws.has_identity_chaining, aws.session_context
+    Parameters:
+      - calculate_session_age: "true" to compute session age metrics
+    See queryString comments for full documentation.
+queryString: |
+    // ============================================================
+    // $aws_extract_session_context() - Session Context Extraction
+    // ============================================================
+    // Extract MFA, session age, and security context from AWS CloudTrail
+    // session data.
+    //
+    // Output Fields:
+    //   aws.mfa_used              - Whether MFA was used ("true", "false", "unknown")
+    //   aws.session_creation_time  - When the session was created
+    //   aws.source_identity       - Original identity in chained role assumptions
+    //   aws.session_age_seconds    - Age of session in seconds (requires calculate_session_age="true")
+    //   aws.session_age_category   - very_new (<5m), recent (<1h), active (<8h), aging (<24h), stale
+    //   aws.session_security_score - Numeric security score based on MFA, age, and chaining
+    //   aws.session_security      - strong, good, weak, poor, or unknown
+    //   aws.has_identity_chaining  - true if session involves chained role assumptions
+    //   aws.session_context       - Summary: "MFA: X, Age: Y, Security: Z, Chained: W"
+    //
+    // Parameters:
+    //   calculate_session_age - "true" to compute aws.session_age_seconds and aws.session_age_category
+    //
+    // Usage:
+    //   #repo=cloudtrail
+    //   | $aws_extract_session_context(calculate_session_age="true")
+    // ============================================================
+
+    // Step 1: Extract MFA information
+    | case {
+        Vendor.userIdentity.sessionContext.attributes.mfaAuthenticated=* |
+            aws.mfa_used := Vendor.userIdentity.sessionContext.attributes.mfaAuthenticated
+            ;
+        * | aws.mfa_used := "unknown";
+    }
+    
+    // Step 2: Extract session creation time
+    | case {
+        Vendor.userIdentity.sessionContext.attributes.creationDate=* |
+            aws.session_creation_time := Vendor.userIdentity.sessionContext.attributes.creationDate
+            ;
+        * | aws.session_creation_time := "unknown";
+    }
+    
+    // Step 3: Extract source identity (for identity chaining)
+    | case {
+        Vendor.userIdentity.sessionContext.sourceIdentity=* |
+            aws.source_identity := Vendor.userIdentity.sessionContext.sourceIdentity
+            ;
+        * | aws.source_identity := "none";
+    }
+    
+    // Step 4: Calculate session age if enabled
+    | case {
+        calculate_session_age="true" AND aws.session_creation_time != "unknown" |
+            aws.session_age_seconds := (@timestamp - aws.session_creation_time) / 1000
+            | case {
+                aws.session_age_seconds < 300 | aws.session_age_category := "very_new";  // < 5 minutes
+                aws.session_age_seconds < 3600 | aws.session_age_category := "recent";    // < 1 hour
+                aws.session_age_seconds < 28800 | aws.session_age_category := "active";   // < 8 hours
+                aws.session_age_seconds < 86400 | aws.session_age_category := "aging";    // < 24 hours
+                * | aws.session_age_category := "stale";
+            }
+            ;
+        * | aws.session_age_seconds := 0 | aws.session_age_category := "unknown";
+    }
+    
+    // Step 5: Add session security flags
+    | case {
+        aws.mfa_used="true" | aws.session_security_score := 100;
+        aws.mfa_used="false" | aws.session_security_score := 40;
+        * | aws.session_security_score := 0;
+    }
+    
+    | case {
+        aws.session_age_category="very_new" | aws.session_security_score := aws.session_security_score - 10;
+        aws.session_age_category="stale" | aws.session_security_score := aws.session_security_score - 20;
+        * ;
+    }
+    
+    | case {
+        aws.source_identity != "none" | aws.has_identity_chaining := true | aws.session_security_score := aws.session_security_score - 15;
+        * | aws.has_identity_chaining := false;
+    }
+    
+    // Step 6: Categorize session security
+    | case {
+        aws.session_security_score >= 80 | aws.session_security := "strong";
+        aws.session_security_score >= 60 | aws.session_security := "good";
+        aws.session_security_score >= 40 | aws.session_security := "weak";
+        aws.session_security_score >= 20 | aws.session_security := "poor";
+        * | aws.session_security := "unknown";
+    }
+    
+    // Step 7: Create session context summary
+    | aws.session_context := format("MFA: %s, Age: %s, Security: %s, Chained: %s",
+        field=[aws.mfa_used, aws.session_age_category, aws.session_security, aws.has_identity_chaining])
+_search_domain: all
+labels:
+  - aws
+  - user-enrichment
+  - cloudtrail
+  - identity
+  - enrichment
+  - iam
+  - security

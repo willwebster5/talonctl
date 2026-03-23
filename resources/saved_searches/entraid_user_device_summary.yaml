@@ -1,0 +1,53 @@
+# Entra ID User Device Summary
+# Purpose: Get summary of all devices a user has used for sign-ins
+# Version: 1.0
+
+$schema: https://schemas.humio.com/query/v0.6.0
+resource_id: entraid_user_device_summary
+name: entraid_user_device_summary
+description: |
+  Function: $entraid_user_device_summary(user)
+  Purpose: Get summary of all devices a user has used for Entra ID sign-ins.
+  Output: entra.device_name, entra.operating_system, entra.trust_type, entra.device_id, _count, entra.first_seen, entra.last_seen
+  See queryString comments for full documentation.
+queryString: |
+    // ============================================================
+    // $entraid_user_device_summary() - Device Usage Summary
+    // ============================================================
+    // Get summary of all devices a user has used for Entra ID sign-ins.
+    // Groups by device name, OS, trust type, and device ID with counts
+    // and first/last seen timestamps.
+    //
+    // Input: Entra ID sign-in events (#Vendor=microsoft, #event.dataset=entraid.signin)
+    //
+    // Output Fields:
+    //   entra.device_name      - Device display name
+    //   entra.operating_system - Device OS
+    //   entra.trust_type       - Device trust type (e.g., "Azure AD joined")
+    //   entra.device_id        - Entra device ID
+    //   _count          - Number of sign-in events
+    //   entra.first_seen       - Earliest sign-in timestamp
+    //   entra.last_seen        - Latest sign-in timestamp
+    //
+    // Parameters:
+    //   - user: User email address (e.g., "jdoe@example.com")
+    //
+    // Usage:
+    //   #Vendor=microsoft
+    //   | #event.dataset=entraid.signin
+    //   | $entraid_user_device_summary(user="jdoe@example.com")
+    // ============================================================
+
+    | Vendor.properties.userPrincipalName = ?user
+    | groupBy([Vendor.properties.deviceDetail.displayName, Vendor.properties.deviceDetail.operatingSystem, Vendor.properties.deviceDetail.trustType, Vendor.properties.deviceDetail.deviceId], function=[count(), min(@timestamp, as=entra.first_seen), max(@timestamp, as=entra.last_seen)])
+    | rename(field=Vendor.properties.deviceDetail.displayName, as=entra.device_name)
+    | rename(field=Vendor.properties.deviceDetail.operatingSystem, as=entra.operating_system)
+    | rename(field=Vendor.properties.deviceDetail.trustType, as=entra.trust_type)
+    | rename(field=Vendor.properties.deviceDetail.deviceId, as=entra.device_id)
+    | sort(_count, order=desc)
+_search_domain: all
+labels:
+  - entraid
+  - legal
+  - investigation
+  - device-audit

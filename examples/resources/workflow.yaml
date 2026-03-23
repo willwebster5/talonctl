@@ -1,0 +1,29 @@
+# Example: Falcon Fusion Workflow
+# A simple notification workflow triggered by a high-severity detection.
+# NOTE: No workflows existed in the source repo — this is a synthetic example
+# showing the YAML template format the IaC engine expects.
+
+type: workflow
+resource_id: notify_on_critical_detection
+name: Notify on Critical Detection
+description: |
+  Sends a notification when a critical-severity detection fires.
+  Trigger: detection with severity >= 70.
+  Action: Posts to a webhook endpoint.
+definition:
+  # The definition field contains the Falcon Fusion workflow JSON.
+  # Export an existing workflow from the Falcon console to get the full structure,
+  # or use the fusion-workflows skill to build one from scratch.
+  #
+  # Example structure (simplified):
+  # {
+  #   "trigger": { "type": "detection", "conditions": { "severity": { "gte": 70 } } },
+  #   "actions": [
+  #     { "type": "webhook", "config": { "url": "https://hooks.example.com/alerts" } }
+  #   ]
+  # }
+trigger:
+  type: detection
+tags:
+  - notification
+  - critical

@@ -1,0 +1,152 @@
+# Entra ID Lookup User Mapping
+# Purpose: Map user email to comprehensive identity information
+# Version: 1.0
+
+$schema: https://schemas.humio.com/query/v0.6.0
+resource_id: entraid_lookup_user_mapping
+name: entraid_lookup_user_mapping
+description: |
+  Function: $entraid_lookup_user_mapping()
+  Purpose: Map user email to comprehensive identity information (department, manager, employee ID, etc.).
+  Output: entra.object_id, entra.department, entra.job_title, entra.manager_email, entra.department_category, entra.account_age
+  Requires: entra.user_email field (use $entraid_enrich_user_identity first)
+  See queryString comments for full documentation.
+queryString: |
+    // ============================================================
+    // $entraid_lookup_user_mapping() - User Identity Mapping
+    // ============================================================
+    // Map user email to comprehensive identity information
+    // (department, manager, employee ID, etc.).
+    //
+    // Output Fields:
+    //   entra.object_id         - Entra ID object identifier
+    //   entra.upn               - User principal name
+    //   entra.display_name      - User display name
+    //   entra.employee_id       - Employee identifier
+    //   entra.department        - Department name
+    //   entra.job_title         - Job title
+    //   entra.manager_email     - Manager email address
+    //   entra.manager_name      - Manager display name
+    //   entra.office_location   - Office location
+    //   entra.github_username   - GitHub username
+    //   entra.aws_username      - AWS username
+    //   entra.department_category - Normalized department (technology/security/finance/etc.)
+    //   entra.is_account_disabled  - Boolean: account is disabled
+    //   entra.has_manager         - Boolean: manager is assigned
+    //   entra.account_age         - Account age bucket (new_24h/new_week/new_month/recent_90d/established)
+    //
+    // Requires: entra.user_email field (use $entraid_enrich_user_identity first)
+    // Lookup file: entraid-user-identity-mapping.csv
+    //
+    // Usage:
+    //   #repo=microsoft_graphapi
+    //   | $entraid_enrich_user_identity()
+    //   | $entraid_lookup_user_mapping()
+    //   | groupBy([Department, JobTitle], function=count())
+    // ============================================================
+
+    // Ensure user identity is enriched first
+    | case {
+        entra.user_email=* ;
+        * | entra.user_email := "unknown";
+    }
+
+    // Step 1: Lookup comprehensive user identity mapping
+    | match(file="entraid-user-identity-mapping.csv",
+            field=entra.user_email,
+            column=user_email,
+            include=[
+                entra_id,
+                entra_upn,
+                display_name,
+                employee_id,
+                department,
+                job_title,
+                manager_email,
+                manager_id,
+                manager_name,
+                office_location,
+                created_date,
+                account_enabled,
+                github_username,
+                aws_username
+            ],
+            strict=false)
+
+    // Step 2: Set defaults for users not found in lookup
+    | default(value="unknown", field=[
+        entra_id,
+        entra_upn,
+        display_name,
+        employee_id,
+        department,
+        job_title,
+        manager_email,
+        manager_id,
+        manager_name,
+        office_location,
+        github_username,
+        aws_username
+    ])
+    | default(value="true", field=[account_enabled])
+    | default(value="1970-01-01T00:00:00Z", field=[created_date])
+
+    // Step 3: Normalize department classification
+    | case {
+        department =~ /technology|tech|engineering|software|dev/ | entra.department_category := "technology";
+        department =~ /security|cyber|infosec|compliance/ | entra.department_category := "security";
+        department =~ /finance|accounting|treasury/ | entra.department_category := "finance";
+        department =~ /hr|human resources|people/ | entra.department_category := "human_resources";
+        department =~ /operations|ops|infrastructure/ | entra.department_category := "operations";
+        department =~ /sales|marketing|business/ | entra.department_category := "business";
+        department =~ /legal|risk|audit/ | entra.department_category := "governance";
+        department = "unknown" | entra.department_category := "unknown";
+        * | entra.department_category := "other";
+    }
+
+    // Step 4: Add user status flags
+    | case {
+        account_enabled="false" | entra.is_account_disabled := true;
+        * | entra.is_account_disabled := false;
+    }
+
+    | case {
+        manager_email != "unknown" | entra.has_manager := true;
+        * | entra.has_manager := false;
+    }
+
+    // Step 5: Create account age indicator
+    | _accountAgeSeconds := (now() - created_date)
+    | case {
+        _accountAgeSeconds < 86400 | entra.account_age := "new_24h";
+        _accountAgeSeconds < 604800 | entra.account_age := "new_week";
+        _accountAgeSeconds < 2592000 | entra.account_age := "new_month";
+        _accountAgeSeconds < 7776000 | entra.account_age := "recent_90d";
+        * | entra.account_age := "established";
+    }
+
+    // Rename CSV fields to ECS-style output names
+    | rename(field=entra_id, as=entra.object_id)
+    | rename(field=entra_upn, as=entra.upn)
+    | rename(field=display_name, as=entra.display_name)
+    | rename(field=employee_id, as=entra.employee_id)
+    | rename(field=department, as=entra.department)
+    | rename(field=job_title, as=entra.job_title)
+    | rename(field=manager_email, as=entra.manager_email)
+    | rename(field=manager_name, as=entra.manager_name)
+    | rename(field=office_location, as=entra.office_location)
+    | rename(field=github_username, as=entra.github_username)
+    | rename(field=aws_username, as=entra.aws_username)
+
+    // Cleanup temp fields
+    | drop([_accountAgeSeconds])
+_search_domain: all
+labels:
+  - entraid
+  - entra-id
+  - identity
+  - enrichment
+  - lookup
+  - microsoft
+dependencies:
+  - saved_search.entraid_enrich_user_identity

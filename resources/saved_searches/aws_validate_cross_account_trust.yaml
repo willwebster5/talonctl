@@ -1,0 +1,159 @@
+# AWS Validate Cross Account Trust
+# Purpose: Validate and classify AWS cross-account trust relationships
+# Version: 1.0
+
+$schema: https://schemas.humio.com/query/v0.6.0
+resource_id: aws_validate_cross_account_trust
+name: aws_validate_cross_account_trust
+description: |
+  Function: $aws_validate_cross_account_trust
+  Purpose: Validate and classify AWS cross-account trust relationships.
+  Output: aws.source_account, aws.target_account, aws.cross_account_trust_type, aws.cross_account_risk, aws.cross_account_operation_type, aws.is_suspicious_pattern, aws.cross_account_user_name, aws.cross_account_session_name, aws.cross_account_role_name, aws.cross_account_event_time, aws.is_source_account_trusted, aws.is_target_account_trusted, aws.is_partner_account
+  See queryString comments for full documentation.
+queryString: |
+    // ============================================================
+    // $aws_validate_cross_account_trust() - Cross-Account Trust Validation
+    // ============================================================
+    // Validate and classify AWS cross-account trust relationships.
+    //
+    // Input: AWS CloudTrail events with userIdentity and requestParameters
+    //
+    // Output Fields:
+    //   aws.source_account        - Account initiating the action
+    //   aws.target_account        - Target account from role/trust ARN
+    //   aws.cross_account_trust_type            - internal-trust, partner-trust, external-trust, unknown-target, unknown-source
+    //   aws.cross_account_risk     - low, medium, high, or critical
+    //   aws.cross_account_operation_type        - role-assumption, role-creation, policy-update, etc.
+    //   aws.is_suspicious_pattern    - true if suspicious cross-account behavior detected
+    //   aws.cross_account_user_name             - Extracted principal username
+    //   aws.cross_account_session_name          - Session issuer username
+    //   aws.cross_account_role_name             - Target role name from ARN
+    //   aws.cross_account_event_time            - Formatted event timestamp
+    //   aws.is_source_account_trusted - true if source account is in org
+    //   aws.is_target_account_trusted - true if target account is in org
+    //   aws.is_partner_account     - true if either account is a known partner
+    //
+    // Usage:
+    //   #repo=cloudtrail eventName=AssumeRole
+    //   | $aws_validate_cross_account_trust()
+    //   | aws.cross_account_risk="critical"
+    // ============================================================
+
+    // Extract account IDs from various fields
+    | case {
+        Vendor.userIdentity.accountId=* | aws.source_account := Vendor.userIdentity.accountId;
+        Vendor.recipientAccountId=* | aws.source_account := Vendor.recipientAccountId;
+        * | aws.source_account := "unknown";
+    }
+
+    // Extract target account from role ARN using regex
+    | aws.target_account := "unknown"
+    | case {
+        Vendor.requestParameters.roleArn=/arn:aws:iam::(?<targetAcct>\d+):/ | aws.target_account := targetAcct;
+        Vendor.requestParameters.trustedEntityArn=/arn:aws:iam::(?<targetAcct>\d+):/ | aws.target_account := targetAcct;
+        *;
+    }
+
+    // Check trust relationship - Source Account
+    // Using in() function with proper syntax
+    // Trusted AWS Organization Accounts:
+    //   Add your organization's AWS account IDs below.
+    //   Example format:
+    //   111111111111 - Management (aws_org_management@example.com)
+    //   222222222222 - Production (aws_production@example.com)
+    //   333333333333 - Dev/UAT (aws_dev@example.com)
+    | aws.is_source_account_trusted := false
+    | case {
+        in(field=aws.source_account, values=["111111111111", "222222222222", "333333333333"]) | aws.is_source_account_trusted := true;
+        *;
+    }
+
+    // Check trust relationship - Target Account
+    | aws.is_target_account_trusted := false
+    | case {
+        in(field=aws.target_account, values=["111111111111", "222222222222", "333333333333"]) | aws.is_target_account_trusted := true;
+        *;
+    }
+
+    // Check if partner account (e.g., monitoring, data platform, security vendors)
+    // Add your partner/vendor AWS account IDs below.
+    | aws.is_partner_account := false
+    | case {
+        in(field=aws.source_account, values=["444444444444", "555555555555"]) | aws.is_partner_account := true;
+        in(field=aws.target_account, values=["444444444444", "555555555555"]) | aws.is_partner_account := true;
+        *;
+    }
+
+    // Classify trust relationship
+    | aws.cross_account_trust_type := "external-trust"
+    | case {
+        aws.is_source_account_trusted=true AND aws.is_target_account_trusted=true | aws.cross_account_trust_type := "internal-trust";
+        aws.is_partner_account=true | aws.cross_account_trust_type := "partner-trust";
+        aws.is_source_account_trusted=true AND aws.target_account="unknown" | aws.cross_account_trust_type := "unknown-target";
+        aws.source_account="unknown" AND aws.is_target_account_trusted=true | aws.cross_account_trust_type := "unknown-source";
+        *;
+    }
+
+    // Risk assessment
+    | aws.cross_account_risk := "unknown"
+    | case {
+        aws.cross_account_trust_type="internal-trust" | aws.cross_account_risk := "low";
+        aws.cross_account_trust_type="partner-trust" | aws.cross_account_risk := "medium";
+        aws.cross_account_trust_type="unknown-target" | aws.cross_account_risk := "high";
+        aws.cross_account_trust_type="unknown-source" | aws.cross_account_risk := "high";
+        aws.cross_account_trust_type="external-trust" | aws.cross_account_risk := "critical";
+        *;
+    }
+
+    // Add context about the operation using regex patterns
+    | aws.cross_account_operation_type := "other"
+    | case {
+        event.action=/AssumeRole/ | aws.cross_account_operation_type := "role-assumption";
+        event.action=/CreateRole/ | aws.cross_account_operation_type := "role-creation";
+        event.action=/UpdateAssumeRolePolicy/ | aws.cross_account_operation_type := "policy-update";
+        event.action=/AttachRolePolicy/ | aws.cross_account_operation_type := "policy-attachment";
+        event.action=/PutRolePolicy/ | aws.cross_account_operation_type := "policy-inline-attachment";
+        event.action=/CreateServiceLinkedRole/ | aws.cross_account_operation_type := "service-linked-role";
+        event.action=/UpdateRole/ | aws.cross_account_operation_type := "role-update";
+        *;
+    }
+
+    // Flag suspicious patterns using regex for role name matching
+    | aws.is_suspicious_pattern := false
+    | case {
+        // External account assuming admin role
+        aws.cross_account_risk="critical" AND Vendor.requestParameters.roleArn=/[Aa]dmin/ | aws.is_suspicious_pattern := true;
+        // New trust to unknown account
+        aws.cross_account_risk="high" AND aws.cross_account_operation_type="role-creation" | aws.is_suspicious_pattern := true;
+        // Policy changes from external
+        aws.cross_account_risk="critical" AND aws.cross_account_operation_type="policy-update" | aws.is_suspicious_pattern := true;
+        // Service-linked role from unknown source
+        aws.cross_account_risk="high" AND aws.cross_account_operation_type="service-linked-role" | aws.is_suspicious_pattern := true;
+        *;
+    }
+
+    // Extract additional context using regex with capture groups
+    | aws.cross_account_user_name := Vendor.userIdentity.principalId
+    | case {
+        aws.cross_account_user_name=/.*:(?<user>.*)/ | aws.cross_account_user_name := user;
+        *;
+    }
+
+    | aws.cross_account_session_name := Vendor.userIdentity.sessionContext.sessionIssuer.userName
+
+    | aws.cross_account_role_name := "unknown"
+    | case {
+        Vendor.requestParameters.roleArn=/.*role\/(?<role>.*)/ | aws.cross_account_role_name := role;
+        *;
+    }
+
+    | aws.cross_account_event_time := formatTime("%Y-%m-%d %H:%M:%S", field=@timestamp)
+_search_domain: all
+labels:
+  - aws
+  - cloudtrail
+  - cross-account
+  - trust
+  - iam
+  - security
+  - risk

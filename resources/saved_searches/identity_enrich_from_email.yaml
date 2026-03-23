@@ -1,0 +1,249 @@
+# Identity Enrich From Email
+# Purpose: Universal identity enrichment using EntraID lookups (IDP source of truth)
+# Version: 1.0
+
+$schema: https://schemas.humio.com/query/v0.6.0
+resource_id: identity_enrich_from_email
+name: identity_enrich_from_email
+description: |
+  Function: $identity_enrich_from_email
+  Purpose: Universal identity enrichment using EntraID lookups (IDP source of truth).
+  Prerequisite: UserEmail field must be set before calling.
+  Output: All fields use id.* prefix (id.display_name, id.department, id.job_title, id.is_admin, id.trust_level, id.risk_score, id.user_risk_profile, id.enrichment_status, id.entra_profile_link, and 20+ more)
+  See queryString comments for full documentation.
+
+queryString: |
+    // ============================================================
+    // $identity_enrich_from_email() - Universal Identity Enrichment
+    // ============================================================
+    // Enrich any event with identity context using EntraID as IDP source of truth.
+    //
+    // Prerequisite: UserEmail field must be set before calling (lowercase email).
+    // Use vendor-specific extraction functions first, then call this for enrichment.
+    //
+    // Output Fields:
+    //   Organizational:
+    //     id.display_name      - Full display name from EntraID
+    //     id.department           - Department name
+    //     id.job_title             - Job title
+    //     id.manager_name          - Direct manager display name
+    //     id.manager_email         - Direct manager email
+    //     id.office_location       - Office location
+    //   Security Flags:
+    //     id.is_admin              - true if user has admin privileges
+    //     id.is_contractor         - true if user is a contractor
+    //     id.is_engineer           - true if user is in engineering
+    //     id.is_executive          - true if user is an executive
+    //     id.has_prod_access        - true if user has production access
+    //     id.has_github_access      - true if user has GitHub access
+    //     id.is_service_account     - true if account is a service account
+    //     id.has_pim_eligibility    - true if user has PIM-eligible roles
+    //     id.is_quarantined        - true if account is quarantined
+    //   Trust & Risk:
+    //     id.trust_level           - Trust classification (e.g., "high", "medium", "low")
+    //     id.trust_score           - Numeric trust score
+    //     id.risk_score            - Numeric risk score
+    //     id.privilege_tier        - Privilege tier classification
+    //     id.account_type          - Account type classification
+    //   Cross-Platform:
+    //     id.aws_username           - Mapped AWS username
+    //     id.github_username        - Mapped GitHub username
+    //     id.admin_account          - Associated admin account
+    //   Entra Links:
+    //     id.entra_object_id         - EntraID object ID
+    //     id.entra_profile_link      - Direct link to Entra user profile
+    //     id.entra_signins_link      - Direct link to Entra sign-in logs
+    //     id.entra_audit_link        - Direct link to Entra audit logs
+    //   Derived:
+    //     id.user_identifier        - Username portion of email (before @)
+    //     id.user_risk_profile       - Risk profile: quarantined, privileged, executive, elevated_access, external, service, standard
+    //     id.enrichment_status      - Enrichment result: full, partial, email_only, none
+    //
+    // Required Lookup Files:
+    //   - entraid-users.csv
+    //   - entraid-user-flags.csv
+    //   - entraid-user-trust.csv
+    //   - entraid-user-identity-mapping.csv
+    //
+    // Usage:
+    //   // AWS CloudTrail events
+    //   #repo=cloudtrail
+    //   | $aws_enrich_user_identity()
+    //   | UserEmail := lower(UserIdentity)
+    //   | $identity_enrich_from_email()
+    //   | id.is_admin="True"
+    //
+    //   // Google Workspace events
+    //   #Vendor="google"
+    //   | UserEmail := lower(actor.email)
+    //   | $identity_enrich_from_email()
+    //
+    //   // Generic - any source with email field
+    //   | UserEmail := lower(user.email)
+    //   | $identity_enrich_from_email()
+    // ============================================================
+
+    // Prerequisite Check: UserEmail must exist
+    // Note: Function expects UserEmail to be set before calling
+    // If not set, enrichment will return empty fields
+
+    // Create user identifier (username before @)
+    | case {
+        UserEmail=/@/ | UserEmail=/^(?<id.user_identifier>[^@]+)@.*$/;
+        UserEmail=* | id.user_identifier := UserEmail;
+        * | id.user_identifier := "";
+    }
+
+    // ============================================================
+    // Step 1: Enrich with EntraID organizational data
+    // ============================================================
+    | match(file="entraid-users.csv",
+            field=UserEmail,
+            column=email,
+            include=[
+                display_name,
+                department,
+                job_title,
+                manager_name,
+                manager_principal_name,
+                office_location,
+                account_enabled,
+                user_id
+            ],
+            strict=false)
+
+    // Rename organizational fields
+    | id.display_name := display_name
+    | id.department := department
+    | id.job_title := job_title
+    | id.manager_name := manager_name
+    | id.manager_email := manager_principal_name
+    | id.office_location := office_location
+    | id.account_enabled := account_enabled
+    | id.entra_object_id := user_id
+
+    // Generate Entra portal links (only if we have the object ID)
+    | case {
+        user_id=* | id.entra_profile_link := format("https://entra.microsoft.com/#view/Microsoft_AAD_UsersAndTenants/UserProfileMenuBlade/~/overview/userId/%s/hidePreviewBanner~/true", field=[user_id]);
+        * | id.entra_profile_link := "";
+    }
+    | case {
+        user_id=* | id.entra_signins_link := format("https://entra.microsoft.com/#view/Microsoft_AAD_UsersAndTenants/UserProfileMenuBlade/~/SignIns/userId/%s/hidePreviewBanner~/true", field=[user_id]);
+        * | id.entra_signins_link := "";
+    }
+    | case {
+        user_id=* | id.entra_audit_link := format("https://entra.microsoft.com/#view/Microsoft_AAD_UsersAndTenants/UserProfileMenuBlade/~/Audit/userId/%s/hidePreviewBanner~/true", field=[user_id]);
+        * | id.entra_audit_link := "";
+    }
+
+    // ============================================================
+    // Step 2: Enrich with security flags
+    // ============================================================
+    | match(file="entraid-user-flags.csv",
+            field=UserEmail,
+            column=user_email,
+            include=[
+                is_admin,
+                is_contractor,
+                is_engineer,
+                is_executive,
+                is_service,
+                has_prod_access,
+                has_github_access,
+                has_pim_eligibility,
+                is_quarantined
+            ],
+            strict=false)
+
+    // Rename flag fields
+    | id.is_admin := is_admin
+    | id.is_contractor := is_contractor
+    | id.is_engineer := is_engineer
+    | id.is_executive := is_executive
+    | id.is_service_account := is_service
+    | id.has_prod_access := has_prod_access
+    | id.has_github_access := has_github_access
+    | id.has_pim_eligibility := has_pim_eligibility
+    | id.is_quarantined := is_quarantined
+
+    // ============================================================
+    // Step 3: Enrich with trust and risk data
+    // ============================================================
+    | match(file="entraid-user-trust.csv",
+            field=UserEmail,
+            column=user_email,
+            include=[
+                trust_level,
+                trust_score,
+                risk_score,
+                privilege_tier,
+                account_type
+            ],
+            strict=false)
+
+    // Rename trust fields
+    | id.trust_level := trust_level
+    | id.trust_score := trust_score
+    | id.risk_score := risk_score
+    | id.privilege_tier := privilege_tier
+    | id.account_type := account_type
+
+    // ============================================================
+    // Step 4: Enrich with cross-platform identity mapping
+    // ============================================================
+    | match(file="entraid-user-identity-mapping.csv",
+            field=UserEmail,
+            column=user_email,
+            include=[
+                aws_username,
+                github_username,
+                admin_account
+            ],
+            strict=false)
+
+    // Rename identity mapping fields
+    | id.aws_username := aws_username
+    | id.github_username := github_username
+    | id.admin_account := admin_account
+
+    // ============================================================
+    // Step 5: Compute derived fields
+    // ============================================================
+
+    // Set enrichment status based on what was found
+    | case {
+        id.department=* | id.enrichment_status := "full";
+        id.display_name=* | id.enrichment_status := "partial";
+        UserEmail=* UserEmail!="" | id.enrichment_status := "email_only";
+        * | id.enrichment_status := "none";
+    }
+
+    // Classify user risk profile based on flags
+    | case {
+        id.is_quarantined="True" | id.user_risk_profile := "quarantined";
+        id.is_admin="True" | id.user_risk_profile := "privileged";
+        id.is_executive="True" | id.user_risk_profile := "executive";
+        id.has_prod_access="True" | id.user_risk_profile := "elevated_access";
+        id.is_contractor="True" | id.user_risk_profile := "external";
+        id.is_service_account="True" | id.user_risk_profile := "service";
+        * | id.user_risk_profile := "standard";
+    }
+
+    // ============================================================
+    // Step 6: Clean up temporary lookup fields
+    // ============================================================
+    | drop([display_name, department, job_title, manager_name,
+            manager_principal_name, office_location, account_enabled, user_id,
+            is_admin, is_contractor, is_engineer, is_executive, is_service,
+            has_prod_access, has_github_access, has_pim_eligibility, is_quarantined,
+            trust_level, trust_score, risk_score, privilege_tier, account_type,
+            aws_username, github_username, admin_account])
+
+_search_domain: all
+labels:
+  - identity
+  - enrichment
+  - universal
+  - entraid
+  - user
+  - cross-platform

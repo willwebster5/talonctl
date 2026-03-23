@@ -1,0 +1,21 @@
+$schema: https://schemas.humio.com/query/v0.6.0
+resource_id: hunt_lateral_movement
+name: hunt_lateral_movement
+description: |
+  Detects outbound connections to SMB (445), RDP (3389), and WinRM (5985) targeting
+  non-RFC1918 addresses. Enriches with process and user context.
+  Note: filters to external IPs only — for internal lateral movement, remove the cidr exclusion.
+  Source: Query-Hub (ByteRay GmbH) — MITRE T1021.001, T1021.002, T1135
+queryString: |
+  #event_simpleName=NetworkConnect
+  | (RemotePort=445 OR RemotePort=3389 OR RemotePort=5985)
+  | !cidr(RemoteAddressIP4, subnet=["10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16"])
+  | join({#event_simpleName=ProcessRollup2}, field=[aid, RawProcessId], include=[ImageFileName, CommandLine])
+  | join({#event_simpleName=UserIdentity}, field=AuthenticationID, include=[UserName])
+  | table([aid, UserName, ImageFileName, RemoteAddressIP4, RemotePort, CommandLine])
+_search_domain: all
+labels:
+  - hunting
+  - endpoint
+  - lateral-movement
+  - T1021

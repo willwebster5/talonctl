@@ -1,0 +1,33 @@
+$schema: https://schemas.humio.com/query/v0.6.0
+resource_id: qh___edr_freeze_hunting
+name: qh___edr_freeze_hunting
+description: |
+  Hunts for EDR-Freeze tool activity by detecting process handle operations against
+  Falcon via WerFaultSecure.exe with command-line switching patterns. Includes process
+  lineage tree and direct link to Process Explorer (US-2).
+  Source: Query-Hub (CrowdStrike)
+queryString: |
+  // Look for process handles opening Falcon
+  #event_simpleName=FalconProcessHandleOpDetectInfo FileName="WerFaultSecure.exe"
+
+  // Check for command line switching signal
+  | GrandparentCommandLine=/\.exe"?\s+\d+\s+\d+$/ OR ParentCommandLine=/\.exe"?\s+\d+\s+\d+$/ OR CommandLine=/\.exe"?\s+\d+\s+\d+$/
+
+  // Create process lineage tree for easier reading
+  | ProcessLineage:=format(format="%s (%s)\n   └ %s (%s)\n      └ %s (%s)", field=[GrandparentImageFileName, GrandparentCommandLine, ParentImageFileName, ParentCommandLine, ImageFileName, CommandLine])
+
+  // Output details to table
+  | table([@timestamp, aid, ComputerName, ContextProcessId, ProcessLineage])
+
+  // Create direct link to Process Explorer — US-2
+  | rootURL  := "https://falcon.us-2.crowdstrike.com/"
+  | format("[Responsible Process](%sgraphs/process-explorer/tree?id=pid:%s:%s)", field=["rootURL", "aid", "ContextProcessId"], as="Process Explorer")
+
+  // Remove unnecessary fields
+  | drop([rootURL, ContextProcessId])
+_search_domain: all
+labels:
+  - hunting
+  - endpoint
+  - evasion
+  - edr-tampering

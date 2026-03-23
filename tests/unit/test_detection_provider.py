@@ -1,0 +1,435 @@
+"""
+Unit tests for DetectionProvider
+"""
+
+import pytest
+import sys
+from pathlib import Path
+from unittest.mock import Mock, MagicMock, patch
+from datetime import datetime, timezone
+
+# Add scripts directory to path
+SCRIPTS_DIR = Path(__file__).parent.parent.parent / "scripts"
+sys.path.insert(0, str(SCRIPTS_DIR))
+
+from providers.detection_provider import DetectionProvider
+from core import ResourceAction
+
+
+class TestDetectionProvider:
+    """Test suite for DetectionProvider"""
+
+    @pytest.fixture
+    def mock_falcon(self):
+        """Create mock Falcon client"""
+        return Mock()
+
+    @pytest.fixture
+    def provider(self, mock_falcon):
+        """Create DetectionProvider instance"""
+        return DetectionProvider(mock_falcon)
+
+    def test_get_resource_type(self, provider):
+        """Test resource type identifier"""
+        assert provider.get_resource_type() == "detection"
+
+    def test_validate_template_valid(self, provider):
+        """Test validation of valid template"""
+        template = {
+            'name': 'Test Rule',
+            'description': 'A test detection rule',
+            'severity': 50,
+            'search': {
+                'query': '#event_simpleName=ProcessRollup2 | select([aid, FileName])'
+            }
+        }
+
+        errors = provider.validate_template(template)
+        assert errors == []
+
+    def test_validate_template_missing_fields(self, provider):
+        """Test validation catches missing required fields"""
+        template = {
+            'name': 'Test Rule'
+            # Missing: description, severity, search
+        }
+
+        errors = provider.validate_template(template)
+        assert len(errors) >= 3
+        assert any('description' in err for err in errors)
+        assert any('severity' in err for err in errors)
+        assert any('search' in err for err in errors)
+
+    def test_validate_template_invalid_severity(self, provider):
+        """Test validation catches invalid severity"""
+        template = {
+            'name': 'Test Rule',
+            'description': 'Test',
+            'severity': 99,  # Invalid
+            'search': {'query': 'test'}
+        }
+
+        errors = provider.validate_template(template)
+        assert any('severity' in err.lower() for err in errors)
+
+    def test_validate_template_missing_query(self, provider):
+        """Test validation catches missing query"""
+        template = {
+            'name': 'Test Rule',
+            'description': 'Test',
+            'severity': 50,
+            'search': {}  # No query
+        }
+
+        errors = provider.validate_template(template)
+        assert any('query' in err.lower() for err in errors)
+
+    def test_validate_template_invalid_status(self, provider):
+        """Test validation catches invalid status"""
+        template = {
+            'name': 'Test Rule',
+            'description': 'Test',
+            'severity': 50,
+            'status': 'paused',  # Invalid
+            'search': {'query': 'test'}
+        }
+
+        errors = provider.validate_template(template)
+        assert any('status' in err.lower() for err in errors)
+
+    def test_fetch_remote_state(self, provider, mock_falcon):
+        """Test fetching remote rule state"""
+        mock_falcon.command.return_value = {
+            'status_code': 200,
+            'body': {
+                'resources': [{
+                    'rule_id': 'test123',
+                    'name': 'Test Rule',
+                    'description': 'Test',
+                    'severity': 50,
+                    'status': 'active',
+                    'query': 'test query'
+                }]
+            }
+        }
+
+        result = provider.fetch_remote_state('test123')
+
+        assert result is not None
+        assert result['rule_id'] == 'test123'
+        assert result['name'] == 'Test Rule'
+        assert 'search' in result
+        assert result['search']['query'] == 'test query'
+
+    def test_fetch_remote_state_not_found(self, provider, mock_falcon):
+        """Test fetching non-existent rule"""
+        mock_falcon.command.return_value = {
+            'status_code': 200,
+            'body': {'resources': []}
+        }
+
+        result = provider.fetch_remote_state('nonexistent')
+        assert result is None
+
+    def test_plan_create(self, provider):
+        """Test planning rule creation"""
+        template = {
+            'name': 'New Rule',
+            'description': 'Test',
+            'severity': 50,
+            'search': {'query': 'test'}
+        }
+
+        change = provider.plan_create(template, 'rules/test.yaml')
+
+        assert change.action == ResourceAction.CREATE
+        assert change.resource_type == 'detection'
+        assert change.resource_name == 'New Rule'
+        assert change.resource_id is None
+        assert change.new_value == template
+        assert change.template_path == 'rules/test.yaml'
+
+    def test_plan_update_with_changes(self, provider):
+        """Test planning rule update when changes exist"""
+        template = {
+            'name': 'Test Rule',
+            'description': 'Updated description',
+            'severity': 70,
+            'search': {'query': 'new query'}
+        }
+
+        current_state = {
+            'rule_id': 'rule123',
+            'name': 'Test Rule',
+            'description': 'Old description',
+            'severity': 50,
+            'search': {'query': 'old query'}
+        }
+
+        change = provider.plan_update(template, current_state, 'rules/test.yaml')
+
+        assert change.action == ResourceAction.UPDATE
+        assert change.resource_type == 'detection'
+        assert change.resource_name == 'Test Rule'
+        assert change.resource_id == 'rule123'
+        assert 'description' in change.changes
+        assert 'severity' in change.changes
+        assert 'search' in change.changes
+
+    def test_plan_update_no_changes(self, provider):
+        """Test planning rule update when no changes exist"""
+        template = {
+            'name': 'Test Rule',
+            'description': 'Test',
+            'severity': 50,
+            'search': {'query': 'test query'}
+        }
+
+        current_state = template.copy()
+        current_state['rule_id'] = 'rule123'
+
+        change = provider.plan_update(template, current_state, 'rules/test.yaml')
+
+        assert change.action == ResourceAction.NO_CHANGE
+        assert change.resource_id == 'rule123'
+
+    def test_plan_delete(self, provider, mock_falcon):
+        """Test planning rule deletion"""
+        mock_falcon.command.return_value = {
+            'status_code': 200,
+            'body': {
+                'resources': [{
+                    'rule_id': 'rule123',
+                    'name': 'Test Rule',
+                    'description': 'Test',
+                    'severity': 50
+                }]
+            }
+        }
+
+        change = provider.plan_delete('rule123', 'Test Rule')
+
+        assert change.action == ResourceAction.DELETE
+        assert change.resource_type == 'detection'
+        assert change.resource_name == 'Test Rule'
+        assert change.resource_id == 'rule123'
+
+    def test_apply_create(self, provider, mock_falcon):
+        """Test creating a rule"""
+        template = {
+            'name': 'New Rule',
+            'description': 'Test',
+            'severity': 50,
+            'search': {'query': 'test query'}
+        }
+
+        mock_falcon.command.return_value = {
+            'status_code': 201,
+            'body': {
+                'resources': [{
+                    'rule_id': 'new123',
+                    'name': 'New Rule'
+                }]
+            }
+        }
+
+        result = provider.apply_create(template)
+
+        assert result['rule_id'] == 'new123'
+        assert result['name'] == 'New Rule'
+        assert 'created_at' in result
+        mock_falcon.command.assert_called_once()
+
+    def test_apply_update(self, provider, mock_falcon):
+        """Test updating a rule"""
+        template = {
+            'name': 'Updated Rule',
+            'description': 'New description',
+            'severity': 70,
+            'search': {'query': 'new query'}
+        }
+
+        mock_falcon.command.return_value = {
+            'status_code': 200,
+            'body': {
+                'resources': [{
+                    'rule_id': 'rule123',
+                    'name': 'Updated Rule'
+                }]
+            }
+        }
+
+        result = provider.apply_update('rule123', template)
+
+        assert result['rule_id'] == 'rule123'
+        assert result['name'] == 'Updated Rule'
+        assert 'updated_at' in result
+        mock_falcon.command.assert_called_once()
+
+    def test_apply_delete(self, provider, mock_falcon):
+        """Test deleting a rule"""
+        mock_falcon.command.return_value = {
+            'status_code': 200,
+            'body': {}
+        }
+
+        result = provider.apply_delete('rule123')
+
+        assert result['rule_id'] == 'rule123'
+        assert 'deleted_at' in result
+        mock_falcon.command.assert_called_once_with(
+            'delete_rules_v1',
+            ids=['rule123']
+        )
+
+    def test_compute_content_hash_identical(self, provider):
+        """Test hash computation produces identical results for same content"""
+        template1 = {
+            'name': 'Test',
+            'description': 'Test rule',
+            'severity': 50,
+            'search': {'query': 'test'}
+        }
+
+        template2 = template1.copy()
+
+        hash1 = provider.compute_content_hash(template1)
+        hash2 = provider.compute_content_hash(template2)
+
+        assert hash1 == hash2
+
+    def test_compute_content_hash_different(self, provider):
+        """Test hash computation produces different results for different content"""
+        template1 = {
+            'name': 'Test',
+            'description': 'Test rule',
+            'severity': 50,
+            'search': {'query': 'test'}
+        }
+
+        template2 = {
+            'name': 'Test',
+            'description': 'Different description',
+            'severity': 50,
+            'search': {'query': 'test'}
+        }
+
+        hash1 = provider.compute_content_hash(template1)
+        hash2 = provider.compute_content_hash(template2)
+
+        assert hash1 != hash2
+
+    def test_extract_dependencies_query_id(self, provider):
+        """Test extracting saved search dependency from query_id"""
+        template = {
+            'name': 'Test',
+            'search': {
+                'query_id': 'aws_accounts_search'
+            }
+        }
+
+        deps = provider.extract_dependencies(template)
+
+        assert 'saved_search.aws_accounts_search' in deps
+
+    def test_extract_dependencies_readfile(self, provider):
+        """Test extracting lookup file dependency from readFile()"""
+        template = {
+            'name': 'Test',
+            'search': {
+                'query': 'readFile(fileName="aws_service_accounts") | ...'
+            }
+        }
+
+        deps = provider.extract_dependencies(template)
+
+        assert 'lookup_file.aws_service_accounts' in deps
+
+    def test_extract_dependencies_in_function(self, provider):
+        """Test extracting lookup file dependency from in() function"""
+        template = {
+            'name': 'Test',
+            'search': {
+                'query': '| srcIpAddr in(name="trusted_ips")'
+            }
+        }
+
+        deps = provider.extract_dependencies(template)
+
+        assert 'lookup_file.trusted_ips' in deps
+
+    def test_extract_dependencies_multiple(self, provider):
+        """Test extracting multiple dependencies"""
+        template = {
+            'name': 'Test',
+            'search': {
+                'query': 'readFile(fileName="aws_accounts") | srcIpAddr in(name="trusted_ips")',
+                'query_id': 'base_search'
+            }
+        }
+
+        deps = provider.extract_dependencies(template)
+
+        assert len(deps) == 3
+        assert 'saved_search.base_search' in deps
+        assert 'lookup_file.aws_accounts' in deps
+        assert 'lookup_file.trusted_ips' in deps
+
+    def test_prepare_rule_payload(self, provider):
+        """Test preparing API payload from template"""
+        template = {
+            'name': 'Test Rule',
+            'description': 'Test description',
+            'severity': 50,
+            'status': 'active',
+            'search': {
+                'query': 'test query',
+                'use_ingest_time': True,
+                'search_window': 24,
+                'search_window_unit': 'hour'
+            },
+            'mitre_attack': [
+                {'tactic': 'TA0001', 'technique': 'T1078'}
+            ]
+        }
+
+        payload = provider._prepare_rule_payload(template)
+
+        assert payload['name'] == 'Test Rule'
+        assert payload['description'] == 'Test description'
+        assert payload['severity'] == 50
+        assert payload['status'] == 'active'
+        assert payload['query'] == 'test query'
+        assert payload['use_ingest_time'] is True
+        assert payload['search_window'] == 24
+        assert payload['search_window_unit'] == 'hour'
+        assert 'mitre_attack' in payload
+
+    def test_prepare_rule_payload_includes_template_id_when_present(self, provider):
+        """template_id in YAML should be passed to create payload for lineage tracking."""
+        template = {
+            'name': 'AWS Root Login',
+            'description': 'Detects root login',
+            'severity': 70,
+            'status': 'active',
+            'template_id': 'tmpl-abc123',
+            'search': {'filter': '#repo=cloudtrail', 'lookback': '-70m'},
+        }
+        payload = provider._prepare_rule_payload(template)
+        assert payload.get('template_id') == 'tmpl-abc123'
+
+    def test_prepare_rule_payload_omits_template_id_when_absent(self, provider):
+        """Rules without template_id (custom rules) should not include the field."""
+        template = {
+            'name': 'Custom Rule',
+            'description': 'A custom rule',
+            'severity': 50,
+            'status': 'active',
+            'search': {'filter': '#repo=cloudtrail'},
+        }
+        payload = provider._prepare_rule_payload(template)
+        assert 'template_id' not in payload
+
+
+if __name__ == "__main__":
+    pytest.main([__file__, "-v"])

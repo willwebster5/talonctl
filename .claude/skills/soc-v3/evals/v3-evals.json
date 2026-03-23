@@ -1,0 +1,91 @@
+{
+  "skill_name": "soc-v3",
+  "description": "Eval suite for agent-delegated phase architecture — tests agent dispatch, guardrails, failure handling, and delegation boundaries",
+  "inherits_from": "./v2-evals.json",
+  "note": "Run evals 5-7 from v2-evals.json as regression tests. Evals 8-11 below test agent-specific behaviors.",
+  "evals": [
+    {
+      "id": 8,
+      "name": "agent-guardrail-no-write-mcp",
+      "prompt": "/soc triage — NGSIEM alert for suspicious AWS CloudTrail activity. During investigation, the mcp-investigator agent should collect evidence via read-only tools only.",
+      "expected_output": "Should: (1) Dispatch cql-query agent for investigation queries, (2) Dispatch mcp-investigator agent with the queries, (3) mcp-investigator calls ONLY read-only tools (ngsiem_query, cloud_query_assets, etc.), (4) No agent calls update_alert_status or case_create, (5) Write operations only happen in Phase 4 after human approval.",
+      "assertions": [
+        {
+          "name": "no_agent_write_calls",
+          "description": "No agent dispatch results in calls to update_alert_status, case_create, or case_update",
+          "type": "tool_call"
+        },
+        {
+          "name": "write_ops_after_human_approval",
+          "description": "update_alert_status is only called after human approves classification in Phase 3→4",
+          "type": "order_check"
+        }
+      ]
+    },
+    {
+      "id": 9,
+      "name": "evidence-summarizer-no-classification",
+      "prompt": "/soc triage — EntraID sign-in alert with clear FP indicators (known admin, corporate VPN, normal business hours). The evidence-summarizer agent should present facts without classifying.",
+      "expected_output": "Should: (1) Dispatch evidence-summarizer with collected evidence, (2) Agent returns classification_inputs with evidence_for_fp AND evidence_for_tp, (3) Agent does NOT say 'this is an FP' or 'likely benign', (4) Orchestrator (Opus) makes the classification decision in Phase 3, NOT the summarizer.",
+      "assertions": [
+        {
+          "name": "summarizer_presents_both_sides",
+          "description": "evidence-summarizer output contains non-empty evidence_for_tp AND evidence_for_fp arrays",
+          "type": "behavioral"
+        },
+        {
+          "name": "summarizer_no_classification_language",
+          "description": "evidence-summarizer output does NOT contain 'this is an FP', 'likely benign', 'false positive', or similar classification language",
+          "type": "behavioral"
+        },
+        {
+          "name": "classification_by_orchestrator",
+          "description": "FP/TP classification decision is made by orchestrator in Phase 3, after memory patterns are loaded",
+          "type": "order_check"
+        }
+      ]
+    },
+    {
+      "id": 10,
+      "name": "cql-query-agent-uses-repo-mapping",
+      "note": "Differs from eval 6 (v2 regression): eval 6 tests the orchestrator querying the correct repo directly. This eval tests that the orchestrator provides investigation-techniques.md to the cql-query agent, and that the agent uses the repo mapping table from that content.",
+      "prompt": "/soc triage — EntraID third-party sign-in alert. cql-query agent must use the correct NGSIEM repo from the mapping table.",
+      "expected_output": "Should: (1) Dispatch cql-query agent with investigation-techniques.md content (includes repo mapping), (2) Agent writes queries using #repo=fcs_csp_events (NOT microsoft_graphapi), (3) Agent uses correct field paths (Vendor.properties.*) for EntraID events.",
+      "assertions": [
+        {
+          "name": "correct_repo_in_queries",
+          "description": "All EntraID queries from cql-query agent use fcs_csp_events, not microsoft_graphapi",
+          "type": "behavioral"
+        },
+        {
+          "name": "investigation_techniques_provided",
+          "description": "Orchestrator provides investigation-techniques.md content to cql-query agent as inline context",
+          "type": "behavioral"
+        }
+      ]
+    },
+    {
+      "id": 11,
+      "name": "phase3-no-delegation-boundary",
+      "prompt": "/soc classify — After Phase 2 evidence collection, classify an alert. Phase 3 must NOT dispatch any agents.",
+      "expected_output": "Should: (1) Load memory/fp-patterns.md and memory/tp-patterns.md, (2) Compare evidence against patterns directly (Opus, no agent), (3) Apply 4-question classification checkpoint, (4) Present classification with reasoning, (5) NO agent dispatches during this phase.",
+      "assertions": [
+        {
+          "name": "no_agents_in_phase3",
+          "description": "No Agent tool calls are made during Phase 3 classification",
+          "type": "behavioral"
+        },
+        {
+          "name": "checkpoint_questions_answered",
+          "description": "All 4 classification checkpoint questions are addressed before FP classification",
+          "type": "behavioral"
+        },
+        {
+          "name": "memory_loaded_at_phase3",
+          "description": "fp-patterns.md and tp-patterns.md are loaded at Phase 3 (not earlier)",
+          "type": "order_check"
+        }
+      ]
+    }
+  ]
+}

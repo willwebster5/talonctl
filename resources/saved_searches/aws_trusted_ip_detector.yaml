@@ -1,0 +1,140 @@
+# AWS Trusted IP Detector Function
+# Purpose: Identify and classify source IPs as trusted service providers
+# Version: 1.0
+# NOTE: Resource ID should be added after confirming existing ID in CrowdStrike NGSIEM
+
+$schema: https://schemas.humio.com/query/v0.6.0
+resource_id: aws_trusted_ip_detector
+name: aws_trusted_ip_detector
+description: |
+  Function: $aws_trusted_ip_detector
+  Purpose: Identify and classify source IPs as trusted service providers.
+  Output: SourceIP, aws.is_trusted_ip, aws.ip_category, aws.ip_provider, aws.ip_trust_level, aws.ip_trust_confidence, aws.ip_trust_reason, aws.source_asn
+  Parameters:
+    - strict_mode: "true" for only known-good IPs, "false" for broader ranges
+    - include_private: "true" to include RFC1918 private IP ranges as trusted
+  See queryString comments for full documentation.
+queryString: |
+    // ============================================================
+    // $aws_trusted_ip_detector() - Trusted IP Detection
+    // ============================================================
+    // Identify and classify source IPs as trusted service providers,
+    // monitoring services, or known automation infrastructure.
+    //
+    // Output Fields:
+    //   SourceIP        - Normalized source IP address
+    //   aws.is_trusted_ip     - true/false whether IP is a known trusted source
+    //   aws.ip_category      - sase-connection, aws-service, cicd-service, security-service,
+    //                      monitoring-service, private-network, localhost, unknown
+    //   aws.ip_provider      - Provider name (e.g. "sase", "amazonaws", "github")
+    //   aws.ip_trust_level      - trusted, untrusted, or unknown
+    //   aws.ip_trust_confidence - highest, high, medium, or none
+    //   aws.ip_trust_reason   - Descriptive reason for trust classification
+    //   aws.source_asn       - Source ASN name (if available from SASE enrichment)
+    //
+    // Parameters:
+    //   strict_mode     - "true" marks unknown IPs as "untrusted"; "false" marks as "unknown"
+    //   include_private - "true" to classify RFC1918 and localhost as trusted
+    //
+    // Usage:
+    //   #repo=base_sensor
+    //   | $aws_trusted_ip_detector(strict_mode="false", include_private="true")
+    //   | aws.is_trusted_ip=false
+    // ============================================================
+
+        // Step 1: Extract and normalize source IP addresses and asn
+        | case {
+            source_ip=* | SourceIP := source_ip;
+            * | SourceIP := "unknown";
+        }
+        
+        // ASN Normalization
+        | case {
+        source.address.asn=* | aws.source_asn := source.address.asn;
+        * | aws.source_asn := "unknown";
+        }
+
+        // Step 2: Check against known trusted service provider IPs
+        // Add your organization's trusted IP ranges and ASN providers below.
+        | case {
+            // SASE/VPN provider ASN filtering — add your provider's ASN name
+            // aws.source_asn="Your SASE Provider" | aws.is_trusted_ip := true | aws.ip_category := "sase-connection" | aws.ip_provider := "sase";
+
+            // AWS Service IPs (common region ranges — adjust for your regions)
+            SourceIP=/^35\.160\.|^52\.43\.|^54\.187\./ | aws.is_trusted_ip := true | aws.ip_category := "aws-service" | aws.ip_provider := "amazonaws";
+            SourceIP=/^34\.196\.|^52\.173\.|^3\.80\./ | aws.is_trusted_ip := true | aws.ip_category := "aws-service" | aws.ip_provider := "amazonaws";
+
+            // GitHub Actions Runner IPs
+            SourceIP=/^20\.161\.|^20\.171\.|^4\.236\.|^4\.246\./ | aws.is_trusted_ip := true | aws.ip_category := "cicd-service" | aws.ip_provider := "github";
+
+            // Azure DevOps / Microsoft Service IPs
+            SourceIP=/^40\.79\.|^52\.176\.|^13\.107\./ | aws.is_trusted_ip := true | aws.ip_category := "cicd-service" | aws.ip_provider := "microsoft";
+
+            // CrowdStrike Service IPs (based on observed patterns)
+            SourceIP=/^149\.20\.199\.|^172\.172\.87\./ | aws.is_trusted_ip := true | aws.ip_category := "security-service" | aws.ip_provider := "crowdstrike";
+
+            // Add your monitoring/observability vendor IP ranges here, e.g.:
+            // SourceIP=/^x\.x\.|^y\.y\./ | aws.is_trusted_ip := true | aws.ip_category := "monitoring-service" | aws.ip_provider := "monitoring-vendor";
+
+            // Default case
+            * | aws.is_trusted_ip := false | aws.ip_category := "unknown" | aws.ip_provider := "unknown";
+        }
+
+        // Step 3: Apply private IP range detection if enabled
+        | case {
+            include_private="true" AND SourceIP=/^10\.|^172\.(1[6-9]|2[0-9]|3[0-1])\.|^192\.168\./
+                | aws.is_trusted_ip := true
+                | aws.ip_category := "private-network"
+                | aws.ip_provider := "internal";
+
+            include_private="true" AND SourceIP=/^127\.|^169\.254\./
+                | aws.is_trusted_ip := true
+                | aws.ip_category := "localhost"
+                | aws.ip_provider := "local";
+
+            * ;  // No change for other cases
+        }
+
+        // Step 4: Apply strict mode filtering if enabled
+        | case {
+            strict_mode="true" AND aws.is_trusted_ip=false AND SourceIP=/^([0-9]{1,3}\.){3}[0-9]{1,3}$/
+                | aws.ip_trust_level := "untrusted";
+
+            strict_mode="false" AND aws.is_trusted_ip=false AND SourceIP=/^([0-9]{1,3}\.){3}[0-9]{1,3}$/
+                | aws.ip_trust_level := "unknown";
+
+            aws.is_trusted_ip=true | aws.ip_trust_level := "trusted";
+
+            * | aws.ip_trust_level := "unknown";
+        }
+
+        // Step 5: Set trust confidence level based on IP category
+        | case {
+            aws.ip_category="sase-connection" | aws.ip_trust_confidence := "highest";
+            aws.ip_category="aws-service" | aws.ip_trust_confidence := "high";
+            aws.ip_category="security-service" | aws.ip_trust_confidence := "high";
+            aws.ip_category="cicd-service" | aws.ip_trust_confidence := "medium";
+            aws.ip_category="monitoring-service" | aws.ip_trust_confidence := "medium";
+            aws.ip_category="private-network" | aws.ip_trust_confidence := "medium";
+            aws.ip_category="localhost" | aws.ip_trust_confidence := "high";
+            aws.ip_category="unknown" | aws.ip_trust_confidence := "none";
+            * | aws.ip_trust_confidence := "unknown";
+        }
+
+        // Step 6: Add descriptive metadata for trusted IPs
+        | case {
+            aws.is_trusted_ip=true | aws.ip_trust_reason := format("Detected as %s from %s with %s confidence", field=[aws.ip_category, aws.ip_provider, aws.ip_trust_confidence]);
+            * | aws.ip_trust_reason := "Not detected as trusted IP";
+        }
+    // }
+_search_domain: all
+labels:
+   - functions
+   - enrich
+   - enrichment
+   - aws
+   - trusted-ip
+   - ip-classification
+   - security
+   - network
+   - detection

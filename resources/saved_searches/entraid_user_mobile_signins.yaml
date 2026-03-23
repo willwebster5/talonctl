@@ -1,0 +1,58 @@
+# Entra ID User Mobile Sign-ins
+# Purpose: Find all sign-ins from mobile operating systems (iOS, Android, iPadOS)
+# Version: 1.0
+
+$schema: https://schemas.humio.com/query/v0.6.0
+resource_id: entraid_user_mobile_signins
+name: entraid_user_mobile_signins
+description: |
+  Function: $entraid_user_mobile_signins(user)
+  Purpose: Find all sign-ins from mobile operating systems (iOS, Android, iPadOS).
+  Output: @timestamp, entra.app_name, entra.device_name, entra.operating_system, entra.trust_type, entra.device_id, source.ip, entra.city, user_agent.original
+  See queryString comments for full documentation.
+queryString: |
+    // ============================================================
+    // $entraid_user_mobile_signins() - Mobile Device Sign-ins
+    // ============================================================
+    // Find all sign-ins from mobile operating systems (iOS, Android,
+    // iPadOS). Filters to mobile OS devices only.
+    //
+    // Input: Entra ID sign-in events (#Vendor=microsoft, #event.dataset=entraid.signin)
+    //
+    // Output Fields:
+    //   @timestamp        - Sign-in time
+    //   entra.app_name           - Application accessed
+    //   entra.device_name        - Device display name
+    //   entra.operating_system   - Device OS (iOS, Android, iPadOS)
+    //   entra.trust_type         - Device trust type
+    //   entra.device_id          - Entra device ID
+    //   source.ip         - Source IP address
+    //   entra.city        - Geo city
+    //   user_agent.original - Raw user agent string
+    //
+    // Parameters:
+    //   - user: User email address (e.g., "jdoe@example.com")
+    //
+    // Usage:
+    //   #Vendor=microsoft
+    //   | #event.dataset=entraid.signin
+    //   | $entraid_user_mobile_signins(user="jdoe@example.com")
+    // ============================================================
+
+    | Vendor.properties.userPrincipalName = ?user
+    | Vendor.properties.deviceDetail.operatingSystem = /iOS|Android|iPadOS/i
+    | select([@timestamp, Vendor.properties.appDisplayName, Vendor.properties.deviceDetail.displayName, Vendor.properties.deviceDetail.operatingSystem, Vendor.properties.deviceDetail.trustType, Vendor.properties.deviceDetail.deviceId, source.ip, source.geo.city_name, user_agent.original])
+    | rename(field=Vendor.properties.appDisplayName, as=entra.app_name)
+    | rename(field=Vendor.properties.deviceDetail.displayName, as=entra.device_name)
+    | rename(field=Vendor.properties.deviceDetail.operatingSystem, as=entra.operating_system)
+    | rename(field=Vendor.properties.deviceDetail.trustType, as=entra.trust_type)
+    | rename(field=Vendor.properties.deviceDetail.deviceId, as=entra.device_id)
+    | rename(field=source.geo.city_name, as=entra.city)
+    | sort(@timestamp)
+_search_domain: all
+labels:
+  - entraid
+  - legal
+  - investigation
+  - device-audit
+  - mobile

@@ -1,0 +1,13 @@
+# Example: RTR Script
+# Lists Windows services — a basic endpoint investigation utility.
+# The actual PowerShell script is referenced by file_path.
+
+name: list_service
+description: |
+  Lists Windows services with status, start type, and account.
+  Useful for initial endpoint triage — identify suspicious or unexpected services.
+platform:
+  - windows
+permission_type: public
+file_path: ./scripts/list_service.ps1
+comments_for_audit_log: Service enumeration for triage

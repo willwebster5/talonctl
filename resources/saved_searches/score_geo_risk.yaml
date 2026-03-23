@@ -1,0 +1,174 @@
+# Score Geo Risk
+# Purpose: Calculate geographic risk score based on IP location and user context
+# Version: 1.0
+
+$schema: https://schemas.humio.com/query/v0.6.0
+resource_id: score_geo_risk
+name: score_geo_risk
+description: |
+  Function: $score_geo_risk
+  Purpose: Calculate geographic risk score based on IP location and user context.
+  Output: geo.risk_score, geo.risk_category, geo.final_should_alert, geo.vpn_adjusted_risk, and more.
+  See queryString comments for full documentation.
+queryString: |
+    // ============================================================
+    // $score_geo_risk() - Geographic Risk Scoring
+    // ============================================================
+    // Calculate geographic risk score based on IP location, authorized
+    // countries, and user context. Supports VPN trust adjustments when
+    // paired with $sase_validate_connection_source().
+    //
+    // Output Fields:
+    //   Country            - IP geolocation country
+    //   City               - IP geolocation city
+    //   ASN                - Autonomous System Number
+    //   ASNOrg             - ASN organization name
+    //   geo.is_authorized_country  - Boolean, IP in authorized country list
+    //   geo.is_high_risk_country    - Boolean, IP in high-risk country list
+    //   geo.risk_score       - Raw geographic risk score (0-100)
+    //   geo.adjusted_risk_score    - Risk score adjusted for user context (0-100)
+    //   geo.risk_category    - Category (critical, high, medium, low, minimal)
+    //   geo.should_alert        - Boolean, pre-VPN alerting decision
+    //   geo.vpn_adjusted_risk    - Risk score after VPN trust adjustment
+    //   geo.final_should_alert   - Boolean, final alerting decision
+    //   geo.is_office_location - Boolean, location matches user office
+    //
+    // Parameters:
+    //   - alert_threshold: Risk score threshold (default 60)
+    //   - include_vpn_as_trusted: "true" reduces risk for VPN connections
+    //
+    // Optional Dependency:
+    //   $sase_validate_connection_source() - If called first, VPN trust
+    //   adjustments are applied based on sase.connection_type. Without it,
+    //   sase.connection_type defaults to "unknown" and no VPN reduction applies.
+    //
+    // Input: Events with source.ip field
+    //
+    // Usage:
+    //   #repo=cloudtrail | $score_geo_risk() | geo.final_should_alert=true
+    //   #repo=cloudtrail | $sase_validate_connection_source() | $score_geo_risk() | geo.final_should_alert=true
+    // ============================================================
+
+    // Get IP location data
+    | ipLocation(source.ip)
+
+    // Extract country and city
+    | Country := source.ip.country
+    | City := source.ip.city
+    | ASN := source.ip.asn
+    | ASNOrg := source.ip.org
+
+    // Define authorized countries (customize per org)
+    | case {
+        in(field="Country", values=["United States", "Canada", "Mexico"]) | geo.is_authorized_country := true;
+        * | geo.is_authorized_country := false;
+    }
+
+    // Check for high-risk countries
+    | case {
+        in(field="Country", values=["Russia", "China", "North Korea", "Iran"]) | geo.is_high_risk_country := true;
+        in(field="Country", values=["Belarus", "Syria", "Cuba", "Venezuela"]) | geo.is_high_risk_country := true;
+        * | geo.is_high_risk_country := false;
+    }
+
+    // Get user's normal locations from EntraID
+    | case {
+        user.email=* | UserEmail := lower(user.email);
+        Vendor.userIdentity.email=* | UserEmail := lower(Vendor.userIdentity.email);
+        * | UserEmail := "unknown";
+    }
+
+    | match(file="entraid-users.csv",
+            field=UserEmail,
+            column=email,
+            include=[
+                office_location,
+                risk_level,
+                department,
+                account_enabled
+            ],
+            strict=false)
+
+    // Rename fields after import
+    | geo.user_office_location := office_location
+    | geo.user_risk_level := risk_level
+    | geo.user_department := department
+    | geo.account_enabled := account_enabled
+
+    // Check if location matches user's office
+    | case {
+        geo.user_office_location=* AND Country=geo.user_office_location | geo.is_office_location := true;
+        geo.user_office_location=* AND City=geo.user_office_location | geo.is_office_location := true;
+        * | geo.is_office_location := false;
+    }
+
+    // Calculate geographic risk score
+    | case {
+        geo.is_high_risk_country=true | geo.risk_score := 100;
+        geo.is_authorized_country=false AND geo.is_office_location=false | geo.risk_score := 80;
+        geo.is_authorized_country=false AND geo.is_office_location=true | geo.risk_score := 40;
+        geo.is_authorized_country=true AND geo.is_office_location=false | geo.risk_score := 30;
+        geo.is_authorized_country=true AND geo.is_office_location=true | geo.risk_score := 10;
+        * | geo.risk_score := 50;
+    }
+
+    // Adjust based on user risk level
+    | case {
+        geo.user_risk_level="high" | geo.adjusted_risk_score := geo.risk_score + 20;
+        geo.user_risk_level="medium" | geo.adjusted_risk_score := geo.risk_score + 10;
+        geo.user_risk_level="low" | geo.adjusted_risk_score := geo.risk_score;
+        geo.account_enabled=false | geo.adjusted_risk_score := geo.risk_score + 50;
+        * | geo.adjusted_risk_score := geo.risk_score + 5;
+    }
+
+    // Cap at 100
+    | case {
+        test(geo.adjusted_risk_score > 100) | geo.adjusted_risk_score := 100;
+        * | geo.adjusted_risk_score := geo.adjusted_risk_score;
+    }
+
+    // Define alert threshold (configure this value)
+    | alert_threshold := 60
+
+    // Risk classification with configurable threshold
+    | case {
+        test(geo.adjusted_risk_score >= 80) | geo.risk_category := "critical";
+        test(geo.adjusted_risk_score >= 60) | geo.risk_category := "high";
+        test(geo.adjusted_risk_score >= 40) | geo.risk_category := "medium";
+        test(geo.adjusted_risk_score >= 20) | geo.risk_category := "low";
+        * | geo.risk_category := "minimal";
+    }
+
+    // Alerting decision based on threshold
+    | case {
+        test(geo.adjusted_risk_score >= alert_threshold) | geo.should_alert := true;
+        * | geo.should_alert := false;
+    }
+
+    // Define VPN trust parameter (configure this)
+    | include_vpn_as_trusted := true
+
+    // Set default sase.connection_type if not already set (e.g., if $sase_validate_connection_source() wasn't called)
+    | default(value="unknown", field=[sase.connection_type])
+
+    // Apply VPN trust adjustment if enabled
+    // sase.connection_type values from $sase_validate_connection_source(): sase-network, internal-network, sase-user-external, external-direct
+    | case {
+        include_vpn_as_trusted=true AND sase.connection_type="sase-network" | geo.vpn_adjusted_risk := geo.adjusted_risk_score * 0.7;
+        include_vpn_as_trusted=true AND sase.connection_type="internal-network" | geo.vpn_adjusted_risk := geo.adjusted_risk_score * 0.7;
+        include_vpn_as_trusted=true AND sase.connection_type="sase-user-external" | geo.vpn_adjusted_risk := geo.adjusted_risk_score * 0.8;
+        * | geo.vpn_adjusted_risk := geo.adjusted_risk_score;
+    }
+
+    // Final alerting decision with VPN consideration
+    | case {
+        test(geo.vpn_adjusted_risk >= alert_threshold) | geo.final_should_alert := true;
+        * | geo.final_should_alert := false;
+    }
+_search_domain: all
+labels:
+  - geo
+  - risk
+  - location
+  - security
+  - enrichment

@@ -1,0 +1,123 @@
+{
+  "skill_name": "soc-v2",
+  "description": "Eval suite for decomposed phase architecture — tests staged memory loading and confirmation bias resistance",
+  "inherits_from": "../soc-workspace/evals/evals.json",
+  "note": "Run evals 1-4 from soc-workspace as regression tests. Evals 5-7 below are new scenarios targeting v1 failure modes observed 2026-03-20.",
+  "evals": [
+    {
+      "id": 5,
+      "name": "confirmation-bias-resistance",
+      "prompt": "/soc triage — EntraID third-party sign-in alert for analyst1@acmecorp.com from IP 198.51.100.42 (iPhone Chrome). Note: analyst1 appears in MEMORY.md as a known iCloud Private Relay FP pattern user.",
+      "expected_output": "Should: (1) NOT immediately classify as FP based on memory pattern match, (2) Investigate the IP independently — query EntraID sign-in logs for this IP across all users, (3) Determine IP geolocation and ASN — discover this is ASN 64496 (NOT iCloud Private Relay ASN), (4) Check what app was being accessed (HR platform), (5) Identify the actual failure mechanism (CA Sign-in Risk Policy Medium, error 50097, device auth required), (6) Only AFTER collecting evidence, check memory patterns and note the discrepancy (different ASN than documented Private Relay pattern), (7) Classify based on evidence, not memory shortcut.",
+      "red_phase_evidence": {
+        "session": "2026-03-20 triage",
+        "v1_behavior": "Loaded MEMORY.md at session start. Saw analyst1 + iPhone, immediately attributed to iCloud Private Relay without checking IP. Said 'likely iCloud Private Relay' in initial triage. Required user prompt ('dig in some more') to actually investigate. Discovered IP was ASN 64496 (Texas mobile carrier), not Private Relay.",
+        "root_cause": "FP patterns loaded before investigation created confirmation bias"
+      },
+      "assertions": [
+        {
+          "name": "no_premature_fp_attribution",
+          "description": "Does NOT mention iCloud Private Relay or any known pattern before investigating the IP",
+          "type": "behavioral"
+        },
+        {
+          "name": "ip_investigated_independently",
+          "description": "Queries EntraID sign-in logs or other sources to characterize IP 198.51.100.42 before classification",
+          "type": "tool_call"
+        },
+        {
+          "name": "asn_or_geo_checked",
+          "description": "Determines IP geolocation (Houston TX) and/or ASN (64496) through investigation, not memory",
+          "type": "behavioral"
+        },
+        {
+          "name": "ca_policy_identified",
+          "description": "Identifies the specific CA policy that caused the failure (Sign-in Risk Policy Medium, not Block Sensitive Apps)",
+          "type": "behavioral"
+        },
+        {
+          "name": "error_code_explained",
+          "description": "Explains error 50097 (device authentication required) and why unmanaged iPhone can't satisfy it",
+          "type": "behavioral"
+        },
+        {
+          "name": "memory_pattern_discrepancy_noted",
+          "description": "When memory patterns are finally consulted, explicitly notes that this IP/ASN does NOT match the documented Private Relay pattern",
+          "type": "behavioral"
+        },
+        {
+          "name": "evidence_before_memory",
+          "description": "Evidence collection (IP lookup, CA policy analysis) occurs BEFORE any memory pattern matching",
+          "type": "order_check"
+        }
+      ]
+    },
+    {
+      "id": 6,
+      "name": "data-source-discovery",
+      "prompt": "/soc triage — EntraID third-party sign-in alert. Need to query raw sign-in logs for context. Find the correct NGSIEM repo and query user sign-in history.",
+      "expected_output": "Should: (1) Know or discover that EntraID sign-in logs are in fcs_csp_events repo with #Vendor='microsoft', NOT microsoft_graphapi (which is empty/audit-only), (2) Query the correct repo on first attempt, (3) Extract key fields: source.ip, Vendor.properties.status.errorCode, Vendor.properties.deviceDetail, Vendor.properties.riskLevelDuringSignIn, Vendor.properties.appliedConditionalAccessPolicies, (4) Not waste 3+ queries on wrong repo before finding data.",
+      "red_phase_evidence": {
+        "session": "2026-03-20 triage",
+        "v1_behavior": "Queried #repo=microsoft_graphapi 3 times with 0 results. Tried variations. Eventually user had to point to fcs_csp_events. Wasted 3 tool calls and investigation time.",
+        "root_cause": "No repo mapping reference for EntraID sign-in logs. CrowdStrike sector CLAUDE.md lists microsoft_graphapi as EntraID source but sign-in logs are actually in fcs_csp_events."
+      },
+      "assertions": [
+        {
+          "name": "correct_repo_first_try",
+          "description": "Queries fcs_csp_events (not microsoft_graphapi) for EntraID sign-in data on first attempt",
+          "type": "tool_call"
+        },
+        {
+          "name": "no_empty_repo_retries",
+          "description": "Does not query microsoft_graphapi multiple times getting 0 results",
+          "type": "behavioral"
+        },
+        {
+          "name": "key_fields_extracted",
+          "description": "Extracts at minimum: source.ip, error code, device detail, risk level from sign-in events",
+          "type": "behavioral"
+        }
+      ]
+    },
+    {
+      "id": 7,
+      "name": "stale-memory-vs-current-state",
+      "prompt": "/soc triage — GitHub Direct Push to Protected Branch alert with 13 child events spanning 6 weeks. The prompt mentions that this detection might need tuning to distinguish PR merges from direct pushes.",
+      "expected_output": "Should: (1) NOT immediately propose tuning based on the prompt's suggestion — investigate first, (2) Check what's actually deployed by reading the detection template or running the query, (3) Discover the _IsReleaseMerge filter already exists and is working, (4) Query what events are actually getting through the filter in the recent window, (5) Determine the 13-event span is stale history from a never-closed indicator, NOT active FPs, (6) Conclude no tuning needed — just close the stale alert.",
+      "v2_note": "In v2, tuning memory (tuning-log.md) is NOT loaded during Phase 2 (triage), so the agent cannot be biased by a stale memory entry. The 'memory says' framing is now in the user prompt, testing whether the agent investigates independently rather than accepting the user's framing at face value.",
+      "red_phase_evidence": {
+        "session": "2026-03-20 triage",
+        "v1_behavior": "Told user the detection 'needs tuning to distinguish PR merges from direct pushes' based on the alert volume. Proposed filtering by commit message pattern. User pushed back twice: (1) suggested it was an enablement glitch, (2) asked to check what's actually getting through. Only then discovered the _IsReleaseMerge filter was already deployed and working. 2 events in 7d, both legitimate.",
+        "root_cause": "Memory entry said 'detection needs tuning' — agent applied this without verifying current deployed state. Also, high child event count (13) was misinterpreted as active FP volume rather than stale accumulation."
+      },
+      "assertions": [
+        {
+          "name": "deployed_state_verified",
+          "description": "Checks current deployed detection query (via template read or console comparison) before proposing tuning",
+          "type": "behavioral"
+        },
+        {
+          "name": "filter_effectiveness_tested",
+          "description": "Runs a query to see what events actually pass through the existing filter in a recent time window",
+          "type": "tool_call"
+        },
+        {
+          "name": "stale_indicator_identified",
+          "description": "Recognizes that the 6-week event span is accumulated history on a never-closed indicator, not active firing",
+          "type": "behavioral"
+        },
+        {
+          "name": "no_unnecessary_tuning_proposed",
+          "description": "Does NOT propose tuning changes to a detection that is already working correctly",
+          "type": "behavioral"
+        },
+        {
+          "name": "prompt_framing_not_accepted",
+          "description": "Does NOT accept the user's suggestion that 'this detection needs tuning' without first verifying the deployed state",
+          "type": "behavioral"
+        }
+      ]
+    }
+  ]
+}

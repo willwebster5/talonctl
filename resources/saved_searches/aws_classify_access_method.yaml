@@ -1,0 +1,198 @@
+# AWS Classify Access Method
+# Purpose: Classify AWS CloudTrail access methods by user agent string
+# Version: 1.0
+
+$schema: https://schemas.humio.com/query/v0.6.0
+resource_id: aws_classify_access_method
+name: aws_classify_access_method
+description: |
+  Function: $aws_classify_access_method
+  Purpose: Classify AWS access method from CloudTrail user_agent.original field.
+  Output: aws.access_method, aws.access_method_category, aws.is_programmatic, aws.is_suspicious_tool
+  Parameters:
+    - include_suspicious: "true" to flag known offensive/exfil tools
+  See queryString comments for full documentation.
+queryString: |
+    // ============================================================
+    // $aws_classify_access_method() - Access Method Classification
+    // ============================================================
+    // Classifies AWS CloudTrail events by how the API was accessed.
+    //
+    // Output Fields:
+    //   aws.access_method         - Specific tool/SDK (e.g. "AWS CLI", "Terraform", "Boto3") test
+    //   aws.access_method_category - Broad category: Console, CLI, SDK, IaC, Internal, Suspicious, Other
+    //   aws.is_programmatic       - true for CLI/SDK/IaC/automation, false for console/browser
+    //   aws.is_suspicious_tool     - true for known offensive/exfil tools (requires include_suspicious="true")
+    //
+    // Categories:
+    //   Console     - AWS Management Console (browser-based)
+    //   CLI         - AWS CLI direct usage
+    //   SDK         - AWS SDKs (Boto3, Go SDK, Java SDK, etc.)
+    //   IaC         - Infrastructure as Code (Terraform, Pulumi, CloudFormation)
+    //   Internal    - AWS internal services and console backends
+    //   Container   - ECS/Fargate task agents
+    //   CloudShell  - AWS CloudShell sessions
+    //   Suspicious  - Known offensive/exfil tools (optional)
+    //   Other       - Unclassified user agents
+    //
+    // Usage:
+    //   #repo=cloudtrail
+    //   | $aws_classify_access_method()
+    //   | aws.access_method_category="Console"
+    //
+    //   // With suspicious tool flagging
+    //   | $aws_classify_access_method(include_suspicious="true")
+    //   | aws.is_suspicious_tool=false
+    //
+    //   // Use in groupBy for baseline detections
+    //   | groupBy([aws.user_identity, aws.access_method_category], function=[count()])
+    // ============================================================
+
+    // Step 1: Classify access method from user agent
+    | case {
+        // Suspicious/offensive tools (check first for priority)
+        user_agent.original=/(?:Scout Suite|pacu|Prowler|Rhino Security|CloudBerry|Cyberduck|rclone|kali|parrot|pentoo|HotDogsAreSandwiches)/i
+            | aws.access_method := "Suspicious Tool"
+            | aws.access_method_category := "Suspicious"
+            | aws.is_programmatic := true
+            ;
+
+        // S3 Browser (often used for data exfiltration)
+        user_agent.original=/S3 Browser/i
+            | aws.access_method := "S3 Browser"
+            | aws.access_method_category := "Suspicious"
+            | aws.is_programmatic := true
+            ;
+
+        // AWS CloudShell
+        user_agent.original=/exec-env\/CloudShell/
+            | aws.access_method := "CloudShell"
+            | aws.access_method_category := "CloudShell"
+            | aws.is_programmatic := true
+            ;
+
+        // Infrastructure as Code
+        user_agent.original=/HashiCorp|terraform/i
+            | aws.access_method := "Terraform"
+            | aws.access_method_category := "IaC"
+            | aws.is_programmatic := true
+            ;
+        user_agent.original=/pulumi/i
+            | aws.access_method := "Pulumi"
+            | aws.access_method_category := "IaC"
+            | aws.is_programmatic := true
+            ;
+        user_agent.original=/cloudformation/i
+            | aws.access_method := "CloudFormation"
+            | aws.access_method_category := "IaC"
+            | aws.is_programmatic := true
+            ;
+
+        // AWS CLI
+        user_agent.original=/aws-cli/i
+            | aws.access_method := "AWS CLI"
+            | aws.access_method_category := "CLI"
+            | aws.is_programmatic := true
+            ;
+
+        // AWS SDKs (specific before generic)
+        user_agent.original=/boto3|Botocore/i
+            | aws.access_method := "Boto3"
+            | aws.access_method_category := "SDK"
+            | aws.is_programmatic := true
+            ;
+        user_agent.original=/aws-sdk-go/i
+            | aws.access_method := "Go SDK"
+            | aws.access_method_category := "SDK"
+            | aws.is_programmatic := true
+            ;
+        user_agent.original=/aws-sdk-java/i
+            | aws.access_method := "Java SDK"
+            | aws.access_method_category := "SDK"
+            | aws.is_programmatic := true
+            ;
+        user_agent.original=/aws-sdk-js|aws-sdk-nodejs/i
+            | aws.access_method := "Node.js SDK"
+            | aws.access_method_category := "SDK"
+            | aws.is_programmatic := true
+            ;
+        user_agent.original=/aws-sdk-ruby/i
+            | aws.access_method := "Ruby SDK"
+            | aws.access_method_category := "SDK"
+            | aws.is_programmatic := true
+            ;
+        user_agent.original=/aws-sdk-dotnet/i
+            | aws.access_method := ".NET SDK"
+            | aws.access_method_category := "SDK"
+            | aws.is_programmatic := true
+            ;
+        user_agent.original=/aws-sdk/i
+            | aws.access_method := "AWS SDK"
+            | aws.access_method_category := "SDK"
+            | aws.is_programmatic := true
+            ;
+        user_agent.original=/python-requests|python-urllib/i
+            | aws.access_method := "Python HTTP"
+            | aws.access_method_category := "SDK"
+            | aws.is_programmatic := true
+            ;
+
+        // Container/serverless agents
+        user_agent.original=/ecs-agent|fargate/i
+            | aws.access_method := "ECS/Fargate"
+            | aws.access_method_category := "Container"
+            | aws.is_programmatic := true
+            ;
+
+        // AWS Internal services
+        user_agent.original="AWS Internal"
+            | aws.access_method := "AWS Internal"
+            | aws.access_method_category := "Internal"
+            | aws.is_programmatic := true
+            ;
+        user_agent.original=/amazonaws\.com/
+            | aws.access_method := "AWS Service"
+            | aws.access_method_category := "Internal"
+            | aws.is_programmatic := true
+            ;
+
+        // Console (browser-based) — check after AWS Internal since console URLs contain amazonaws.com
+        Vendor.sessionCredentialFromConsole="true"
+            | aws.access_method := "AWS Console"
+            | aws.access_method_category := "Console"
+            | aws.is_programmatic := false
+            ;
+        user_agent.original=/Mozilla|Chrome|Safari|Firefox|Edge/
+            | aws.access_method := "Web Browser"
+            | aws.access_method_category := "Console"
+            | aws.is_programmatic := false
+            ;
+
+        // S3 sync operations
+        user_agent.original=/s3\.sync/
+            | aws.access_method := "S3 Sync"
+            | aws.access_method_category := "CLI"
+            | aws.is_programmatic := true
+            ;
+
+        // Fallback
+        *
+            | aws.access_method := "Other"
+            | aws.access_method_category := "Other"
+            | aws.is_programmatic := true
+            ;
+    }
+
+    // Step 2: Flag suspicious tools (only when enabled)
+    | case {
+        include_suspicious="true" AND aws.access_method_category="Suspicious" | aws.is_suspicious_tool := true;
+        include_suspicious="true" | aws.is_suspicious_tool := false;
+        * ;
+    }
+_search_domain: all
+labels:
+  - aws
+  - cloudtrail
+  - enrichment
+  - user-agent
+  - access-method

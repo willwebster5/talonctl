@@ -1,0 +1,31 @@
+$schema: https://schemas.humio.com/query/v0.6.0
+resource_id: hunt_rtr_high_risk_commands
+name: hunt_rtr_high_risk_commands
+description: |
+  Audits RTR (Real-Time Response) sessions for high-risk commands: get, put, memdump,
+  xmemdump, run, put-and-run. Aggregates by operator username and systems accessed.
+  Use for RTR activity review, insider threat monitoring, or post-incident audit.
+  Source: Query-Hub (ByteRay GmbH)
+queryString: |
+  // Get UI Audit Events
+  #repo="detections" ExternalApiType=/Remote/
+
+  // Check commands for high-risk RTR operations
+  | array:regex("Commands[]", regex="get|put|memdump|xmemdump|run|put-and-run")
+
+  // Create unified "Commands" field
+  | concatArray("Commands", separator="; ", as=Commands)
+
+  // Check to make sure Commands is populated
+  | Commands=*
+
+  // Aggregate results
+  | groupBy([UserName, AgentIdString], function=([collect([Commands])]))
+  | groupBy([UserName], function=([count(AgentIdString, as=SystemsAccessed), collect([Commands])]))
+_search_domain: all
+labels:
+  - hunting
+  - rtr
+  - audit
+  - insider-threat
+  - monitoring

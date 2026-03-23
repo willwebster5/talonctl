@@ -1,0 +1,227 @@
+# Entra ID Enrich Group Summary
+# Purpose: Add comprehensive group summary information from preprocessed data
+# Version: 1.1
+
+$schema: https://schemas.humio.com/query/v0.6.0
+resource_id: entraid_enrich_group_summary
+name: entraid_enrich_group_summary
+description: |
+  Function: $entraid_enrich_group_summary
+  Purpose: Add comprehensive group summary information from preprocessed data.
+  Output: entra.admin_group_count, entra.engineering_group_count, AWSGroupCount, TEAMGroupCount, GroupTypeCount, entra.group_membership_pattern, HasAdminGroups, HasEngineeringGroups, HasAdminEngineering, entra.has_high_risk_combination, entra.group_risk_score, entra.group_summary, GroupRiskViolation, HasValidGroupMembership, GroupListsIncluded
+  Parameters:
+    - include_group_lists: "true" to include comma-separated group lists in output
+    - group_detail_level: Level of group detail ("minimal", "standard", "detailed")
+  See queryString comments for full documentation.
+
+queryString: |
+    // ============================================================
+    // $entraid_enrich_group_summary() - Group Summary Enrichment
+    // ============================================================
+    // Add comprehensive group summary information from preprocessed lookup data.
+    //
+    // Prerequisite: entra.user_email field must be set before calling.
+    //
+    // Output Fields:
+    //   entra.admin_group_count        - Count of admin group types (0 or 1)
+    //   entra.engineering_group_count  - Count of engineering group types (0 or 1)
+    //   AWSGroupCount          - Count of AWS group types (0 or 1)
+    //   TEAMGroupCount         - Count of TEAM group types (0 or 1)
+    //   GroupTypeCount         - Total number of different group types
+    //   entra.group_membership_pattern - Pattern: no_groups, excessive_groups, diverse_access, standard_groups
+    //   HasAdminGroups         - true if user has admin group memberships
+    //   HasEngineeringGroups   - true if user has engineering group memberships
+    //   HasAdminEngineering    - true if user has both admin and engineering groups
+    //   entra.has_high_risk_combination - true if high-risk group combo (Finance+Production or Global+Contractor)
+    //   entra.group_risk_score         - Numeric risk score (cumulative)
+    //   entra.group_summary      - Formatted summary: "Total: N, Types: N, Pattern: X"
+    //   GroupRiskViolation     - true if entra.group_risk_score >= 40
+    //   HasValidGroupMembership - true if user has groups and a privilege tier assigned
+    //   GroupListsIncluded     - true if group list details are included in output
+    //
+    // Parameters:
+    //   - include_group_lists: When "true", includes comma-separated group lists
+    //   - group_detail_level: Level of group detail ("minimal", "standard", "detailed")
+    //
+    // Usage:
+    //   #repo=microsoft_graphapi
+    //   | $entraid_enrich_user_identity()
+    //   | $entraid_enrich_group_summary(include_group_lists="true", group_detail_level="detailed")
+    //
+    //   // Check for high-risk group combinations
+    //   | $entraid_enrich_group_summary()
+    //   | entra.has_high_risk_combination=true
+    //
+    //   // Filter users with excessive group memberships
+    //   | $entraid_enrich_group_summary()
+    //   | entra.group_membership_pattern="excessive_groups"
+    // ============================================================
+
+    // Ensure user identity is available
+    | case {
+        entra.user_email=* ;
+        * | entra.user_email := "unknown";
+    }
+
+    // Step 1: Lookup comprehensive group summary (if not already loaded)
+    | case {
+        admin_groups=* ;
+        * |
+            match(file="entraid-user-groups-summary.csv",
+                  field=entra.user_email,
+                  column=user_email,
+                  include=[
+                      admin_groups,
+                      engineering_groups,
+                      aws_groups,
+                      team_groups,
+                      other_groups,
+                      all_groups,
+                      github_orgs,
+                      group_count,
+                      highest_privilege_group,
+                      highest_privilege_tier
+                  ],
+                  strict=false);
+    }
+
+    // Step 2: Set defaults if not already set
+    | default(value="", field=[admin_groups, engineering_groups, aws_groups, team_groups, other_groups, all_groups, github_orgs, highest_privilege_group])
+    | default(value="none", field=[highest_privilege_tier])
+    | default(value=0, field=[group_count])
+
+    // Step 3: Parse group lists based on detail level
+    | _detailKey := format("%s-%s", field=[group_detail_level, include_group_lists])
+    | case {
+        _detailKey="minimal-false" | GroupListsIncluded := false;
+        * | GroupListsIncluded := true;
+    }
+
+    // Step 4: Count different types of groups (simplified without splitString)
+    | case {
+        admin_groups != "" | entra.admin_group_count := 1;
+        * | entra.admin_group_count := 0;
+    }
+
+    | case {
+        engineering_groups != "" | entra.engineering_group_count := 1;
+        * | entra.engineering_group_count := 0;
+    }
+
+    | case {
+        aws_groups != "" | AWSGroupCount := 1;
+        * | AWSGroupCount := 0;
+    }
+
+    | case {
+        team_groups != "" | TEAMGroupCount := 1;
+        * | TEAMGroupCount := 0;
+    }
+
+    // Step 5: Calculate group type count
+    | GroupTypeCount := entra.admin_group_count + entra.engineering_group_count + AWSGroupCount + TEAMGroupCount
+
+    // Step 6: Assess group membership patterns
+    | case {
+        test(group_count == 0) | entra.group_membership_pattern := "no_groups";
+        test(group_count > 30) | entra.group_membership_pattern := "excessive_groups";
+        test(GroupTypeCount >= 3) | entra.group_membership_pattern := "diverse_access";
+        * | entra.group_membership_pattern := "standard_groups";
+    }
+
+    // Step 7: Check for unusual group combinations
+    | case {
+        entra.admin_group_count > 0 | HasAdminGroups := true;
+        * | HasAdminGroups := false;
+    }
+
+    | case {
+        entra.engineering_group_count > 0 | HasEngineeringGroups := true;
+        * | HasEngineeringGroups := false;
+    }
+
+    | _adminEngKey := format("%s-%s", field=[HasAdminGroups, HasEngineeringGroups])
+    | case {
+        _adminEngKey="true-true" | HasAdminEngineering := true;
+        * | HasAdminEngineering := false;
+    }
+
+    // Check for high-risk group combinations
+    | case {
+        admin_groups =~ /Finance/ | HasFinanceAdmin := true;
+        * | HasFinanceAdmin := false;
+    }
+
+    | case {
+        aws_groups =~ /Production/ | HasProductionAWS := true;
+        * | HasProductionAWS := false;
+    }
+
+    | case {
+        admin_groups =~ /Global/ | HasGlobalAdmin := true;
+        * | HasGlobalAdmin := false;
+    }
+
+    | case {
+        team_groups =~ /Contractor/ | HasContractorTeam := true;
+        * | HasContractorTeam := false;
+    }
+
+    // Combine checks for high-risk combinations
+    | _riskCombo1 := format("%s-%s", field=[HasFinanceAdmin, HasProductionAWS])
+    | _riskCombo2 := format("%s-%s", field=[HasGlobalAdmin, HasContractorTeam])
+    | case {
+        _riskCombo1="true-true" | entra.has_high_risk_combination := true;
+        _riskCombo2="true-true" | entra.has_high_risk_combination := true;
+        * | entra.has_high_risk_combination := false;
+    }
+
+    // Step 8: Calculate group-based risk score
+    | entra.group_risk_score := 0
+    | case {
+        entra.group_membership_pattern="no_groups" | entra.group_risk_score := 20;
+        * ;
+    }
+    | case {
+        entra.group_membership_pattern="excessive_groups" | entra.group_risk_score := entra.group_risk_score + 30;
+        * ;
+    }
+    | case {
+        entra.has_high_risk_combination=true | entra.group_risk_score := entra.group_risk_score + 40;
+        * ;
+    }
+
+    // Step 9: Create comprehensive group summary
+    | entra.group_summary := format("Total: %d, Types: %d, Pattern: %s",
+        field=[group_count, GroupTypeCount, entra.group_membership_pattern])
+
+    // Step 10: Add final group validation flags
+    | case {
+        test(entra.group_risk_score >= 40) | GroupRiskViolation := true;
+        * | GroupRiskViolation := false;
+    }
+
+    | case {
+        test(group_count > 0) | _hasGroups := true;
+        * | _hasGroups := false;
+    }
+    | case {
+        highest_privilege_tier != "none" | _hasPrivTier := true;
+        * | _hasPrivTier := false;
+    }
+    | _validMemberKey := format("%s-%s", field=[_hasGroups, _hasPrivTier])
+    | case {
+        _validMemberKey="true-true" | HasValidGroupMembership := true;
+        * | HasValidGroupMembership := false;
+    }
+
+    // Cleanup temp fields
+    | drop([_detailKey, _adminEngKey, _riskCombo1, _riskCombo2, _hasGroups, _hasPrivTier, _validMemberKey])
+
+_search_domain: all
+labels:
+  - identity
+  - enrichment
+  - entraid
+  - groups
+  - summary

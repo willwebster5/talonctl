@@ -1,0 +1,93 @@
+$schema: https://schemas.humio.com/query/v0.6.0
+resource_id: email_to_device
+name: email_to_device
+description: |
+  Function: $email_to_device()
+  Purpose: Resolve a user email address to a device name via sase lookup with EntraID fallback.
+  Input: UserEmail field (must be set by caller before calling this function)
+  Output: device.name (device hostname), device.sase_status (sase connectivity status)
+  Limitation: EntraID fallback only works for Entra-joined managed devices; BYOD/web-only sessions produce empty device.name.
+  See queryString comments for full documentation.
+queryString: |
+    // ============================================================
+    // $email_to_device() - Email to Device Name Resolution
+    // ============================================================
+    // Resolves a user email address to the device name associated
+    // with that user. Uses SASE Device user-device mapping as the
+    // primary source, with an EntraID sign-in log fallback for
+    // managed devices not yet in the SASE snapshot.
+    //
+    // Input:
+    //   UserEmail - email address of the user (set by caller)
+    //
+    // Output:
+    //   device.name        - device hostname (null if not found)
+    //   device.sase_status - sase connectivity status (null if not in sase-users.csv)
+    //
+    // Primary: sase-users.csv (snapshot_info_email → snapshot_deviceName)
+    // Fallback: EntraID sign-in events (most recent deviceDetail.displayName)
+    //
+    // Known limitation: EntraID fallback only works for Entra-joined
+    // managed devices. BYOD and web-only sessions produce empty
+    // deviceDetail.displayName — device.name will be null and
+    // a warning is emitted.
+    //
+    // Staleness: If sase-users.csv snapshot is >48h old, a warning
+    // is logged. Recommend daily CSV refresh via CI.
+    //
+    // Usage:
+    //   | UserEmail := lower(some.email.field)
+    //   | $email_to_device()
+    //   | device.name=*    // filter to found devices only
+    // ============================================================
+
+    // ============================================================
+    // Step 1: Primary lookup — sase-users.csv
+    // ============================================================
+    | match(file="sase-users.csv",
+            field=UserEmail,
+            column=snapshot_info_email,
+            include=[snapshot_deviceName, snapshot_connectivityStatus],
+            strict=false)
+
+    | device.name := snapshot_deviceName
+    | device.sase_status := snapshot_connectivityStatus
+
+    // Drop intermediate fields
+    | drop([snapshot_deviceName, snapshot_connectivityStatus])
+
+    // ============================================================
+    // Step 2: EntraID fallback — for managed devices not in snapshot
+    // ============================================================
+    // If sase-users.csv didn't resolve a device name, fall back to
+    // the most recent EntraID sign-in event for this user.
+    | case {
+        device.name=* | * ;
+        * |
+            join(
+                {
+                    #repo=microsoft_graphapi
+                    | operationName="Sign-in activity"
+                    | UserPrincipalName=* UserPrincipalName=/@/
+                    | deviceDetail.displayName=* deviceDetail.displayName!=""
+                    | _joinKey := lower(UserPrincipalName)
+                    | sort(@timestamp, order=desc, limit=1)
+                    | select([_joinKey, deviceDetail.displayName])
+                },
+                field=UserEmail,
+                include=[deviceDetail.displayName],
+                mode=left
+            )
+            | case {
+                deviceDetail.displayName=* | device.name := deviceDetail.displayName;
+                * | device.name := null() ;
+            }
+            | drop([deviceDetail.displayName]) ;
+    }
+_search_domain: all
+labels:
+  - sase
+  - identity
+  - device
+  - lookup
+  - enrichment

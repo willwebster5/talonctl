@@ -1,0 +1,82 @@
+# Email Link Domain Classifier
+# Purpose: Classify a domain field against the known_good_email_domains lookup file
+# using multi-level suffix matching (exact → 3-label → 2-label).
+
+$schema: https://schemas.humio.com/query/v0.6.0
+resource_id: classify_link_domain
+name: classify_link_domain
+description: |
+  Function: $classify_link_domain
+  Purpose: Determine whether a domain is a known-good email domain by checking
+  it against known_good_email_domains.csv at up to three suffix depths.
+  Output: link.is_known_good, link.matched_entry, link.match_level
+  See queryString comments for full documentation.
+dependencies:
+  - lookup_file.known_good_email_domains
+queryString: |
+    // ============================================================
+    // $classify_link_domain() - Email Link Domain Classifier
+    // ============================================================
+    // Checks a domain against known_good_email_domains.csv using
+    // multi-level suffix matching. First match wins.
+    //
+    // Parameter:
+    //   field  - Name of the field containing the domain to check.
+    //            Default usage: $classify_link_domain(field=_link_domain)
+    //
+    // Matching levels (in order):
+    //   1. Exact:    full domain as-is
+    //   2. L3:       last 3 labels  e.g. "mkt.dynamics.com" from "public-usa.mkt.dynamics.com"
+    //   3. L2:       last 2 labels  e.g. "voyafinancial.com" from "click.e.voyafinancial.com"
+    //
+    // Output Fields:
+    //   link.is_known_good  - true if matched at any level, false otherwise
+    //   link.matched_entry  - the suffix value that matched, or "none"
+    //   link.match_level    - "exact", "l3", "l2", or "none"
+    //
+    // Usage:
+    //   | $classify_link_domain(field=_link_domain)
+    //   | link.is_known_good=false
+    // ============================================================
+
+    // Step 1: Copy input field into a fixed internal field.
+    // ?field is LogScale parameter substitution — at call time,
+    // $classify_link_domain(field=_link_domain) makes ?field → _link_domain,
+    // so this line becomes: _domain_input := _link_domain
+    | _domain_input := ?field
+
+    // Step 2: Extract suffix levels from the input domain.
+    // For domains with ≤3 labels, _domain_l3 equals the full domain (harmless redundancy).
+    | _domain_l3 := replace(field=_domain_input,
+        regex="^(?:[^.]+\\.)*([^.]+\\.[^.]+\\.[^.]+)$", with="$1")
+    | _domain_l2 := replace(field=_domain_input,
+        regex="^(?:[^.]+\\.)*([^.]+\\.[^.]+)$", with="$1")
+
+    // Step 3: Cascade match — first level that hits wins.
+    // match() does exact column lookup; no CSV columns are added to the event.
+    // link.matched_entry is set from the scratch field that matched, not from the CSV.
+    | case {
+        match(field=_domain_input, file="known_good_email_domains.csv", column=domain) |
+            link.is_known_good := true |
+            link.matched_entry := _domain_input |
+            link.match_level := "exact";
+
+        match(field=_domain_l3, file="known_good_email_domains.csv", column=domain) |
+            link.is_known_good := true |
+            link.matched_entry := _domain_l3 |
+            link.match_level := "l3";
+
+        match(field=_domain_l2, file="known_good_email_domains.csv", column=domain) |
+            link.is_known_good := true |
+            link.matched_entry := _domain_l2 |
+            link.match_level := "l2";
+
+        * |
+            link.is_known_good := false |
+            link.matched_entry := "none" |
+            link.match_level := "none";
+    }
+
+    // Step 4: Drop scratch fields — don't pollute downstream event fields.
+    | drop([_domain_input, _domain_l3, _domain_l2])
+_search_domain: all

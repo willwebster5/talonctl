@@ -1,0 +1,154 @@
+# Entra ID Classify User Type
+# Purpose: Enhanced user type classification using multiple data sources
+# Version: 2.0
+
+$schema: https://schemas.humio.com/query/v0.6.0
+resource_id: entraid_classify_user_type
+name: entraid_classify_user_type
+description: |
+  Function: $entraid_classify_user_type
+  Purpose: Enhanced user type classification using multiple data sources (lookup files + pattern matching).
+  Output: entra.user_type_detailed, entra.account_risk, entra.is_service_account, entra.is_external_user, entra.is_internal_human, entra.user_risk_score.
+  See queryString comments for full documentation.
+queryString: |
+    // ============================================================
+    // $entraid_classify_user_type() - Enhanced User Type Classification
+    // ============================================================
+    // Enhanced user type classification using multiple data sources
+    // (lookup files + pattern matching). Combines service account
+    // lookup data, contractor/external data, and email pattern
+    // matching to produce detailed user classification with risk
+    // scoring and boolean flags for downstream filtering.
+    //
+    // Output Fields:
+    //   entra.user_type_detailed   - Detailed classification (employee, contractor, etc.)
+    //   entra.account_risk        - Risk level (low, medium, high)
+    //   entra.is_service_account   - Boolean flag for service/automation accounts
+    //   entra.is_external_user     - Boolean flag for contractor/external/guest users
+    //   entra.is_internal_human    - Boolean flag for internal human users
+    //   entra.user_risk_score          - Numeric risk score (10-90) for prioritization
+    //   ContractorCompany  - Company name (when include_contractors="true")
+    //   ContractorSponsor  - Sponsor name (when include_contractors="true")
+    //
+    // Parameters:
+    //   - strict_mode: "true" classifies ambiguous accounts as non-human
+    //   - include_contractors: "true" for contractor classification details
+    //
+    // Requires:
+    //   $entraid_enrich_user_identity() and $entraid_lookup_user_mapping()
+    //   called first.
+    //
+    // Usage:
+    //   #repo=microsoft_graphapi
+    //   | $entraid_enrich_user_identity()
+    //   | $entraid_lookup_user_mapping()
+    //   | $entraid_classify_user_type(strict_mode="false",
+    //       include_contractors="true")
+    // ============================================================
+
+    // Step 1: Lookup service account data
+    | match(file="entraid-service-accounts.csv",
+            field=entra.user_email,
+            column=account_email,
+            include=[
+                account_name,
+                purpose,
+                privilege_level,
+                owner,
+                is_external,
+                api_access,
+                last_rotation
+            ],
+            strict=false)
+
+    // Step 2: Lookup contractor/external data if enabled
+    | case {
+        include_contractors="true" |
+            match(file="entraid-contractor-external.csv",
+                  field=entra.user_email,
+                  column=user_email,
+                  include=[
+                      user_type,
+                      company,
+                      sponsor,
+                      allowed_systems
+                  ],
+                  strict=false);
+        * ;
+    }
+
+    // Step 3: Enhanced user type classification
+    | case {
+        // Service accounts (highest priority)
+        account_name=* | entra.user_type_detailed := "service_account" | entra.account_risk := "low";
+
+        // Known contractors/externals
+        user_type="contractor" | entra.user_type_detailed := "contractor" | entra.account_risk := "medium";
+        user_type="external" | entra.user_type_detailed := "external_user" | entra.account_risk := "high";
+
+        // Guest accounts from domain
+        entra.user_type="guest_account" | entra.user_type_detailed := "guest_user" | entra.account_risk := "medium";
+
+        // Pattern-based service account detection
+        entra.user_email =~ /^(svc|service|app|application)[-_]/ | entra.user_type_detailed := "service_account" | entra.account_risk := "low";
+        entra.user_email =~ /bot|automation|system|noreply|no-reply/ | entra.user_type_detailed := "automation_account" | entra.account_risk := "low";
+
+        // Human users
+        entra.employee_id != "unknown" AND entra.department != "unknown" | entra.user_type_detailed := "employee" | entra.account_risk := "low";
+
+        // Strict mode classification
+        strict_mode="true" AND entra.user_email =~ /^[a-z0-9]+[-_][a-z0-9]+@/ | entra.user_type_detailed := "potential_service" | entra.account_risk := "medium";
+        strict_mode="true" AND entra.department_category="unknown" | entra.user_type_detailed := "unclassified" | entra.account_risk := "high";
+
+        // Default human classification
+        entra.user_type="user_account" | entra.user_type_detailed := "human_user" | entra.account_risk := "low";
+
+        // Unknown classification
+        * | entra.user_type_detailed := "unknown" | entra.account_risk := "high";
+    }
+
+    // Step 4: Add detailed flags for downstream processing
+    | case {
+        entra.user_type_detailed="service_account" | entra.is_service_account := true;
+        entra.user_type_detailed="automation_account" | entra.is_service_account := true;
+        * | entra.is_service_account := false;
+    }
+
+    | case {
+        entra.user_type_detailed="contractor" | entra.is_external_user := true;
+        entra.user_type_detailed="external_user" | entra.is_external_user := true;
+        entra.user_type_detailed="guest_user" | entra.is_external_user := true;
+        * | entra.is_external_user := false;
+    }
+
+    | case {
+        entra.user_type_detailed="employee" | entra.is_internal_human := true;
+        entra.user_type_detailed="human_user" | entra.is_internal_human := true;
+        * | entra.is_internal_human := false;
+    }
+
+    // Step 5: Risk scoring for prioritization
+    | case {
+        entra.account_risk="low" | entra.user_risk_score := 10;
+        entra.account_risk="medium" | entra.user_risk_score := 50;
+        entra.account_risk="high" | entra.user_risk_score := 80;
+        * | entra.user_risk_score := 90;
+    }
+
+    // Step 6: Add contractor metadata if available
+    | case {
+        include_contractors="true" AND user_type="contractor" | ContractorCompany := company | ContractorSponsor := sponsor;
+        include_contractors="true" AND user_type="external" | ExternalCompany := company | ExternalSponsor := sponsor;
+        * ;
+    }
+_search_domain: all
+labels:
+  - entraid
+  - entra-id
+  - identity
+  - classification
+  - user-type
+  - microsoft
+dependencies:
+  - saved_search.entraid_enrich_user_identity
+  - saved_search.entraid_lookup_user_mapping

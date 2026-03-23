@@ -1,0 +1,144 @@
+# Entra ID Add Authorization Context
+# Purpose: Add authorization context and risk flags without filtering
+# Version: 1.0
+
+$schema: https://schemas.humio.com/query/v0.6.0
+resource_id: entraid_add_authorization_context
+name: entraid_add_authorization_context
+description: |
+  Function: $entraid_add_authorization_context
+  Purpose: Add authorization context and risk flags without filtering events.
+  Output: entra.auth_status, entra.auth_risk_score, entra.is_authorized, entra.needs_pim_activation, entra.is_high_risk, entra.auth_summary.
+  See queryString comments for full documentation.
+queryString: |
+    // ============================================================
+    // $entraid_add_authorization_context() - Authorization Context Enrichment
+    // ============================================================
+    // Add authorization context and risk flags without filtering events.
+    // Determines authorization status from trust levels, calculates
+    // risk scores adjusted by sensitivity, and sets boolean flags
+    // for downstream detection logic.
+    //
+    // Output Fields:
+    //   entra.auth_status   - Authorization classification (see statuses below)
+    //   entra.auth_risk_score         - Numeric risk score (0-100) adjusted by sensitivity
+    //   entra.is_authorized          - Boolean: admin_authorized or team_authorized
+    //   entra.needs_pim_activation    - Boolean: team_eligible but PIM activation required
+    //   entra.is_high_risk            - Boolean: entra.auth_risk_score >= 80
+    //   entra.auth_summary  - Formatted summary string for alerting
+    //
+    // Authorization Statuses:
+    //   quarantined, admin_authorized, team_authorized,
+    //   team_eligible_pim_required, high_trust, medium_trust,
+    //   low_trust, service_account, no_trust, unknown
+    //
+    // Parameters:
+    //   - sensitivity: "low", "medium", or "high" risk sensitivity
+    //   - include_pim_checks: "true" to include PIM eligibility checks
+    //
+    // Requires:
+    //   $entraid_lookup_trust_level() called first.
+    //
+    // Usage:
+    //   #repo=microsoft_graphapi #event.outcome="success"
+    //   | $entraid_lookup_trust_level()
+    //   | $entraid_add_authorization_context(sensitivity="medium",
+    //       include_pim_checks="true")
+    // ============================================================
+
+    // Step 1: Determine authorization status based on trust and access levels
+    | case {
+        entra.is_quarantined=true | entra.auth_status := "quarantined";
+
+        entra.is_admin=true AND entra.is_quarantined=false | entra.auth_status := "admin_authorized";
+
+        has_team_access="true" AND include_pim_checks="true" AND requires_pim="false"
+            | entra.auth_status := "team_authorized";
+
+        has_team_access="true" AND include_pim_checks="true" AND requires_pim="true"
+            | entra.auth_status := "team_eligible_pim_required";
+
+        entra.trust_level_score >= 4 AND entra.is_quarantined=false | entra.auth_status := "high_trust";
+        entra.trust_level_score >= 3 AND entra.is_quarantined=false | entra.auth_status := "medium_trust";
+        entra.trust_level_score >= 2 AND entra.is_quarantined=false | entra.auth_status := "low_trust";
+        entra.trust_level_score >= 1 | entra.auth_status := "service_account";
+        entra.trust_level_score = 0 | entra.auth_status := "no_trust";
+
+        * | entra.auth_status := "unknown";
+    }
+
+    // Step 2: Calculate authorization risk score based on sensitivity
+    | case {
+        sensitivity="high" |
+            case {
+                entra.auth_status="admin_authorized" | entra.auth_risk_score := 0;
+                entra.auth_status="team_authorized" | entra.auth_risk_score := 10;
+                entra.auth_status="high_trust" | entra.auth_risk_score := 20;
+                entra.auth_status="team_eligible_pim_required" | entra.auth_risk_score := 30;
+                entra.auth_status="medium_trust" | entra.auth_risk_score := 50;
+                entra.auth_status="low_trust" | entra.auth_risk_score := 70;
+                entra.auth_status="service_account" | entra.auth_risk_score := 80;
+                entra.auth_status="quarantined" | entra.auth_risk_score := 100;
+                entra.auth_status="no_trust" | entra.auth_risk_score := 90;
+                entra.auth_status="unknown" | entra.auth_risk_score := 95;
+                * | entra.auth_risk_score := 100;
+            };
+
+        sensitivity="low" |
+            case {
+                in(field="entra.auth_status", values=["admin_authorized", "team_authorized", "high_trust"]) | entra.auth_risk_score := 0;
+                in(field="entra.auth_status", values=["team_eligible_pim_required", "medium_trust"]) | entra.auth_risk_score := 20;
+                entra.auth_status="low_trust" | entra.auth_risk_score := 40;
+                entra.auth_status="service_account" | entra.auth_risk_score := 60;
+                entra.auth_status="quarantined" | entra.auth_risk_score := 100;
+                entra.auth_status="no_trust" | entra.auth_risk_score := 80;
+                entra.auth_status="unknown" | entra.auth_risk_score := 70;
+                * | entra.auth_risk_score := 100;
+            };
+
+        // Default: medium sensitivity
+        * |
+            case {
+                entra.auth_status="admin_authorized" | entra.auth_risk_score := 0;
+                entra.auth_status="team_authorized" | entra.auth_risk_score := 5;
+                entra.auth_status="high_trust" | entra.auth_risk_score := 15;
+                entra.auth_status="team_eligible_pim_required" | entra.auth_risk_score := 25;
+                entra.auth_status="medium_trust" | entra.auth_risk_score := 40;
+                entra.auth_status="low_trust" | entra.auth_risk_score := 60;
+                entra.auth_status="service_account" | entra.auth_risk_score := 70;
+                entra.auth_status="quarantined" | entra.auth_risk_score := 100;
+                entra.auth_status="no_trust" | entra.auth_risk_score := 85;
+                entra.auth_status="unknown" | entra.auth_risk_score := 90;
+                * | entra.auth_risk_score := 100;
+            };
+    }
+
+    // Step 3: Add detailed authorization context flags
+    | case {
+        in(field="entra.auth_status", values=["admin_authorized", "team_authorized"]) | entra.is_authorized := true;
+        * | entra.is_authorized := false;
+    }
+
+    | case {
+        in(field="entra.auth_status", values=["team_eligible_pim_required"]) | entra.needs_pim_activation := true;
+        * | entra.needs_pim_activation := false;
+    }
+
+    | case {
+        entra.auth_risk_score >= 80 | entra.is_high_risk := true;
+        * | entra.is_high_risk := false;
+    }
+
+    // Step 4: Create authorization summary for alerting
+    | entra.auth_summary := format("Status: %s, Risk: %d, Trust: %s",
+        field=[entra.auth_status, entra.auth_risk_score, entra.trust_level])
+_search_domain: all
+labels:
+  - entraid
+  - entra-id
+  - authorization
+  - risk
+  - enrichment
+  - microsoft
+dependencies:
+  - saved_search.entraid_lookup_trust_level

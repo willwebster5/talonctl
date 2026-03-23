@@ -1,0 +1,20 @@
+$schema: https://schemas.humio.com/query/v0.6.0
+resource_id: hunt_lolbin_rundll32
+name: hunt_lolbin_rundll32
+description: |
+  Detects rundll32.exe spawned from known-abused parent processes: cmd, Office apps
+  (Word, PowerPoint, Excel), Outlook, mshta, cscript, wscript. These parent/child
+  combinations are strong indicators of macro-based or script-based execution chains.
+  Reference: https://lolbas-project.github.io/lolbas/Binaries/Rundll32/
+  Source: Query-Hub (ByteRay GmbH) — MITRE T1218.011, T1564.004
+queryString: |
+  in(#event_simpleName, values=["ProcessRollup2", "ProcessBlocked"])
+  | event_platform=Win and ImageFileName=/rundll32\.exe/i
+  | in(ParentBaseFileName, values=["cmd.exe", "winword.exe", "powerpnt.exe", "excel.exe", "outlook.exe", "mshta.exe", "cscript.exe", "wscript.exe"])
+_search_domain: all
+labels:
+  - hunting
+  - endpoint
+  - lolbin
+  - rundll32
+  - T1218

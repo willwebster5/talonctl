@@ -1,0 +1,157 @@
+# SASE Networks Filter Function
+# Purpose: Filter out SASE Networks SASE/VPN connections from security alerts
+# Version: 2.1
+# NOTE: Resource ID should be added after confirming existing ID in CrowdStrike NGSIEM
+
+$schema: https://schemas.humio.com/query/v0.6.0
+resource_id: trusted_network_detector
+name: trusted_network_detector
+description: |
+  Function: $trusted_network_detector
+  Purpose: Identify and filter trusted network connections from security alerts.
+  Output: SourceIP, net.is_sase, net.is_excluded, net.provider, net.exclusion_reason, net.risk, net.exclusion_summary, net.asn_org
+  See queryString comments for full documentation.
+queryString: |
+    // ============================================================
+    // $trusted_network_detector() - Trusted Network Detection
+    // ============================================================
+    // Identify and filter SASE Networks SASE/VPN connections and other
+    // trusted networks from security alerts. SASE Networks traffic is
+    // always excluded as a managed corporate connection.
+    //
+    // Output Fields:
+    //   SourceIP         - Normalized source IP address
+    //   net.is_sase    - Boolean flag for SASE Networks traffic
+    //   net.is_excluded       - Boolean flag for all trusted network exclusions
+    //   net.provider   - Provider category (sase-networks, aws-internal,
+    //                       github-actions, private-10, private-172,
+    //                       private-192, localhost, other)
+    //   net.exclusion_reason  - Human-readable exclusion explanation
+    //   net.risk      - Risk indicator (excluded, unknown-asn, no-source-ip, review)
+    //   net.exclusion_summary - Formatted summary string
+    //   net.asn_org          - Autonomous System Organization name
+    //
+    // Parameters:
+    //   - extend_trust: "true" to also exclude AWS internal/GitHub Actions
+    //   - include_private: "true" to exclude RFC1918 private IP ranges
+    //
+    // Usage:
+    //   | $trusted_network_detector(extend_trust="true", include_private="true") | net.is_excluded=false
+    // ============================================================
+
+    // Step 1: Extract and normalize source IP from various fields
+        | case {
+            source.ip=* | SourceIP := source.ip;
+            RemoteAddressIP4=* | SourceIP := RemoteAddressIP4;
+            aip=* | SourceIP := aip;
+            * | SourceIP := "unknown";
+        }
+
+        // Step 2: Extract ASN information from multiple possible sources
+        | case {
+            // Check for pre-enriched ASN data
+            source.ip.org=* | net.asn_org := lower(source.ip.org);
+            _asn.org=* | net.asn_org := lower(_asn.org);
+            asn.org=* | net.asn_org := lower(asn.org);
+
+            // If no ASN data exists, enrich it from IP (if IP is available)
+            SourceIP != "unknown" | asn(SourceIP) | net.asn_org := lower(SourceIP.org);
+
+            // Default case
+            * | net.asn_org := "unknown";
+        }
+
+        // Step 3: PRIMARY CHECK - SASE Networks (always excluded as managed VPN)
+        | case {
+            net.asn_org =~ /sase networks/ |
+                net.is_sase := true |
+                net.is_excluded := true |
+                net.provider := "sase-networks" |
+                net.exclusion_reason := "Managed SASE/VPN Provider (SASE Networks)";
+
+            // Not SASE - default to not excluded
+            * |
+                net.is_sase := false |
+                net.is_excluded := false |
+                net.provider := "other" |
+                net.exclusion_reason := "Not excluded";
+        }
+
+        // Step 4: OPTIONAL - Extended trust for specific services when enabled
+        | case {
+            extend_trust="true" AND net.is_excluded=false |
+                // First check ASN for AWS
+                case {
+                    net.asn_org =~ /amazon|aws/ | IsAWS := true;
+                    * | IsAWS := false;
+                }
+                |
+                // Then check if it's internal AWS traffic
+                case {
+                    IsAWS=true AND SourceIP =~ /^10\./ |
+                        net.is_excluded := true |
+                        net.provider := "aws-internal" |
+                        net.exclusion_reason := "AWS Internal VPC Traffic";
+                    * ;
+                }
+                |
+                // Check ASN for GitHub
+                case {
+                    net.asn_org =~ /github/ | IsGitHub := true;
+                    * | IsGitHub := false;
+                }
+                |
+                // Then check if it's from GitHub Actions IP ranges
+                case {
+                    IsGitHub=true AND SourceIP =~ /^(20\.|4\.|140\.|143\.|192\.30\.)/ |
+                        net.is_excluded := true |
+                        net.provider := "github-actions" |
+                        net.exclusion_reason := "GitHub Actions CI/CD";
+                    * ;
+                };
+            * ;
+        }
+
+        // Step 5: OPTIONAL - Private IP exclusion when enabled
+        | case {
+            include_private="true" AND net.is_excluded=false |
+                case {
+                    // RFC1918 Private Networks
+                    SourceIP =~ /^10\./ |
+                        net.is_excluded := true |
+                        net.provider := "private-10" |
+                        net.exclusion_reason := "RFC1918 Private (10.0.0.0/8)";
+
+                    SourceIP =~ /^172\.(1[6-9]|2[0-9]|3[0-1])\./ |
+                        net.is_excluded := true |
+                        net.provider := "private-172" |
+                        net.exclusion_reason := "RFC1918 Private (172.16.0.0/12)";
+
+                    SourceIP =~ /^192\.168\./ |
+                        net.is_excluded := true |
+                        net.provider := "private-192" |
+                        net.exclusion_reason := "RFC1918 Private (192.168.0.0/16)";
+
+                    // Localhost
+                    SourceIP =~ /^127\./ |
+                        net.is_excluded := true |
+                        net.provider := "localhost" |
+                        net.exclusion_reason := "Localhost";
+
+                    * ;
+                };
+            * ;
+        }
+
+        // Step 6: Set risk indicators for non-excluded traffic
+        | case {
+            net.is_excluded=true | net.risk := "excluded";
+            net.asn_org="unknown" | net.risk := "unknown-asn";
+            SourceIP="unknown" | net.risk := "no-source-ip";
+            * | net.risk := "review";
+        }
+
+    // Step 7: Add metadata about the exclusion decision
+    | net.exclusion_summary := format("Provider: %s, Excluded: %s, Reason: %s",
+        field=[net.provider, net.is_excluded, net.exclusion_reason])
+_search_domain: all

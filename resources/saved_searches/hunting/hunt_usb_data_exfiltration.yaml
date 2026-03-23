@@ -1,0 +1,26 @@
+$schema: https://schemas.humio.com/query/v0.6.0
+resource_id: hunt_usb_data_exfiltration
+name: hunt_usb_data_exfiltration
+description: |
+  Detects file writes to removable media (USB drives). Joins with USB device connect
+  events to identify manufacturer/product. Aggregates total data written per user per
+  device to surface bulk exfiltration via physical media.
+  Useful for insider threat and data loss prevention investigations.
+  Source: Query-Hub (ByteRay GmbH) — MITRE T1052
+queryString: |
+  #event_simpleName=/FileWritten/i and IsOnRemovableDisk=1
+  | VolumeSessionUUID=*
+  | "Size (MB)" := Size/1024/1024
+  | format(format="%.2f", field=["Size (MB)"], as="Size (MB)")
+  | join(query={#event_simpleName=DcUsbDeviceConnected | rename(DeviceInstanceId, as="DiskParentDeviceInstanceId")}, mode=left, field=[DiskParentDeviceInstanceId], include=[DeviceManufacturer, DeviceProduct])
+  | groupBy([ComputerName, UserName, DeviceManufacturer, DeviceProduct], function=[min(field=@timestamp, as=firstTime), max(field=@timestamp, as=lastTime), sum(Size, as="Size")])
+  | "Size (MB)" := Size/1024/1024
+  | format(format="%.2f", field=["Size (MB)"], as="Size (MB)")
+_search_domain: all
+labels:
+  - hunting
+  - endpoint
+  - exfiltration
+  - usb
+  - insider-threat
+  - T1052

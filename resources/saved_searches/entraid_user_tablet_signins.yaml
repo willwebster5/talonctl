@@ -1,0 +1,56 @@
+# Entra ID User Tablet Sign-ins
+# Purpose: Detect tablet sign-ins via user agent analysis (iPad, Android tablets)
+# Version: 1.0
+
+$schema: https://schemas.humio.com/query/v0.6.0
+resource_id: entraid_user_tablet_signins
+name: entraid_user_tablet_signins
+description: |
+  Function: $entraid_user_tablet_signins(user)
+  Purpose: Detect tablet sign-ins via user agent analysis (iPad, Android tablets).
+  Output: @timestamp, entra.app_name, entra.device_name, entra.operating_system, entra.trust_type, entra.device_id, source.ip, entra.city, user_agent.original
+  See queryString comments for full documentation.
+queryString: |
+    // ============================================================
+    // $entraid_user_tablet_signins(user) - Tablet Device Sign-ins
+    // ============================================================
+    // Detect tablet sign-ins via user agent analysis. Filters Entra ID
+    // sign-in events for tablet devices identified by user agent patterns
+    // (iPad, Android Tablet, PlayBook, Kindle, Surface).
+    //
+    // Output Fields:
+    //   @timestamp         - Sign-in timestamp
+    //   entra.app_name            - Application display name
+    //   entra.device_name         - Device display name
+    //   entra.operating_system    - Device operating system
+    //   entra.trust_type          - Device trust type
+    //   entra.device_id           - Device identifier
+    //   source.ip          - Source IP address
+    //   entra.city         - Geo-located city name
+    //   user_agent.original - Raw user agent string
+    //
+    // Parameters:
+    //   - user: User email address (userPrincipalName)
+    //
+    // Usage:
+    //   #Vendor=microsoft | #event.dataset=entraid.signin
+    //   | $entraid_user_tablet_signins(user="jdoe@example.com")
+    // ============================================================
+
+    | Vendor.properties.userPrincipalName = ?user
+    | user_agent.original = /iPad|Android.*Tablet|PlayBook|Kindle|Surface/i
+    | select([@timestamp, Vendor.properties.appDisplayName, Vendor.properties.deviceDetail.displayName, Vendor.properties.deviceDetail.operatingSystem, Vendor.properties.deviceDetail.trustType, Vendor.properties.deviceDetail.deviceId, source.ip, source.geo.city_name, user_agent.original])
+    | rename(field=Vendor.properties.appDisplayName, as=entra.app_name)
+    | rename(field=Vendor.properties.deviceDetail.displayName, as=entra.device_name)
+    | rename(field=Vendor.properties.deviceDetail.operatingSystem, as=entra.operating_system)
+    | rename(field=Vendor.properties.deviceDetail.trustType, as=entra.trust_type)
+    | rename(field=Vendor.properties.deviceDetail.deviceId, as=entra.device_id)
+    | rename(field=source.geo.city_name, as=entra.city)
+    | sort(@timestamp)
+_search_domain: all
+labels:
+  - entraid
+  - legal
+  - investigation
+  - device-audit
+  - tablet

@@ -1,0 +1,22 @@
+$schema: https://schemas.humio.com/query/v0.6.0
+resource_id: qh___ai_domain_dns_requests
+name: qh___ai_domain_dns_requests
+description: |
+  Detects DNS requests to AI-related domains using the generative_ai_domains lookup file.
+  Filters out browser traffic (Chrome, Edge) to surface non-browser processes accessing
+  AI services — flags shadow AI usage from scripts, CLI tools, and applications.
+  Prerequisite: generative_ai_domains.csv lookup file deployed.
+  Source: Query-Hub (ByteRay)
+queryString: |
+  #event_simpleName=DnsRequest event_platform=Win
+  | match(file="generative_ai_domains.csv", field=[DomainName],column=domain,ignoreCase=true,mode=glob)
+  | !in(field=ContextBaseFileName, values=[msedge.exe,chrome.exe],ignoreCase=true)
+  | SourceProcess := ContextBaseFileName
+  | groupBy([DomainName, ComputerName,SourceProcess],function=count(as=Count))
+  | sort(field=Count,type=number,order=desc)
+_search_domain: all
+labels:
+  - hunting
+  - endpoint
+  - shadow-ai
+  - dns

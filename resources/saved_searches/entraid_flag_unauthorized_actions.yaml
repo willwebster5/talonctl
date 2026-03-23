@@ -1,0 +1,144 @@
+# Entra ID Flag Unauthorized Actions
+# Purpose: Flag potentially unauthorized actions with risk scores (no filtering)
+# Version: 1.0
+
+$schema: https://schemas.humio.com/query/v0.6.0
+resource_id: entraid_flag_unauthorized_actions
+name: entraid_flag_unauthorized_actions
+description: |
+  Function: $entraid_flag_unauthorized_actions
+  Purpose: Flag potentially unauthorized actions with risk scores (enrichment only, no filtering).
+  Output: _baseUnauthorizedRisk, _geoRiskBonus, entra.unauthorized_risk_score, entra.unauthorized_risk_category, entra.should_alert, entra.requires_immediate_review, entra.unauthorized_summary.
+  See queryString comments for full documentation.
+queryString: |
+    // ============================================================
+    // $entraid_flag_unauthorized_actions() - Unauthorized Action Flagging
+    // ============================================================
+    // Flag potentially unauthorized actions with risk scores.
+    // Enrichment only -- does not filter events. Calculates a
+    // composite unauthorized action risk from authorization status,
+    // action sensitivity, geographic factors, and account age.
+    //
+    // Output Fields:
+    //   _baseUnauthorizedRisk      - Base risk from auth status + action level
+    //   _geoRiskBonus              - Additional risk from geographic factors
+    //   entra.unauthorized_risk_score    - Combined risk score (0-130)
+    //   entra.unauthorized_risk_category  - Category: critical/high/medium/low/minimal
+    //   entra.should_alert               - Boolean: risk >= 70
+    //   entra.requires_immediate_review    - Boolean: risk >= 90
+    //   entra.unauthorized_summary       - Formatted summary string for alerting
+    //
+    // Parameters:
+    //   - action_risk_level: "low", "medium", "high", or "critical"
+    //   - geo_aware: "true" to include geographic risk factors
+    //
+    // Requires:
+    //   Events with authorization context ($entraid_add_authorization_context).
+    //
+    // Usage:
+    //   #repo=microsoft_graphapi #event.category="management"
+    //   | $entraid_lookup_trust_level()
+    //   | $entraid_flag_unauthorized_actions(action_risk_level="high",
+    //       geo_aware="true")
+    // ============================================================
+
+    // Step 1: Add authorization context if not already present
+    | case {
+        entra.auth_status=* ;
+        * | $entraid_add_authorization_context();
+    }
+
+    // Step 2: Calculate base unauthorized risk based on action sensitivity
+    | case {
+        action_risk_level="critical" |
+            case {
+                entra.auth_status="admin_authorized" | _baseUnauthorizedRisk := 0;
+                entra.auth_status="team_authorized" | _baseUnauthorizedRisk := 20;
+                entra.auth_status="high_trust" | _baseUnauthorizedRisk := 40;
+                entra.auth_status="team_eligible_pim_required" | _baseUnauthorizedRisk := 60;
+                * | _baseUnauthorizedRisk := 90;
+            };
+
+        action_risk_level="high" |
+            case {
+                in(field="entra.auth_status", values=["admin_authorized", "team_authorized"]) | _baseUnauthorizedRisk := 0;
+                entra.auth_status="high_trust" | _baseUnauthorizedRisk := 20;
+                entra.auth_status="team_eligible_pim_required" | _baseUnauthorizedRisk := 40;
+                entra.auth_status="medium_trust" | _baseUnauthorizedRisk := 60;
+                * | _baseUnauthorizedRisk := 80;
+            };
+
+        action_risk_level="low" |
+            case {
+                in(field="entra.auth_status", values=["admin_authorized", "team_authorized", "high_trust", "medium_trust"]) | _baseUnauthorizedRisk := 0;
+                entra.auth_status="team_eligible_pim_required" | _baseUnauthorizedRisk := 10;
+                entra.auth_status="low_trust" | _baseUnauthorizedRisk := 30;
+                * | _baseUnauthorizedRisk := 60;
+            };
+
+        // Default: medium risk action
+        * |
+            case {
+                in(field="entra.auth_status", values=["admin_authorized", "team_authorized"]) | _baseUnauthorizedRisk := 0;
+                entra.auth_status="high_trust" | _baseUnauthorizedRisk := 10;
+                entra.auth_status="team_eligible_pim_required" | _baseUnauthorizedRisk := 30;
+                entra.auth_status="medium_trust" | _baseUnauthorizedRisk := 50;
+                * | _baseUnauthorizedRisk := 70;
+            };
+    }
+
+    // Step 3: Add geographic risk factors if enabled
+    | case {
+        geo_aware="true" AND source.ip=* |
+            // This would integrate with $score_geo_risk function
+            case {
+                // Placeholder for geo risk integration
+                !in(field="Country", values=["United States", "Canada"]) | _geoRiskBonus := 20;
+                * | _geoRiskBonus := 0;
+            };
+        * | _geoRiskBonus := 0;
+    }
+
+    // Step 4: Calculate final unauthorized action risk
+    | entra.unauthorized_risk_score := _baseUnauthorizedRisk + _geoRiskBonus
+    | case {
+        entra.is_quarantined=true | entra.unauthorized_risk_score := entra.unauthorized_risk_score + 30;
+        entra.account_age="new_24h" | entra.unauthorized_risk_score := entra.unauthorized_risk_score + 15;
+        entra.account_age="new_week" | entra.unauthorized_risk_score := entra.unauthorized_risk_score + 10;
+        * ;
+    }
+
+    // Step 5: Categorize unauthorized action risk
+    | case {
+        entra.unauthorized_risk_score >= 90 | entra.unauthorized_risk_category := "critical";
+        entra.unauthorized_risk_score >= 70 | entra.unauthorized_risk_category := "high";
+        entra.unauthorized_risk_score >= 50 | entra.unauthorized_risk_category := "medium";
+        entra.unauthorized_risk_score >= 30 | entra.unauthorized_risk_category := "low";
+        * | entra.unauthorized_risk_category := "minimal";
+    }
+
+    // Step 6: Add flags for easy filtering by callers
+    | case {
+        entra.unauthorized_risk_score >= 70 | entra.should_alert := true;
+        * | entra.should_alert := false;
+    }
+
+    | case {
+        entra.unauthorized_risk_score >= 90 | entra.requires_immediate_review := true;
+        * | entra.requires_immediate_review := false;
+    }
+
+    // Step 7: Create summary for alerting
+    | entra.unauthorized_summary := format("Action: %s, Risk: %d (%s), Auth: %s",
+        field=[action_risk_level, entra.unauthorized_risk_score, entra.unauthorized_risk_category, entra.auth_status])
+_search_domain: all
+labels:
+  - entraid
+  - entra-id
+  - authorization
+  - unauthorized
+  - risk
+  - enrichment
+  - microsoft
+dependencies:
+  - saved_search.entraid_add_authorization_context

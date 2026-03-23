@@ -1,0 +1,29 @@
+$schema: https://schemas.humio.com/query/v0.6.0
+resource_id: hunt_dns_from_browsers
+name: hunt_dns_from_browsers
+description: |
+  Correlates browser process executions (Chrome, Firefox, Edge) with their DNS queries on
+  Windows endpoints. Useful for identifying C2 or malicious domains resolved via browser
+  processes, or tracking which domains a user's browser visited.
+  Source: Query-Hub (CrowdStrike)
+queryString: |
+  // Get all process execution and DNS events on Windows
+  (#event_simpleName=ProcessRollup2 OR #event_simpleName=DnsRequest) event_platform=Win
+  | ComputerName=~wildcard(?ComputerName, ignoreCase=true)
+  // Normalize file name value across both events
+  | fileName:=concat([FileName, ContextBaseFileName])
+  // Make sure responsible process is a web browser
+  | in(field="fileName", values=[chrome.exe, firefox.exe, msedge.exe], ignoreCase=true)
+  // Normalize Falcon UPID
+  | falconPID:=TargetProcessId | falconPID:=ContextProcessId
+  // Use selfJoinFilter to make sure execution and DNS resolution occurred under the same UPID
+  | selfJoinFilter(field=[aid, falconPID], where=[{#event_simpleName=ProcessRollup2}, {#event_simpleName=DnsRequest}])
+  // Aggregate results
+  | groupBy([aid, falconPID], function=([collect([ComputerName, UserName, fileName, DomainName])]))
+_search_domain: all
+labels:
+  - hunting
+  - endpoint
+  - dns
+  - browser
+  - c2-detection

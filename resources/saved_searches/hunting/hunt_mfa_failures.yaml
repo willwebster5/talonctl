@@ -1,0 +1,25 @@
+$schema: https://schemas.humio.com/query/v0.6.0
+resource_id: hunt_mfa_failures
+name: hunt_mfa_failures
+description: |
+  Timechart of MFA failures by error type: User Not Enrolled (status 128) and
+  Service Error (status 256). A spike in either indicates either a service incident
+  or MFA fatigue / spray activity.
+  Note: query uses ?SelectedCid and ?SelectedDomain UI parameters — remove or
+  replace those filters when running outside the NGSIEM dashboard UI.
+  Source: Query-Hub (CrowdStrike)
+queryString: |
+  #repo=base_sensor #event_simpleName=IdpPolicy*RuleMatch
+  | match(file="aid_master_main.csv", field=[cid, aid])
+  | case {
+    IdpPolicyMfaStatus=128 | MfaError:="User Not Enrolled";
+    IdpPolicyMfaStatus=256 | MfaError:="Service Error";
+    *;
+  }
+  | timeChart(series=MfaError)
+_search_domain: all
+labels:
+  - hunting
+  - identity
+  - mfa
+  - monitoring

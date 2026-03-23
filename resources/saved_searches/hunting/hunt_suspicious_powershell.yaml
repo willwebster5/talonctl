@@ -1,0 +1,19 @@
+$schema: https://schemas.humio.com/query/v0.6.0
+resource_id: hunt_suspicious_powershell
+name: hunt_suspicious_powershell
+description: |
+  Detects PowerShell processes using encoded command flags (-EncodedCommand, -enc, etc.).
+  Enriches with username and parent process for attribution.
+  Source: Query-Hub (ByteRay GmbH) — MITRE T1059.001, T1070.005
+queryString: |
+  #event_simpleName=ProcessRollup2 ImageFileName=/\\powershell\.exe/i
+  | CommandLine=/\s-[eE^]{1,2}[nN][cC][oO][dD][eE][mM][aA][nN][dD^]+\s/i
+  | join({#event_simpleName=UserIdentity}, field=AuthenticationID, include=[UserName])
+  | table([aid, UserName, ParentImageFileName, ImageFileName, CommandLine])
+_search_domain: all
+labels:
+  - hunting
+  - endpoint
+  - execution
+  - powershell
+  - T1059

@@ -1,0 +1,65 @@
+# AWS Enrich Instance
+# Purpose: Enrich AWS EC2 instance IDs with hostname and account from SSM managed instance lookup
+# Version: 1.0
+
+$schema: https://schemas.humio.com/query/v0.6.0
+resource_id: aws_enrich_instance
+name: aws_enrich_instance
+description: |
+    Function: $aws_enrich_instance
+    Purpose: Enrich AWS EC2 instance IDs with hostname and account info from SSM managed instance inventory.
+    Output: aws.instance_name, aws.instance_account
+    See queryString comments for full documentation.
+queryString: |
+    // ============================================================
+    // $aws_enrich_instance() - EC2 Instance Enrichment
+    // ============================================================
+    // Enrich AWS EC2 instance IDs with hostname and account metadata
+    // from the SSM managed instance inventory lookup file.
+    //
+    // Lookup File: cs_lookups_aws_ssm_managedinstance.csv
+    //   Columns: resource_id, computerName, account
+    //
+    // Input: Events containing an EC2 instance ID field (e.g. i-0656d48a6c49e3866)
+    //
+    // Output Fields:
+    //   aws.instance_name    - Instance hostname (e.g. ip-10-3-132-26.ec2.internal)
+    //   aws.instance_account - AWS account ID owning the instance
+    //
+    // Parameters:
+    //   field - The field containing the EC2 instance ID to look up
+    //           Default: "TargetInstance"
+    //
+    // Usage:
+    //   // With default field (TargetInstance)
+    //   | TargetInstance := Vendor.requestParameters.target
+    //   | $aws_enrich_instance()
+    //
+    //   // With custom field
+    //   | $aws_enrich_instance(field=Vendor.responseElements.command.targets[0].values)
+    //
+    //   // In a detection pipeline
+    //   | $aws_enrich_instance(field=TargetInstance)
+    //   | format("%s (%s)", field=[TargetInstance, aws.instance_name], as=InstanceDetail)
+    // ============================================================
+
+    // Enrich instance ID with hostname and account from SSM inventory
+    | match(file="cs_lookups_aws_ssm_managedinstance.csv",
+            field=field,
+            column=resource_id,
+            include=[computerName, account],
+            strict=false)
+
+    // Rename to namespaced output fields
+    | aws.instance_name := computerName
+    | aws.instance_account := account
+
+    // Clean up raw lookup columns
+    | drop([computerName, account])
+_search_domain: all
+labels:
+  - aws
+  - enrichment
+  - ec2
+  - instance
+  - ssm

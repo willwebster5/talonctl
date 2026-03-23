@@ -1,0 +1,24 @@
+$schema: https://schemas.humio.com/query/v0.6.0
+resource_id: qh___locally_disabled_rtr
+name: qh___locally_disabled_rtr
+description: |
+  Identifies hosts where Real Time Response (RTR) has been locally disabled by
+  extracting the RTR_Locally_Disabled flag from SensorStateBitMap in heartbeat events.
+  Locally disabled RTR may indicate tampering or misconfiguration that impairs
+  incident response capability.
+  Source: Query-Hub (CrowdStrike)
+queryString: |
+  #event_simpleName=SensorHeartbeat
+  | groupBy([aid], function=selectLast([@timestamp, ComputerName, SensorStateBitMap]), limit=max)
+  | bitfield:extractFlags(
+  field=SensorStateBitMap,
+   output=[
+     [2, RTR_Locally_Disabled]
+  ])
+  | RTR_Locally_Disabled="true"
+_search_domain: all
+labels:
+  - hunting
+  - endpoint
+  - sensor-health
+  - monitoring
