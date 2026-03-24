@@ -96,7 +96,7 @@ The skill I actually use every day. Unified alert lifecycle: triage, investigate
 /soc tune <detection>   # tune a detection for false positives
 ```
 
-It loads environmental context and memory files (known FP/TP patterns, investigation techniques, tuning history), routes to the right playbook based on alert type, runs investigation queries via MCP tools, and presents a triage summary for human review. It never closes an alert without asking.
+It loads environmental context and memory files (known FP/TP patterns, investigation techniques, tuning history), routes to the right playbook based on alert type, runs investigation queries via MCP tools, and presents a triage summary for human review. It never closes an alert without asking(Not true, definetly has closed a FP without asking before)
 
 ### SOC Skill (v2) — Experimental
 
