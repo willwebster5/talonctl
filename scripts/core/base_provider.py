@@ -203,7 +203,7 @@ class BaseResourceProvider(ABC):
         pass
 
     @abstractmethod
-    def apply_delete(self, resource_id: str) -> bool:
+    def apply_delete(self, resource_id: str) -> Optional[Dict[str, Any]]:
         """
         Delete a resource from CrowdStrike.
 
@@ -211,7 +211,8 @@ class BaseResourceProvider(ABC):
             resource_id: ID of the resource to delete
 
         Returns:
-            True if deletion was successful
+            Dict with deletion metadata, at minimum {'id': resource_id}.
+            Returns None only if the resource was already absent (idempotent delete).
 
         Raises:
             Exception: If deletion fails

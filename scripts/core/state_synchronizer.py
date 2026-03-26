@@ -44,7 +44,8 @@ class StateSynchronizer:
     def update_after_deployment(
         self,
         deployed: List[str],
-        changes: List[ResourceChange]
+        changes: List[ResourceChange],
+        deploy_results: Optional[Dict[str, Any]] = None
     ) -> None:
         """
         Update state after successful deployment.
@@ -86,24 +87,35 @@ class StateSynchronizer:
                 logger.warning(f"No provider for {resource_type}, skipping state update")
                 continue
 
-            # Try to fetch actual deployed state from CrowdStrike API
-            actual_resource_id, remote_state = self._fetch_deployed_state(
-                provider, change, resource_name
-            )
+            # Fast path: use UUID directly from provider response (most reliable — no re-fetch needed)
+            provider_result = (deploy_results or {}).get(resource_id, {})
+            fast_path_id = provider_result.get('id') or provider_result.get('rule_id')
+
+            if provider_result and not fast_path_id:
+                logger.warning(
+                    f"Provider result for {resource_id} has neither 'id' nor 'rule_id' — "
+                    f"falling back to remote fetch. Keys present: {list(provider_result.keys())}"
+                )
+
+            if fast_path_id:
+                actual_resource_id = fast_path_id
+                remote_state = provider_result  # store as provider_metadata
+            else:
+                # Fallback: fetch current state from CrowdStrike API
+                actual_resource_id, remote_state = self._fetch_deployed_state(
+                    provider, change, resource_name
+                )
+                # Override UUID from remote_state if available (slow-path only)
+                if remote_state:
+                    if 'rule_id' in remote_state:
+                        actual_resource_id = remote_state['rule_id']
+                        logger.debug(f"Updated actual_resource_id from remote_state rule_id: {actual_resource_id}")
+                    elif 'id' in remote_state:
+                        actual_resource_id = remote_state['id']
+                        logger.debug(f"Updated actual_resource_id from remote_state id: {actual_resource_id}")
 
             # Always compute hash from template for consistent change detection (Terraform model)
-            # Remote state is still captured in provider_metadata for audit/tracking
             content_hash = provider.compute_content_hash(change.new_value)
-
-            # Extract resource ID from remote state if available (most reliable source)
-            # Detection provider uses 'rule_id', saved_search provider uses 'id'
-            if remote_state:
-                if 'rule_id' in remote_state:
-                    actual_resource_id = remote_state['rule_id']
-                    logger.debug(f"Updated actual_resource_id from remote_state rule_id: {actual_resource_id}")
-                elif 'id' in remote_state:
-                    actual_resource_id = remote_state['id']
-                    logger.debug(f"Updated actual_resource_id from remote_state id: {actual_resource_id}")
 
             logger.debug(f"Stored template hash for {resource_id} (hash: {content_hash[:8]}...)")
 

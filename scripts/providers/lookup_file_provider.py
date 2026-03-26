@@ -472,7 +472,7 @@ class LookupFileProvider(BaseResourceProvider):
         except Exception as e:
             raise RuntimeError(f"Failed to update lookup file: {e}") from e
 
-    def apply_delete(self, resource_id: str) -> bool:
+    def apply_delete(self, resource_id: str) -> Dict[str, Any]:
         """
         Delete a lookup file from NGSIEM
 
@@ -480,7 +480,7 @@ class LookupFileProvider(BaseResourceProvider):
             resource_id: Filename of lookup file to delete
 
         Returns:
-            True if deletion succeeded
+            Dict with 'id' key on success
 
         Raises:
             RuntimeError: If deletion fails
@@ -518,7 +518,7 @@ class LookupFileProvider(BaseResourceProvider):
                     f"Last error: {last_error}"
                 )
 
-            return True
+            return {'id': resource_id}
 
         except Exception as e:
             raise RuntimeError(f"Failed to delete lookup file: {e}") from e

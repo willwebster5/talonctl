@@ -618,7 +618,10 @@ class DeploymentOrchestrator:
             # This reduces I/O overhead compared to saving after each resource,
             # while minimizing data loss risk compared to saving only at the end
             if wave_result['deployed']:
-                self.state_synchronizer.update_after_deployment(wave_result['deployed'], changes_to_apply)
+                wave_results = wave_result.get('results', {})
+                self.state_synchronizer.update_after_deployment(
+                    wave_result['deployed'], changes_to_apply, wave_results
+                )
                 logger.debug(f"State saved after wave {wave_idx} ({len(wave_result['deployed'])} resources)")
 
         duration = (datetime.now(timezone.utc) - start_time).total_seconds()
@@ -655,6 +658,7 @@ class DeploymentOrchestrator:
         """
         deployed = []
         failed = []
+        results: Dict[str, Any] = {}  # resource_id -> result dict from provider
 
         with ThreadPoolExecutor(max_workers=parallel) as executor:
             # Submit all tasks
@@ -668,11 +672,12 @@ class DeploymentOrchestrator:
                 change = future_to_change[future]
                 try:
                     result = future.result()
-                    if result:
+                    if result is not None:
                         deployed.append(change.resource_id)
+                        results[change.resource_id] = result
                         logger.info(f"✓ Deployed {change.resource_id}")
                     else:
-                        failed.append((change.resource_id, "Deployment returned False"))
+                        failed.append((change.resource_id, "Deployment returned None"))
                         logger.error(f"✗ Failed to deploy {change.resource_id}")
                 except Exception as e:
                     failed.append((change.resource_id, str(e)))
@@ -680,7 +685,8 @@ class DeploymentOrchestrator:
 
         return {
             'deployed': deployed,
-            'failed': failed
+            'failed': failed,
+            'results': results
         }
 
     def _rollback_wave(
@@ -797,7 +803,7 @@ class DeploymentOrchestrator:
             logger.error(f"Error rolling back {change.resource_id}: {e}")
             raise
 
-    def _deploy_resource(self, change: ResourceChange) -> bool:
+    def _deploy_resource(self, change: ResourceChange) -> Optional[Dict[str, Any]]:
         """
         Deploy a single resource
 
@@ -814,7 +820,7 @@ class DeploymentOrchestrator:
         try:
             if change.action == ResourceAction.CREATE:
                 result = provider.apply_create(change.new_value)
-                return bool(result)
+                return result if result else None
 
             elif change.action == ResourceAction.UPDATE:
                 # CRITICAL: For detections, use rule_id from provider_metadata (permanent)
@@ -832,7 +838,7 @@ class DeploymentOrchestrator:
                     raise ValueError(f"No resource ID found for update of {change.resource_id}")
 
                 result = provider.apply_update(resource_id, change.new_value, change.old_value)
-                return bool(result)
+                return result if result else None
 
             elif change.action == ResourceAction.REPLACE:
                 # Delete + recreate (immutable field changed, e.g., type)
@@ -853,7 +859,7 @@ class DeploymentOrchestrator:
 
                 logger.info(f"Replacing {change.resource_id}: recreating")
                 result = provider.apply_create(change.new_value)
-                return bool(result)
+                return result if result else None
 
             elif change.action == ResourceAction.DELETE:
                 # CRITICAL: For detections, use rule_id from provider_metadata (permanent)
@@ -871,9 +877,9 @@ class DeploymentOrchestrator:
                     raise ValueError(f"No resource ID found for deletion of {change.resource_id}")
 
                 result = provider.apply_delete(resource_id)
-                return bool(result)
+                return result if result is not None else None
 
-            return False
+            return None
 
         except Exception as e:
             logger.error(f"Error applying {change.action} for {change.resource_id}: {e}")

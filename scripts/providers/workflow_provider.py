@@ -412,7 +412,7 @@ class WorkflowProvider(BaseResourceProvider):
             "All changes should go through the REPLACE path (delete + recreate)."
         )
 
-    def apply_delete(self, resource_id: str) -> bool:
+    def apply_delete(self, resource_id: str) -> Optional[Dict[str, Any]]:
         """
         Delete a workflow from CrowdStrike
 
@@ -420,7 +420,7 @@ class WorkflowProvider(BaseResourceProvider):
             resource_id: Workflow ID to delete
 
         Returns:
-            True if deletion was successful, False otherwise
+            Dict with 'id' key on success, None/False otherwise
         """
         if not self.workflows_client:
             raise RuntimeError("Workflows SDK not available")
@@ -430,7 +430,7 @@ class WorkflowProvider(BaseResourceProvider):
         )
 
         if response.get("status_code") in (200, 204):
-            return True
+            return {'id': resource_id}
 
         logger.error(f"Failed to delete workflow ID {resource_id}: {response}")
         return False
