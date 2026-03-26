@@ -231,8 +231,11 @@ description: Test query
         """Test successful deletion of saved query"""
         # Mock API response
         mock_falcon.command.return_value = {
-            'status_code': 204,
-            'body': {}
+            'status_code': 200,
+            'body': {
+                'meta': {'writes': {'resources_affected': 1}},
+                'resources': ['query-123']
+            }
         }
 
         result = provider.delete_resource('query-123')
@@ -346,6 +349,7 @@ description: Test query
 
         current_state = {
             'id': 'query-123',
+            '$schema': 'https://schemas.humio.com/query/v0.5.0',
             'name': 'test_query',
             'queryString': '| limit 10',
             '_search_domain': 'falcon'
@@ -433,8 +437,11 @@ description: Test query
     def test_apply_delete_alias(self, provider, mock_falcon):
         """Test apply_delete alias calls delete_resource"""
         mock_falcon.command.return_value = {
-            'status_code': 204,
-            'body': {}
+            'status_code': 200,
+            'body': {
+                'meta': {'writes': {'resources_affected': 1}},
+                'resources': ['query-123']
+            }
         }
 
         result = provider.apply_delete('query-123')

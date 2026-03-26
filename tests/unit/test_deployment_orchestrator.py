@@ -118,7 +118,7 @@ class TestDeploymentOrchestrator:
         plan = orchestrator.plan()
 
         assert len(plan.changes) == 1
-        assert plan.changes[0].action == 'create'
+        assert plan.changes[0].action == ResourceAction.CREATE
         assert plan.changes[0].resource_type == 'detection'
         assert plan.changes[0].resource_name == 'test_rule'
         assert plan.statistics['create'] == 1
@@ -253,12 +253,13 @@ class TestDeploymentOrchestrator:
         detection_provider.validate_template.return_value = []
         detection_provider.compute_content_hash.return_value = 'new_hash'  # Different hash
         detection_provider.extract_dependencies.return_value = []
+        detection_provider.requires_replacement.return_value = False
 
         # Generate plan
         plan = orchestrator.plan()
 
         assert len(plan.changes) == 1
-        assert plan.changes[0].action == 'update'
+        assert plan.changes[0].action == ResourceAction.UPDATE
         assert plan.changes[0].resource_name == 'existing_rule'
         assert plan.statistics['update'] == 1
 
@@ -297,7 +298,7 @@ class TestDeploymentOrchestrator:
         plan = orchestrator.plan()
 
         assert len(plan.changes) == 1
-        assert plan.changes[0].action == 'no-change'
+        assert plan.changes[0].action == ResourceAction.NO_CHANGE
         assert plan.statistics['no-change'] == 1
 
     def test_plan_validation_failure_raises_error(self, orchestrator):
@@ -349,12 +350,11 @@ class TestDeploymentOrchestrator:
     def test_apply_single_resource_create(self, orchestrator):
         """Test applying a plan with single resource creation"""
         change = ResourceChange(
-            action='create',
+            action=ResourceAction.CREATE,
             resource_type='detection',
             resource_id='detection.new_rule',
             resource_name='new_rule',
-            template={'name': 'New Rule', 'severity': 50},
-            dependencies=[]
+            new_value={'name': 'New Rule', 'severity': 50},
         )
 
         graph = ResourceGraph()
@@ -384,30 +384,27 @@ class TestDeploymentOrchestrator:
         """Test that resources are deployed in wave order"""
         # Create 3 resources in 2 waves
         change1 = ResourceChange(
-            action='create',
+            action=ResourceAction.CREATE,
             resource_type='lookup_file',
             resource_id='lookup_file.data',
             resource_name='data',
-            template={'name': 'data.csv'},
-            dependencies=[]
+            new_value={'name': 'data.csv'},
         )
 
         change2 = ResourceChange(
-            action='create',
+            action=ResourceAction.CREATE,
             resource_type='detection',
             resource_id='detection.rule_a',
             resource_name='rule_a',
-            template={'name': 'Rule A'},
-            dependencies=['lookup_file.data']
+            new_value={'name': 'Rule A'},
         )
 
         change3 = ResourceChange(
-            action='create',
+            action=ResourceAction.CREATE,
             resource_type='detection',
             resource_id='detection.rule_b',
             resource_name='rule_b',
-            template={'name': 'Rule B'},
-            dependencies=['lookup_file.data']
+            new_value={'name': 'Rule B'},
         )
 
         graph = ResourceGraph()
@@ -443,21 +440,19 @@ class TestDeploymentOrchestrator:
     def test_apply_failed_deployment_skips_dependents(self, orchestrator):
         """Test that failed deployments cause dependent resources to be skipped"""
         change1 = ResourceChange(
-            action='create',
+            action=ResourceAction.CREATE,
             resource_type='lookup_file',
             resource_id='lookup_file.data',
             resource_name='data',
-            template={'name': 'data.csv'},
-            dependencies=[]
+            new_value={'name': 'data.csv'},
         )
 
         change2 = ResourceChange(
-            action='create',
+            action=ResourceAction.CREATE,
             resource_type='detection',
             resource_id='detection.dependent',
             resource_name='dependent',
-            template={'name': 'Dependent Rule'},
-            dependencies=['lookup_file.data']
+            new_value={'name': 'Dependent Rule'},
         )
 
         graph = ResourceGraph()
@@ -494,12 +489,11 @@ class TestDeploymentOrchestrator:
         changes = []
         for i in range(3):
             changes.append(ResourceChange(
-                action='create',
+                action=ResourceAction.CREATE,
                 resource_type='detection',
                 resource_id=f'detection.rule_{i}',
                 resource_name=f'rule_{i}',
-                template={'name': f'Rule {i}'},
-                dependencies=[]
+                new_value={'name': f'Rule {i}'},
             ))
 
         graph = ResourceGraph()
@@ -531,21 +525,19 @@ class TestDeploymentOrchestrator:
         """Test that rollback does not occur by default when enable_rollback=False"""
         # Create 2 resources in same wave, one will fail
         change1 = ResourceChange(
-            action='create',
+            action=ResourceAction.CREATE,
             resource_type='detection',
             resource_id='detection.success',
             resource_name='success',
-            template={'name': 'Success Rule'},
-            dependencies=[]
+            new_value={'name': 'Success Rule'},
         )
 
         change2 = ResourceChange(
-            action='create',
+            action=ResourceAction.CREATE,
             resource_type='detection',
             resource_id='detection.fail',
             resource_name='fail',
-            template={'name': 'Fail Rule'},
-            dependencies=[]
+            new_value={'name': 'Fail Rule'},
         )
 
         graph = ResourceGraph()
@@ -583,21 +575,19 @@ class TestDeploymentOrchestrator:
         """Test that successful deployments are rolled back when wave fails with enable_rollback=True"""
         # Create 2 resources in same wave, one will succeed then one will fail
         change1 = ResourceChange(
-            action='create',
+            action=ResourceAction.CREATE,
             resource_type='detection',
             resource_id='detection.success',
             resource_name='success',
-            template={'name': 'Success Rule'},
-            dependencies=[]
+            new_value={'name': 'Success Rule'},
         )
 
         change2 = ResourceChange(
-            action='create',
+            action=ResourceAction.CREATE,
             resource_type='detection',
             resource_id='detection.fail',
             resource_name='fail',
-            template={'name': 'Fail Rule'},
-            dependencies=[]
+            new_value={'name': 'Fail Rule'},
         )
 
         graph = ResourceGraph()
@@ -634,30 +624,27 @@ class TestDeploymentOrchestrator:
         """Test that rollback aborts deployment of remaining waves"""
         # Create 3 resources in 2 waves
         change1 = ResourceChange(
-            action='create',
+            action=ResourceAction.CREATE,
             resource_type='lookup_file',
             resource_id='lookup_file.data',
             resource_name='data',
-            template={'name': 'data.csv'},
-            dependencies=[]
+            new_value={'name': 'data.csv'},
         )
 
         change2 = ResourceChange(
-            action='create',
+            action=ResourceAction.CREATE,
             resource_type='detection',
             resource_id='detection.dependent',
             resource_name='dependent',
-            template={'name': 'Dependent Rule'},
-            dependencies=['lookup_file.data']
+            new_value={'name': 'Dependent Rule'},
         )
 
         change3 = ResourceChange(
-            action='create',
+            action=ResourceAction.CREATE,
             resource_type='workflow',
             resource_id='workflow.notify',
             resource_name='notify',
-            template={'name': 'Notify Workflow'},
-            dependencies=['detection.dependent']
+            new_value={'name': 'Notify Workflow'},
         )
 
         graph = ResourceGraph()
@@ -696,27 +683,25 @@ class TestDeploymentOrchestrator:
         """Test that rollback of update restores previous state"""
         # Create an update and a create in same wave, create will fail
         change1 = ResourceChange(
-            action='update',
+            action=ResourceAction.UPDATE,
             resource_type='detection',
             resource_id='detection.existing',
             resource_name='existing',
-            template={'name': 'Existing Rule', 'severity': 70},
-            old_state={
+            new_value={'name': 'Existing Rule', 'severity': 70},
+            old_value={
                 'id': 'rule123',
                 'name': 'Existing Rule',
                 'severity': 50,
                 'content_hash': 'old_hash'
             },
-            dependencies=[]
         )
 
         change2 = ResourceChange(
-            action='create',
+            action=ResourceAction.CREATE,
             resource_type='detection',
             resource_id='detection.new',
             resource_name='new',
-            template={'name': 'New Rule'},
-            dependencies=[]
+            new_value={'name': 'New Rule'},
         )
 
         graph = ResourceGraph()
@@ -735,7 +720,7 @@ class TestDeploymentOrchestrator:
 
         call_count = {'count': 0}
 
-        def mock_update(resource_id, template):
+        def mock_update(resource_id, template, old_value=None):
             call_count['count'] += 1
             if call_count['count'] == 1:
                 # First call is the actual update
@@ -769,12 +754,11 @@ class TestDeploymentOrchestrator:
     def test_state_updated_after_successful_deployment(self, orchestrator):
         """Test that state is updated after successful deployment"""
         change = ResourceChange(
-            action='create',
+            action=ResourceAction.CREATE,
             resource_type='detection',
             resource_id='detection.new_rule',
             resource_name='new_rule',
-            template={'name': 'New Rule', 'severity': 50},
-            dependencies=[]
+            new_value={'name': 'New Rule', 'severity': 50},
         )
 
         graph = ResourceGraph()
@@ -802,12 +786,11 @@ class TestDeploymentOrchestrator:
     def test_state_not_updated_on_failed_deployment(self, orchestrator):
         """Test that state is not updated when deployment fails"""
         change = ResourceChange(
-            action='create',
+            action=ResourceAction.CREATE,
             resource_type='detection',
             resource_id='detection.fail_rule',
             resource_name='fail_rule',
-            template={'name': 'Fail Rule'},
-            dependencies=[]
+            new_value={'name': 'Fail Rule'},
         )
 
         graph = ResourceGraph()
@@ -897,6 +880,13 @@ class TestDeploymentOrchestrator:
 
         detection_provider = orchestrator.provider_adapter.providers['detection']
         detection_provider.compute_content_hash.return_value = 'hash123'
+        detection_provider._fetch_all_remote_rules.return_value = {
+            'deployed_rule': {
+                'rule_id': 'remote123',
+                'name': 'deployed_rule',
+                'severity': 50
+            }
+        }
 
         stats = orchestrator.sync()
 
@@ -908,6 +898,96 @@ class TestDeploymentOrchestrator:
         resource = orchestrator.state_manager.get_resource('detection', 'deployed_rule')
         assert resource is not None
         assert resource.id == 'remote123'
+
+
+    def test_apply_stores_provider_uuid_in_state_not_iac_key(self, orchestrator):
+        """End-to-end: after apply, state id is the real CrowdStrike UUID, not the IaC key."""
+        from core import ResourceAction
+        change = ResourceChange(
+            action=ResourceAction.CREATE,
+            resource_type='saved_search',
+            resource_id='saved_search.my_search',
+            resource_name='my_search',
+            new_value={'name': 'My Search', 'queryString': '...', '_search_domain': 'falcon'},
+            template_path='resources/saved_searches/my_search.yaml'
+        )
+
+        graph = ResourceGraph()
+        graph.add_node('saved_search.my_search')
+
+        plan = DeploymentPlan(
+            changes=[change],
+            waves=[['saved_search.my_search']],
+            statistics={'create': 1, 'update': 0, 'delete': 0},
+            graph=graph
+        )
+
+        saved_search_provider = orchestrator.provider_adapter.providers['saved_search']
+        saved_search_provider.apply_create.return_value = {
+            'id': 'real-crowdstrike-uuid',
+            'name': 'My Search',
+            'search_domain': 'falcon'
+        }
+        saved_search_provider.compute_content_hash.return_value = 'hash123'
+
+        orchestrator.apply(plan, auto_approve=True)
+
+        state = orchestrator.state_manager.export_to_dict()
+        stored_id = state['resources']['saved_search']['my_search']['id']
+
+        assert stored_id == 'real-crowdstrike-uuid', (
+            f"UUID write-back failed. Expected 'real-crowdstrike-uuid', got '{stored_id}'. "
+            "The IaC key must not be stored as the state id."
+        )
+
+    def test_deploy_resource_returns_result_dict_on_create(self, orchestrator):
+        """_deploy_resource returns the full provider result dict, not a bool."""
+        change = ResourceChange(
+            action=ResourceAction.CREATE,
+            resource_type='saved_search',
+            resource_id='saved_search.my_search',
+            resource_name='my_search',
+            new_value={'name': 'My Search', '_search_domain': 'falcon'}
+        )
+        expected = {'id': 'uuid-abc123', 'name': 'My Search', 'search_domain': 'falcon'}
+        orchestrator.provider_adapter.providers['saved_search'].apply_create.return_value = expected
+
+        result = orchestrator._deploy_resource(change)
+
+        assert result == expected
+
+    def test_deploy_resource_returns_none_on_empty_result(self, orchestrator):
+        """_deploy_resource returns None when provider returns falsy value."""
+        change = ResourceChange(
+            action=ResourceAction.CREATE,
+            resource_type='saved_search',
+            resource_id='saved_search.my_search',
+            resource_name='my_search',
+            new_value={'name': 'My Search', '_search_domain': 'falcon'}
+        )
+        orchestrator.provider_adapter.providers['saved_search'].apply_create.return_value = None
+
+        result = orchestrator._deploy_resource(change)
+
+        assert result is None
+
+    def test_deploy_wave_returns_results_keyed_by_resource_id(self, orchestrator):
+        """_deploy_wave includes a 'results' key mapping resource_id to provider result."""
+        change = ResourceChange(
+            action=ResourceAction.CREATE,
+            resource_type='saved_search',
+            resource_id='saved_search.my_search',
+            resource_name='my_search',
+            new_value={'name': 'My Search', '_search_domain': 'falcon'}
+        )
+        provider_result = {'id': 'uuid-abc123', 'name': 'My Search'}
+        orchestrator.provider_adapter.providers['saved_search'].apply_create.return_value = provider_result
+
+        wave_result = orchestrator._deploy_wave([change], parallel=1)
+
+        assert 'results' in wave_result
+        assert 'saved_search.my_search' in wave_result['results']
+        assert wave_result['results']['saved_search.my_search']['id'] == 'uuid-abc123'
 
 
 if __name__ == "__main__":

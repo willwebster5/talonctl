@@ -349,7 +349,8 @@ class TestLookupFileProvider:
         }
 
         result = provider.apply_delete('test.csv')
-        assert result is True
+        assert isinstance(result, dict)
+        assert result['id'] == 'test.csv'
 
         # Verify API call
         mock_falcon.command.assert_called()

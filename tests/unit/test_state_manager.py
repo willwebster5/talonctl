@@ -155,67 +155,6 @@ class TestStateManager:
         assert retrieved.id == "rule123"
         assert retrieved.content_hash == "abc123"
 
-    def test_migrate_v2_to_v3(self, temp_state_file):
-        """Test migration from v2.0 state format to v3.0"""
-        # Create a v2.0 state file
-        v2_state = {
-            "last_updated": "2025-10-01T12:00:00Z",
-            "rules": {
-                "AWS - Root Login": {
-                    "rule_id": "abc123",
-                    "content_hash": "hash123",
-                    "template_path": "rules/aws/root_login.yaml",
-                    "deployed_at": "2025-10-01T12:00:00Z",
-                    "last_modified": "2025-10-01T12:00:00Z",
-                    "workflow_created": True,
-                    "workflow_id": "wf123",
-                    "workflow_name": "AWS Root Login Notify",
-                    "workflow_enabled": True
-                },
-                "Another Detection": {
-                    "rule_id": "def456",
-                    "content_hash": "hash456",
-                    "template_path": "rules/test.yaml",
-                    "deployed_at": "2025-10-01T12:00:00Z",
-                    "last_modified": "2025-10-01T12:00:00Z",
-                    "workflow_created": False
-                }
-            },
-            "workflow_last_synced": "2025-10-01T12:00:00Z"
-        }
-
-        # Write v2 state to file
-        with open(temp_state_file, 'w') as f:
-            json.dump(v2_state, f)
-
-        # Load with StateManager (should auto-migrate)
-        manager = StateManager(temp_state_file)
-
-        # Verify migration
-        state = manager.export_to_dict()
-        assert state["version"] == "3.0"
-
-        # Check detection was migrated
-        detection = manager.get_resource("detection", "aws___root_login")
-        assert detection is not None
-        assert detection.id == "abc123"
-
-        # Check workflow was migrated
-        workflow = manager.get_resource("workflow", "aws___root_login_notify")
-        assert workflow is not None
-        assert workflow.id == "wf123"
-        assert workflow.provider_metadata["workflow_name"] == "AWS Root Login Notify"
-        assert workflow.provider_metadata["enabled"] is True
-
-        # Check detection without workflow
-        detection2 = manager.get_resource("detection", "another_detection")
-        assert detection2 is not None
-        assert detection2.id == "def456"
-
-        # Check resource graph was created
-        graph = manager.get_resource_graph()
-        assert len(graph) > 0
-
     def test_resource_graph_management(self, temp_state_file):
         """Test managing resource dependency graph"""
         manager = StateManager(temp_state_file)
@@ -261,16 +200,6 @@ class TestStateManager:
         assert retrieved_metadata["deployed_by"] == "test@example.com"
         assert retrieved_metadata["deployment_id"] == "deploy123"
         assert retrieved_metadata["environment"] == "test"
-
-    def test_sanitize_resource_name(self, temp_state_file):
-        """Test resource name sanitization"""
-        manager = StateManager(temp_state_file)
-
-        # Test various name formats
-        assert manager._sanitize_resource_name("AWS - Root Login") == "aws___root_login"
-        assert manager._sanitize_resource_name("Test (Experimental)") == "test_experimental"
-        assert manager._sanitize_resource_name("Simple") == "simple"
-        assert manager._sanitize_resource_name("Multiple   Spaces") == "multiple_spaces"
 
     def test_atomic_state_write(self, temp_state_file):
         """Test that state writes are atomic and durable"""

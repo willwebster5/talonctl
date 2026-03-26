@@ -264,10 +264,11 @@ class TestWorkflowProvider:
             provider.apply_update("test_id", {}, {})
 
     def test_apply_delete(self, provider, mock_workflows_client):
-        """apply_delete should return True on success."""
+        """apply_delete should return a dict with 'id' on success."""
         mock_workflows_client.delete_definition.return_value = {"status_code": 200}
         result = provider.apply_delete("wf123")
-        assert result is True
+        assert isinstance(result, dict)
+        assert result['id'] == "wf123"
 
     def test_compute_content_hash_identical(self, provider):
         """Test hash computation produces identical results for same content"""

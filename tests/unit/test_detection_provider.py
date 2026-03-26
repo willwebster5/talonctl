@@ -259,12 +259,14 @@ class TestDetectionProvider:
             }
         }
 
-        result = provider.apply_update('rule123', template)
+        result = provider.apply_update('rule123', template, {})
 
         assert result['rule_id'] == 'rule123'
         assert result['name'] == 'Updated Rule'
         assert 'updated_at' in result
-        mock_falcon.command.assert_called_once()
+        # apply_update calls fetch_remote_state first, then patches the rule
+        # Verify the last (patch) call was made
+        assert mock_falcon.command.call_count >= 2  # fetch_remote_state + patch
 
     def test_apply_delete(self, provider, mock_falcon):
         """Test deleting a rule"""
@@ -278,7 +280,7 @@ class TestDetectionProvider:
         assert result['rule_id'] == 'rule123'
         assert 'deleted_at' in result
         mock_falcon.command.assert_called_once_with(
-            'delete_rules_v1',
+            'entities_rules_delete_v1',
             ids=['rule123']
         )
 
@@ -399,10 +401,10 @@ class TestDetectionProvider:
         assert payload['description'] == 'Test description'
         assert payload['severity'] == 50
         assert payload['status'] == 'active'
-        assert payload['query'] == 'test query'
-        assert payload['use_ingest_time'] is True
-        assert payload['search_window'] == 24
-        assert payload['search_window_unit'] == 'hour'
+        assert payload['search']['query'] == 'test query'
+        assert payload['search']['use_ingest_time'] is True
+        assert payload['search']['search_window'] == 24
+        assert payload['search']['search_window_unit'] == 'hour'
         assert 'mitre_attack' in payload
 
     def test_prepare_rule_payload_includes_template_id_when_present(self, provider):
