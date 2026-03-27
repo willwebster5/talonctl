@@ -48,6 +48,10 @@ from core.drift_detector import (
     DriftReport,
     DriftItem
 )
+from core.dependency_validator import (
+    DependencyValidator,
+    DependencyIssue
+)
 
 __all__ = [
     # Base provider
@@ -86,6 +90,10 @@ __all__ = [
     'DriftDetector',
     'DriftReport',
     'DriftItem',
+
+    # Dependency validation
+    'DependencyValidator',
+    'DependencyIssue',
 ]
 
 __version__ = '3.0.0'
