@@ -1,0 +1,10 @@
+resource_id: detection_quality_scores
+name: detection_quality_scores.csv
+description: |
+  Quarterly detection quality scores. One row per detection per quarter.
+  Columns: quarter, resource_id, platform, hit_rate_score, fp_rate_score,
+  severity_accuracy_score, enrichment_score, overall_quality_score.
+  Updated during quarterly SOC reviews.
+format: csv
+source: resources/lookup_files/crowdstrike/detection_quality_scores.csv
+_search_domain: all
