@@ -188,6 +188,9 @@ class StateSynchronizer:
             elif hasattr(provider, '_fetch_all_remote_searches'):
                 logger.info(f"Pre-fetching remote searches cache for CREATE operations")
                 provider._fetch_all_remote_searches()
+            elif hasattr(provider, '_fetch_all_remote_dashboards'):
+                logger.info(f"Pre-fetching remote dashboards cache for CREATE operations")
+                provider._fetch_all_remote_dashboards()
 
     def _fetch_deployed_state(
         self,

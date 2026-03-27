@@ -1489,6 +1489,13 @@ class DeploymentOrchestrator:
                 else:
                     logger.warning("Lookup file provider missing _fetch_all_remote_lookup_files method")
 
+            elif resource_type == 'dashboard':
+                if hasattr(provider, '_fetch_all_remote_dashboards'):
+                    deployed = provider._fetch_all_remote_dashboards()
+                    logger.info(f"Fetched {len(deployed)} dashboards from CrowdStrike")
+                else:
+                    logger.warning("Dashboard provider missing _fetch_all_remote_dashboards method")
+
         except Exception as e:
             logger.error(f"Error fetching {resource_type} resources: {e}")
 
