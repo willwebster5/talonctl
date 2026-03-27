@@ -1,5 +1,8 @@
 name: Deploy CrowdStrike Resources
 
+permissions:
+  contents: read
+
 on:
   push:
     branches:
@@ -9,27 +12,57 @@ on:
       - 'resources/**/*.yml'
       - 'resources/rtr_scripts/scripts/**'        # RTR script files (.ps1, .sh)
       - 'resources/rtr_put_files/binaries/**'     # RTR binary files
+      - 'scripts/**'                               # Provider code changes
+      - 'tests/**'                                 # Test changes should verify they pass
   pull_request:
     # Always run on PRs to test deployment system and show current state
     types: [opened, synchronize, reopened]
   workflow_dispatch:  # Allow manual trigger
 
 jobs:
-  plan:
+  test:
     runs-on: ubuntu-latest
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v6
+
+    - name: Set up Python
+      uses: actions/setup-python@v6
+      with:
+        python-version: '3.11'
+
+    - name: Install dependencies
+      run: pip install -r requirements.txt
+
+    - name: Run unit tests
+      run: |
+        echo "## Unit Tests" >> $GITHUB_STEP_SUMMARY
+        echo '```' >> $GITHUB_STEP_SUMMARY
+        pytest tests/unit/ -v --tb=short 2>&1 | tee test_output.txt
+        TEST_EXIT_CODE=${PIPESTATUS[0]}
+        cat test_output.txt >> $GITHUB_STEP_SUMMARY
+        echo '```' >> $GITHUB_STEP_SUMMARY
+        exit $TEST_EXIT_CODE
+
+  plan:
+    needs: [test]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write
     outputs:
       has_changes: ${{ steps.plan.outputs.has_changes }}
       plan_summary: ${{ steps.plan.outputs.summary }}
 
     steps:
     - name: Checkout code
-      uses: actions/checkout@v3
+      uses: actions/checkout@v6
       with:
         token: ${{ secrets.GITHUB_TOKEN }}
         fetch-depth: 0
 
     - name: Set up Python
-      uses: actions/setup-python@v4
+      uses: actions/setup-python@v6
       with:
         python-version: '3.11'
 
@@ -459,7 +492,7 @@ jobs:
       uses: actions/checkout@v3
 
     - name: Set up Python
-      uses: actions/setup-python@v4
+      uses: actions/setup-python@v6
       with:
         python-version: '3.9'
 

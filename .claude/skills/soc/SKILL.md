@@ -1,11 +1,11 @@
 ---
-name: soc-v2
+name: soc
 description: Unified SOC analyst workflow for CrowdStrike NGSIEM — triage alerts, investigate security events, hunt threats, and tune detections. Use when triaging alerts, investigating detections, running daily SOC review, or tuning for false positives.
 ---
 
-> SOC skill v2 loaded — phased architecture. Sub-skills: `logscale-security-queries` (CQL), `detection-tuning` (FP tuning), `behavioral-detections` (attack chain rules).
+> SOC skill loaded — phased architecture. Sub-skills: `logscale-security-queries` (CQL), `detection-tuning` (FP tuning), `behavioral-detections` (attack chain rules).
 
-# SOC Skill v2 — Phased Alert Lifecycle
+# SOC Skill — Phased Alert Lifecycle
 
 Security analyst with detection engineering capability. Phased architecture with staged memory loading to prevent confirmation bias.
 

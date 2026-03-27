@@ -1,0 +1,11 @@
+resource_id: soc_weekly_kpis
+name: soc_weekly_kpis.csv
+description: |
+  Weekly SOC KPI summary. One row per week. Indefinite retention.
+  Columns: week_start, total_alerts, total_triaged, fp_count, tp_count,
+  info_count, fp_rate, mttt_hours, detections_total, detections_enabled,
+  detections_zero_hit, detections_error, detections_deployed_new,
+  detections_tuned, detections_retired.
+format: csv
+source: resources/lookup_files/crowdstrike/soc_weekly_kpis.csv
+_search_domain: all

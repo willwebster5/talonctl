@@ -55,7 +55,8 @@ class ProviderAdapter:
             SavedSearchProvider,
             LookupFileProvider,
             RTRScriptProvider,
-            RTRPutFileProvider
+            RTRPutFileProvider,
+            DashboardProvider
         )
 
         # All providers get credentials config for customer_id and other auth needs
@@ -69,6 +70,7 @@ class ProviderAdapter:
         # RTR providers need credentials to create service class instances
         self.rtr_script_provider = RTRScriptProvider(falcon_client, config=provider_config)
         self.rtr_put_file_provider = RTRPutFileProvider(falcon_client, config=provider_config)
+        self.dashboard_provider = DashboardProvider(falcon_client)
 
         # Provider registry
         self.providers: Dict[str, BaseResourceProvider] = {
@@ -77,7 +79,8 @@ class ProviderAdapter:
             'saved_search': self.saved_search_provider,
             'lookup_file': self.lookup_file_provider,
             'rtr_script': self.rtr_script_provider,
-            'rtr_put_file': self.rtr_put_file_provider
+            'rtr_put_file': self.rtr_put_file_provider,
+            'dashboard': self.dashboard_provider
         }
 
     def plan_detection_changes(

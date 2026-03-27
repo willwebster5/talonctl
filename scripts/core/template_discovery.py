@@ -46,7 +46,7 @@ class TemplateDiscovery:
     """
 
     # Valid resource types
-    VALID_RESOURCE_TYPES = ['detection', 'workflow', 'saved_search', 'lookup_file', 'rtr_script', 'rtr_put_file']
+    VALID_RESOURCE_TYPES = ['detection', 'workflow', 'saved_search', 'lookup_file', 'rtr_script', 'rtr_put_file', 'dashboard']
 
     # Default resources directory
     DEFAULT_RESOURCES_DIR = 'resources'
@@ -144,7 +144,8 @@ class TemplateDiscovery:
             'saved_search': 'saved_searches',
             'lookup_file': 'lookup_files',
             'rtr_script': 'rtr_scripts',
-            'rtr_put_file': 'rtr_put_files'
+            'rtr_put_file': 'rtr_put_files',
+            'dashboard': 'dashboards'
         }
 
         dir_name = type_to_dir.get(resource_type)

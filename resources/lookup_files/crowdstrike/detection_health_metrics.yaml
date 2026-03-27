@@ -1,0 +1,10 @@
+resource_id: detection_health_metrics
+name: detection_health_metrics.csv
+description: |
+  Weekly per-detection health metrics. Rolling 52-week window.
+  Columns: week_start, resource_id, platform, severity, enabled,
+  alert_count, fp_count, tp_count, info_count, fp_rate, last_alert_at,
+  dependency_status. Updated by weekly-detection-health CI workflow.
+format: csv
+source: resources/lookup_files/crowdstrike/detection_health_metrics.csv
+_search_domain: all

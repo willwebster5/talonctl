@@ -1,5 +1,5 @@
 ---
-name: soc-v1
+name: soc-v1-archived
 description: Unified SOC analyst workflow for CrowdStrike NGSIEM — triage alerts, investigate security events, hunt threats, and tune detections. Use when triaging alerts, investigating detections, running daily SOC review, or tuning for false positives.
 ---
 

@@ -160,11 +160,11 @@ class TestProviderAdapter:
         assert workflow_provider is not None
         assert unknown_provider is None
 
-    def test_get_provider_registry_returns_all_six_types(self, adapter):
-        """get_provider_registry should return all 6 resource type providers"""
+    def test_get_provider_registry_returns_all_types(self, adapter):
+        """get_provider_registry should return all resource type providers"""
         registry = adapter.get_provider_registry()
         assert isinstance(registry, dict)
-        expected_types = {'detection', 'workflow', 'saved_search', 'lookup_file', 'rtr_script', 'rtr_put_file'}
+        expected_types = {'detection', 'workflow', 'saved_search', 'lookup_file', 'rtr_script', 'rtr_put_file', 'dashboard'}
         assert set(registry.keys()) == expected_types
         for provider in registry.values():
             assert provider is not None
