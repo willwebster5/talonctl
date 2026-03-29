@@ -34,3 +34,9 @@ docs/superpowers/specs/
 # OS
 .DS_Store
 Thumbs.db
+
+# docs/superpowers (specs, plans — working documents, not committed)
+docs/superpowers/
+# Handoff docs (ephemeral working artifacts between skills)
+docs/handoffs/
+!docs/handoffs/.gitkeep

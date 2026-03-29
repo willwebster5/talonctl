@@ -65,7 +65,10 @@ Skills live in `.claude/skills/` and are invoked via Claude Code commands.
 | `logscale-security-queries` | LogScale/NGSIEM query reference and investigation playbooks | Stable |
 | `fusion-workflows` | Falcon Fusion workflow templates and YAML schema | Stable |
 | `detection-tuning` | FP tuning patterns with enrichment function catalog | Stable |
+| `source-threat-modeling` | Threat-model-first detection planning for new data sources | New |
+| `response-playbooks` | Detection-to-response mapping and SOAR playbook design | New |
 | `threat-hunting` | Autonomous PEAK-based threat hunting — hypothesis, intel, baseline hunts | Experimental |
+
 
 ### Commands
 
