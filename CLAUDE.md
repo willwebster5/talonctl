@@ -65,6 +65,7 @@ Skills live in `.claude/skills/` and are invoked via Claude Code commands.
 | `logscale-security-queries` | LogScale/NGSIEM query reference and investigation playbooks | Stable |
 | `fusion-workflows` | Falcon Fusion workflow templates and YAML schema | Stable |
 | `detection-tuning` | FP tuning patterns with enrichment function catalog | Stable |
+| `threat-hunting` | Autonomous PEAK-based threat hunting — hypothesis, intel, baseline hunts | Experimental |
 
 ### Commands
 
@@ -73,6 +74,7 @@ Skills live in `.claude/skills/` and are invoked via Claude Code commands.
 | `/soc` | SOC operations — triage, daily review, hunt, tune |
 | `/research` | Deep technical research with web search |
 | `/discuss` | Exploratory discussion mode (read-only, no changes) |
+| `/hunt` | Autonomous threat hunting — hypothesis, intel, baseline, coverage analysis |
 
 ### SOC Subcommands
 
@@ -81,6 +83,17 @@ Skills live in `.claude/skills/` and are invoked via Claude Code commands.
 /soc daily [product]             — Review today's untriaged alerts
 /soc tune <detection-name>       — Tune a detection for FPs
 /soc hunt <IOCs-or-hypothesis>   — Threat hunting mode
+```
+
+### Hunt Subcommands
+
+```
+/hunt hypothesis "<statement>"   — Hypothesis-driven hunt
+/hunt intel "<context>"          — Intelligence-driven hunt
+/hunt baseline "<entity>"        — Baseline/anomaly hunt
+/hunt                            — Suggest hunts from coverage gaps
+/hunt log                        — View hunt history
+/hunt coverage                   — View ATT&CK hunt coverage map
 ```
 
 ## Production Rules
