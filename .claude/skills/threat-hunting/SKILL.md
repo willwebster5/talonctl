@@ -198,3 +198,126 @@ Scope the hunt before running any queries. This phase runs autonomously.
 - Determine stacking attributes — what to `groupBy()` and what to `count()`. Choose attribute groupings carefully: stacking only on name misses malware with legitimate names in suspicious paths. Combine name + path + host.
 - Establish time window: 7 days minimum, 30 days preferred for stable environments.
 - Rule of thumb: any single stack review should take no more than 10 minutes of analysis. If results are overwhelming, narrow context.
+
+---
+
+## Execute Phase
+
+Fluid and exploratory. Follow leads, pivot, adapt. Document the investigation chain as you go — this narrative feeds the hunt report.
+
+### Hypothesis-Driven Execution
+
+1. **Run primary hypothesis test queries** — direct CQL queries against the scoped data sources and time range.
+2. **Analyze results:**
+   - Results support the hypothesis → dig deeper. What's the scope? Which systems/users are affected?
+   - Results refute the hypothesis → attempt alternative detection angles for the same TTP. Different event types, different fields, different time windows.
+   - Inconclusive → broaden scope or pivot to adjacent techniques.
+3. **Pivot on leads** — when an interesting entity (user, IP, host) surfaces:
+   - Cross-correlate across data sources (CloudTrail + EntraID + endpoint + DNS)
+   - Alert correlation: `get_alerts` for the entity — have existing detections already fired?
+   - Pull host/cloud context for interesting endpoints or resources
+4. **Document evidence chain** — record each query, what it found, and why you pivoted. This becomes the Findings section of the hunt report.
+
+### Intelligence-Driven Execution
+
+1. **IOC sweep** — search for known indicators across all relevant repos. Fast, concrete results.
+   ```cql
+   // Example: sweep for suspicious IP across all data sources
+   source.ip="<ioc_ip>" OR destination.ip="<ioc_ip>"
+   | groupBy([#repo, event.action, source.ip, destination.ip], function=count())
+   ```
+2. **Pivot from IOC hits** — if any IOC matches:
+   - What else did that actor/IP/hash do? Expand the query to all activity from that entity.
+   - Timeline analysis: what happened in the 30 minutes before and after the IOC match?
+   - Scope assessment: how many systems/users are affected?
+3. **TTP hunting (even without IOC matches)** — IOCs rotate trivially; behaviors persist.
+   - Hunt for the behavioral patterns described in the intel regardless of IOC results.
+   - Use process tree analysis, login correlation, network pattern analysis.
+   - This is where durable detection value lives.
+4. **Cross-correlate across data sources** — adversaries don't stay in one log source. Check the repo mapping table and query every relevant source for the entities under investigation.
+
+### Baseline Execution
+
+1. **Run stacking queries** — frequency counts across the target attribute grouping.
+   ```cql
+   // Example: stack scheduled tasks across all Windows endpoints
+   #event_simpleName=ScheduledTaskRegistered
+   | groupBy([TaskName, TaskExecCommand], function=[count(), collect(ComputerName)])
+   | sort(_count, order=asc)
+   | tail(50)
+   ```
+2. **Identify statistical outliers:**
+   - Entities on only 1-2 systems (vs. hundreds) — investigate.
+   - Unusual values — names that don't fit the pattern, paths in unexpected locations.
+   - Low-frequency entries at the tail of the distribution.
+3. **Investigate outliers** — for each outlier:
+   - Context queries: host lookup, user lookup, process tree reconstruction.
+   - Environmental context check: is this a known application, service account, or infrastructure component?
+   - If anomalous AND unexplained → potential finding. Document it.
+4. **Establish baseline documentation** — record what "normal" looks like. This is valuable even if no threats are found — it informs future hunts and detection tuning.
+
+### Threat Escalation Interrupt
+
+Applies to all hunt types. Two tiers based on "does this need containment?":
+
+**Suspected threat** — interesting but not confirmed:
+- Flag the finding in your investigation notes.
+- **Continue hunting** to establish scope and gather more evidence.
+- Present in the hunt report findings section.
+- Do NOT stop the hunt.
+
+**Confirmed active compromise** — evidence of C2, data exfiltration, or lateral movement in progress:
+- **STOP the hunt immediately.**
+- Produce an escalation package:
+
+```markdown
+## ESCALATION: Active Threat Discovered During Hunt
+
+**Hunt**: <title>
+**Discovery Time**: <timestamp>
+**Threat Type**: <C2 | Exfiltration | Lateral Movement | Other>
+
+### Evidence
+<What was found — specific IOCs and timestamps>
+
+### Affected Systems
+| System | Type | Evidence |
+|--------|------|----------|
+
+### IOCs
+| Indicator | Type | Context |
+|-----------|------|---------|
+
+### Immediate Risk Assessment
+<Is this ongoing? Blast radius? Next likely adversary action?>
+
+### Recommended Immediate Actions
+1. <Containment action>
+2. <Investigation action>
+3. <Communication action>
+```
+
+- Create a handoff doc at `docs/handoffs/YYYY-MM-DD-threat-hunting-to-soc-escalation.md`:
+
+```yaml
+source_skill: threat-hunting
+target_skill: soc
+objective: "Incident response for active threat discovered during hunt"
+context:
+  hunt_title: "<title>"
+  threat_type: "<C2 | Exfiltration | Lateral Movement>"
+  discovery_time: "<timestamp>"
+  affected_systems: [<list>]
+  iocs: [<list>]
+decisions_made:
+  - "Active threat confirmed during hunt — escalation required"
+  - "Hunt paused at escalation point"
+constraints:
+  - "Time-sensitive — containment actions needed"
+artifacts:
+  - "docs/hunts/YYYY-MM-DD-<slug>.md"
+```
+
+- Create a case: `case_create` → `case_add_event_evidence` → `case_add_tags(tags=["true_positive", "hunt_escalation", "<mitre_tactic>"])`
+- **Surface to human** — this is the primary human-in-the-loop touchpoint.
+- The hunt report is still produced (Act phase) with findings up to the escalation point.
