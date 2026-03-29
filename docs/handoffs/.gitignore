@@ -1,0 +1,4 @@
+# Handoff docs are ephemeral working artifacts — not permanent records.
+# They are created by one skill and consumed by another, then cleaned up.
+*
+!.gitignore
