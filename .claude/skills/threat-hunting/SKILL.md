@@ -321,3 +321,137 @@ artifacts:
 - Create a case: `case_create` → `case_add_event_evidence` → `case_add_tags(tags=["true_positive", "hunt_escalation", "<mitre_tactic>"])`
 - **Surface to human** — this is the primary human-in-the-loop touchpoint.
 - The hunt report is still produced (Act phase) with findings up to the escalation point.
+
+---
+
+## Act Phase
+
+Produce all outputs after Execute completes. Runs autonomously.
+
+### 1. Hunt Report
+
+Write the hunt report to `docs/hunts/YYYY-MM-DD-<slug>.md`. This directory is committed to git — hunt reports are permanent archival records.
+
+```markdown
+## Hunt Report: <title>
+**Date**: YYYY-MM-DD
+**Type**: Hypothesis | Intelligence | Baseline
+**ATT&CK Techniques**: T1234, T5678
+**Duration**: <approximate>
+**Outcome**: Threat Found | No Threat — Coverage Validated | Inconclusive
+
+### Hypothesis / Objective
+<What we were looking for and why>
+
+### Scope
+- **Data sources**: <repos queried>
+- **Time range**: <start — end>
+- **Entities**: <users, hosts, IPs, services examined>
+
+### Findings
+<Chronological investigation narrative — what was queried, what was found, what pivots were taken. Include CQL queries that produced significant results.>
+
+### IOCs
+| Indicator | Type | Context |
+|-----------|------|---------|
+<Only if threat discovered. Omit this section for clean hunts.>
+
+### Conclusion
+<2-3 sentences: what did we learn?>
+
+### Self-Evaluation
+- **Hypothesis quality**: <Was it testable? Too broad? Too narrow?>
+- **Data sufficiency**: <Did we have what we needed? What was missing?>
+- **Investigation efficiency**: <Dead ends? Better paths in hindsight?>
+- **Suggested next hunt**: <Based on gaps found or leads not fully pursued>
+```
+
+### 2. Detection Backlog
+
+Produced when the hunt reveals patterns that could be automated as detections. Include even for clean hunts — baseline knowledge often surfaces detectable patterns.
+
+Present the backlog in the hunt report, then write individual handoff docs:
+
+```markdown
+## Proposed Detections from Hunt: <title>
+
+| # | Detection | ATT&CK | Approach | Complexity | Target Skill | Priority |
+|---|-----------|--------|----------|------------|-------------|----------|
+| 1 | <description> | T1234 | <threshold / stacking / correlation> | <Low / Medium / High> | <behavioral-detections / cql-patterns / logscale-security-queries> | <High / Medium / Low> |
+```
+
+For each proposed detection, write a handoff doc to `docs/handoffs/YYYY-MM-DD-threat-hunting-to-<target-skill>-<slug>.md`:
+
+```yaml
+source_skill: threat-hunting
+target_skill: behavioral-detections | cql-patterns | logscale-security-queries
+objective: "Author a detection for [pattern discovered during hunt]"
+context:
+  hunt_title: "<title>"
+  hunt_date: "YYYY-MM-DD"
+  threat_scenario: "<what the detection should find>"
+  mitre_technique: "<technique ID>"
+  mitre_tactic: "<tactic>"
+  detection_approach: "<simple threshold | stacking anomaly | behavioral correlation>"
+  key_event_types: [<event types observed during hunt>]
+  key_fields: [<fields used in hunt queries>]
+  volume_notes: "<signal volume and noise characteristics from hunt data>"
+  sample_query: "<CQL query from the hunt that surfaced this pattern>"
+decisions_made:
+  - "Pattern discovered during [hunt type] hunt"
+  - "<context about why this detection matters>"
+constraints:
+  - "120s query timeout"
+  - "<data source limitations noted during hunt>"
+artifacts:
+  - "docs/hunts/YYYY-MM-DD-<slug>.md"
+```
+
+If no detectable patterns were found, skip the backlog — not every hunt produces detection opportunities.
+
+### 3. Gap Report
+
+Produced when the hunt identified visibility gaps. Append to the hunt report:
+
+```markdown
+## Visibility Gap Report
+
+### Gaps Identified
+| Gap | Impact | ATT&CK Techniques Affected | Recommendation |
+|-----|--------|---------------------------|----------------|
+| <missing data source or field> | <what can't be detected> | T1234, T5678 | <onboard source / enable logging / add field> |
+
+### ATT&CK Coverage Delta
+<Techniques that were in scope but couldn't be tested, with reasons>
+```
+
+If no gaps were identified, note that all required data was available — this is valuable coverage validation.
+
+### 4. Update Living Documents
+
+After producing all outputs:
+
+**Hunt log** — append one row to `memory/hunt-log.md`:
+
+```
+| YYYY-MM-DD | <Type> | <Title> | T1234, T5678 | <Outcome> | <N detections proposed> |
+```
+
+**Coverage map** — update `memory/coverage-map.md`:
+- Add or update entries in **Hunted** for techniques covered by this hunt.
+- Add entries to **Known Gaps** for visibility gaps discovered.
+- Regenerate **Suggested Priority Hunts** based on:
+  - **Blind spots** — techniques with no detections AND no hunting (scan `resources/detections/` for `mitre_attack` fields, compare against Hunted table)
+  - **Untested assumptions** — techniques with deployed detections but not in the Hunted table
+  - **Stale coverage** — techniques in Hunted with Last Hunted date 90+ days ago
+
+### 5. Suggest Next Hunt
+
+Based on the self-evaluation, coverage map, and findings, recommend what to hunt next:
+
+- Leads that weren't fully pursued during this hunt
+- Adjacent ATT&CK techniques revealed by findings
+- High-priority gaps from the updated coverage map
+- Techniques whose detections were validated but could be tested with different data sources
+
+Present as: "Based on this hunt, consider hunting next: **<suggestion>** — <rationale>."
