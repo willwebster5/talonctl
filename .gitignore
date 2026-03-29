@@ -27,6 +27,10 @@ discovery_results.json
 # Credentials (NEVER commit)
 credentials.json
 
+# Superpowers plans and specs (local working docs)
+docs/superpowers/plans/
+docs/superpowers/specs/
+
 # OS
 .DS_Store
 Thumbs.db
