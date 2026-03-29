@@ -455,3 +455,49 @@ Based on the self-evaluation, coverage map, and findings, recommend what to hunt
 - Techniques whose detections were validated but could be tested with different data sources
 
 Present as: "Based on this hunt, consider hunting next: **<suggestion>** — <rationale>."
+
+---
+
+## Utility Modes
+
+### `/hunt` (no arguments) — Agent-Suggested Hunting
+
+When invoked without arguments, analyze coverage and suggest high-value hunt targets:
+
+1. Read `memory/coverage-map.md` and `memory/hunt-log.md`.
+2. Scan `resources/detections/` for `mitre_attack` fields to build detection coverage picture.
+3. Cross-reference to surface three categories:
+
+   | Category | Definition | Priority |
+   |----------|-----------|----------|
+   | **Blind spots** | No detections AND never hunted | Highest |
+   | **Untested assumptions** | Detections deployed but never hunted | High |
+   | **Stale coverage** | Last hunted 90+ days ago | Medium |
+
+4. Present the top 3-5 recommended hunts:
+   ```
+   ## Suggested Hunts
+
+   | # | Technique | Tactic | Category | Suggested Type | Draft Hypothesis |
+   |---|-----------|--------|----------|---------------|-----------------|
+   | 1 | T1078 Valid Accounts | Defense Evasion | Untested — 3 detections, never hunted | Baseline | Stack authentication patterns across EntraID |
+   ```
+
+5. Wait for user to select, then proceed through Prepare → Execute → Act.
+
+### `/hunt log` — Display Hunt Log
+
+Read and present `memory/hunt-log.md` with summary statistics:
+- Total hunts completed
+- Breakdown by type (hypothesis / intelligence / baseline)
+- Breakdown by outcome (threat found / coverage validated / inconclusive)
+- Total detections proposed across all hunts
+- Most recently hunted ATT&CK techniques
+
+### `/hunt coverage` — Display Coverage Map
+
+Read `memory/coverage-map.md` and cross-reference with `resources/detections/`:
+- **Hunted techniques** with last hunt date, result, and data quality
+- **Known gaps** with impact and recommendations
+- **Detection coverage overlay** — for each hunted technique, note whether automated detections exist
+- **Suggested priority hunts** with rationale
