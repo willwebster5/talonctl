@@ -112,3 +112,89 @@ Periodic callback patterns via time-delta analysis:
 | stats([avg(delta_ms, as=avg_interval), stddev(delta_ms, as=jitter), count()])
 // Low jitter + regular interval = likely beacon
 ```
+
+## Phase Dispatcher
+
+Route based on invocation:
+
+| Command | Action |
+|---------|--------|
+| `/hunt hypothesis "<statement>"` | Full PEAK cycle — hypothesis-driven hunt |
+| `/hunt intel "<context>"` | Full PEAK cycle — intelligence-driven hunt |
+| `/hunt baseline "<entity>"` | Full PEAK cycle — baseline/anomaly hunt |
+| `/hunt` | Read coverage map, suggest high-value hunt targets |
+| `/hunt log` | Display hunt log summary |
+| `/hunt coverage` | Display ATT&CK coverage map with gap analysis |
+
+## Context Loading
+
+Load at skill invocation (all hunt types):
+
+1. Read `memory/hunt-log.md` — what hunts have been completed
+2. Read `memory/coverage-map.md` — ATT&CK technique coverage and gaps
+3. Read `.claude/skills/soc/environmental-context.md` — org baselines, known accounts, infrastructure
+4. Read `.claude/skills/soc/memory/investigation-techniques.md` — repo mappings, field gotchas
+
+Load during Prepare phase:
+5. Scan `resources/detections/` for `mitre_attack` fields — existing automated detection coverage
+6. Check `resources/saved_searches/hunting/` — existing hunting queries that may be relevant
+
+Sub-skills loaded on demand:
+- `logscale-security-queries` — when writing CQL queries
+- `cql-patterns` — when designing detection backlog entries
+- `behavioral-detections` — when proposing correlation-based detections
+
+---
+
+## Prepare Phase
+
+Scope the hunt before running any queries. This phase runs autonomously.
+
+### All Hunt Types
+
+1. **Identify ATT&CK techniques** — map the hunt objective to specific MITRE ATT&CK technique IDs.
+
+2. **Cross-reference detection coverage** — scan `resources/detections/` for templates with matching `mitre_attack` fields. Grep for the technique ID:
+   ```bash
+   grep -rl "T1234" resources/detections/
+   ```
+   Note the coverage category:
+   - Technique with deployed detections but never hunted = **untested assumption**
+   - Technique with no detections AND never hunted = **blind spot**
+   - Technique hunted 90+ days ago = **stale coverage**
+
+3. **Check hunt log** — has this technique been hunted before? When? What was found? Avoid redundant work, but re-hunting after 90 days is valid.
+
+4. **Check existing hunting queries** — scan `resources/saved_searches/hunting/` for relevant saved searches. These may provide ready-made CQL for the target technique.
+
+5. **Establish CQL scope filter** — determine which NGSIEM repos to query using the repo mapping table from `investigation-techniques.md`. Validate the data source exists:
+   ```cql
+   <scope_filter> | count()
+   ```
+   If 0 results, the data source may not be ingested. Log the gap.
+
+6. **Define time range** — 7 days default for hypothesis and intel hunts. 30 days for baseline hunts. Adjust based on data volume.
+
+7. **Define success/failure criteria** — what evidence would confirm or refute? What constitutes a meaningful anomaly?
+
+### Hypothesis-Driven Additions
+
+- Parse the hypothesis into testable components. A good hypothesis is narrow enough to prove or disprove within bounded effort.
+- Identify the specific event types and fields needed to test each component.
+- If required data sources are missing, log the gap and either:
+  - Pivot to what's available (test a related hypothesis against available data)
+  - Abort early with a gap report if the hunt is fundamentally blocked
+
+### Intelligence-Driven Additions
+
+- Extract IOCs from the provided intel: IP addresses, domains, file hashes, user agents, tool names.
+- Extract TTPs: what techniques and procedures does the intel describe?
+- **Pyramid of Pain escalation plan:** start with IOC sweeps (quick wins), then escalate to TTP hunting (durable value). Map each TTP to CQL-queryable telemetry.
+- If the intel references specific threat actors, note their known TTPs for broader behavioral hunting.
+
+### Baseline Additions
+
+- Identify the entity/behavior class: scheduled tasks, services, autorun entries, user-agent strings, DNS queries, process names, network connections.
+- Determine stacking attributes — what to `groupBy()` and what to `count()`. Choose attribute groupings carefully: stacking only on name misses malware with legitimate names in suspicious paths. Combine name + path + host.
+- Establish time window: 7 days minimum, 30 days preferred for stable environments.
+- Rule of thumb: any single stack review should take no more than 10 minutes of analysis. If results are overwhelming, narrow context.
