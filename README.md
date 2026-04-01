@@ -8,7 +8,7 @@ I'm a security engineer who built this to manage my CrowdStrike tenant as code. 
 
 What you get:
 - **Terraform-like deployment** — plan/apply/import/drift/sync for CrowdStrike NGSIEM resources
-- **Six resource types** — detections, saved searches, workflows, lookup files, RTR scripts, RTR put files
+- **Seven resource types** — detections, saved searches, dashboards, workflows, lookup files, RTR scripts, RTR put files
 - **CI/CD workflows** — GitHub Actions for automated plan-on-PR, apply-on-merge
 - **State management** — tracks deployed resources, content hashes, and CrowdStrike API IDs
 - **Dependency resolution** — DAG-based ordering so resources deploy in the right sequence
@@ -20,10 +20,35 @@ What you get:
 |--------------|-------------|-------------|
 | Detection | `resources/detections/` | Correlation rules (CQL queries with severity, MITRE mapping) |
 | Saved Search | `resources/saved_searches/` | Reusable CQL functions called with `$function_name()` |
+| Dashboard | `resources/dashboards/` | LogScale dashboards with sections and widgets |
 | Workflow | `resources/workflows/` | Falcon Fusion automation workflows |
 | Lookup File | `resources/lookup_files/` | CSV lookup tables for enrichment |
 | RTR Script | `resources/rtr_scripts/` | Real Time Response scripts |
 | RTR Put File | `resources/rtr_put_files/` | Files pushed to endpoints via RTR |
+
+## Project Structure
+
+```
+talonctl/
+├── .crowdstrike/              # State files (deployed_state.json)
+├── .github/workflows/         # CI/CD: plan on PR, apply on merge
+├── resources/                 # IaC templates
+│   ├── detections/
+│   ├── saved_searches/
+│   ├── dashboards/
+│   ├── workflows/
+│   ├── lookup_files/
+│   ├── rtr_scripts/
+│   └── rtr_put_files/
+├── scripts/                   # Deployment engine
+│   ├── resource_deploy.py     # Main CLI
+│   ├── setup.py               # Credential setup wizard
+│   ├── core/                  # Orchestrator, state, plan, drift
+│   ├── providers/             # Per-resource-type API adapters
+│   └── utils/                 # Auth, NGSIEM client, MITRE processor
+├── tests/                     # Unit tests
+└── examples/                  # Dashboards, parsers, lookup file templates
+```
 
 ## Prerequisites
 
@@ -104,6 +129,7 @@ Required secrets: `FALCON_CLIENT_ID`, `FALCON_CLIENT_SECRET`, `FALCON_BASE_URL`
 |--------------|-------------------------------|---------------|
 | Detection | `correlation-rules:read` | `correlation-rules:write` |
 | Saved Search | `ngsiem:read` | `ngsiem:write` |
+| Dashboard | `ngsiem:read` | `ngsiem:write` |
 | Lookup File | `ngsiem:read` | `ngsiem:write` |
 | Workflow | `workflow:read` | `workflow:write` |
 | RTR Script | `real-time-response-admin:write` | `real-time-response-admin:write` |

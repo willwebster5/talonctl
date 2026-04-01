@@ -10,7 +10,7 @@ Infrastructure as code for CrowdStrike. Terraform-like plan/apply for NGSIEM res
 ## Project Overview
 
 This repo provides a deployment engine for CrowdStrike NGSIEM resources:
-- **Six resource types** — detections, saved searches, workflows, lookup files, RTR scripts, RTR put files
+- **Seven resource types** — detections, saved searches, dashboards, workflows, lookup files, RTR scripts, RTR put files
 - **Terraform-like lifecycle** — validate, plan, apply, import, sync, drift
 - **State management** — tracks deployed resources and their CrowdStrike API IDs
 - **CI/CD** — GitHub Actions for plan-on-PR, apply-on-merge
@@ -138,6 +138,7 @@ The following skills are available when the [agent-skills](https://github.com/wi
 |------|-------------|-------------|
 | Detection | `resources/detections/` | Correlation rules (CQL queries with severity, MITRE mapping) |
 | Saved Search | `resources/saved_searches/` | Reusable CQL functions called with `$function_name()` |
+| Dashboard | `resources/dashboards/` | LogScale dashboards with sections and widgets |
 | Workflow | `resources/workflows/` | Falcon Fusion automation workflows |
 | Lookup File | `resources/lookup_files/` | CSV lookup tables for enrichment |
 | RTR Script | `resources/rtr_scripts/` | Real Time Response scripts |
@@ -152,6 +153,7 @@ talonctl/
 ├── resources/                 # IaC templates
 │   ├── detections/
 │   ├── saved_searches/
+│   ├── dashboards/
 │   ├── workflows/
 │   ├── lookup_files/
 │   ├── rtr_scripts/
