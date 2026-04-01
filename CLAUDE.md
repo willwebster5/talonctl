@@ -1,13 +1,14 @@
-# ClaudeStrike — Project Instructions
+# talonctl — Project Instructions
 
-Claude Code skills for CrowdStrike NG-SIEM. AI-assisted SOC operations and detection engineering as code.
+Infrastructure as code for CrowdStrike. Terraform-like plan/apply for NGSIEM resources.
 
 ## Project Overview
 
-This repo provides:
-- **SOC skills** — AI analyst workflows for alert triage, threat hunting, and detection tuning
-- **IaC deployment engine** — Terraform-like plan/apply for CrowdStrike NGSIEM resources
-- **Detection patterns** — behavioral detection rules, CQL query library, fusion workflow templates
+This repo provides a deployment engine for CrowdStrike NGSIEM resources:
+- **Six resource types** — detections, saved searches, workflows, lookup files, RTR scripts, RTR put files
+- **Terraform-like lifecycle** — validate, plan, apply, import, sync, drift
+- **State management** — tracks deployed resources and their CrowdStrike API IDs
+- **CI/CD** — GitHub Actions for plan-on-PR, apply-on-merge
 
 ## Critical Concepts
 
@@ -51,76 +52,12 @@ python scripts/resource_deploy.py drift
 python scripts/resource_deploy.py show
 ```
 
-## Available Skills
-
-Skills live in `.claude/skills/` and are invoked via Claude Code commands.
-
-| Skill | Description | Status |
-|-------|-------------|--------|
-| `soc-v1` | Unified SOC analyst — single-file skill, daily driver | Battle-tested |
-| `soc-v2` | Phased architecture with staged memory loading | Experimental |
-| `soc-v3` | Agent-delegated architecture with sub-agent decomposition | Experimental |
-| `behavioral-detections` | Attack chain patterns for writing correlation rules | Stable |
-| `cql-patterns` | CQL query pattern library (aggregation, correlation, scoring) | Stable |
-| `logscale-security-queries` | LogScale/NGSIEM query reference and investigation playbooks | Stable |
-| `fusion-workflows` | Falcon Fusion workflow templates and YAML schema | Stable |
-| `detection-tuning` | FP tuning patterns with enrichment function catalog | Stable |
-| `source-threat-modeling` | Threat-model-first detection planning for new data sources | New |
-| `response-playbooks` | Detection-to-response mapping and SOAR playbook design | New |
-| `threat-hunting` | Autonomous PEAK-based threat hunting — hypothesis, intel, baseline hunts | Experimental |
-
-
-### Commands
-
-| Command | Description |
-|---------|-------------|
-| `/soc` | SOC operations — triage, daily review, hunt, tune |
-| `/research` | Deep technical research with web search |
-| `/discuss` | Exploratory discussion mode (read-only, no changes) |
-| `/hunt` | Autonomous threat hunting — hypothesis, intel, baseline, coverage analysis |
-
-### SOC Subcommands
-
-```
-/soc triage <alert-url-or-id>   — Triage a specific alert
-/soc daily [product]             — Review today's untriaged alerts
-/soc tune <detection-name>       — Tune a detection for FPs
-/soc hunt <IOCs-or-hypothesis>   — Threat hunting mode
-```
-
-### Hunt Subcommands
-
-```
-/hunt hypothesis "<statement>"   — Hypothesis-driven hunt
-/hunt intel "<context>"          — Intelligence-driven hunt
-/hunt baseline "<entity>"        — Baseline/anomaly hunt
-/hunt                            — Suggest hunts from coverage gaps
-/hunt log                        — View hunt history
-/hunt coverage                   — View ATT&CK hunt coverage map
-```
-
 ## Production Rules
 
 1. **Always plan before apply.** Never blind-deploy. CI/CD enforces this on PRs.
 2. **Never change `resource_id` after deploy.** It destroys and recreates the resource.
 3. **Saved search description limit: 2000 characters.** The API silently truncates beyond this.
 4. **Validate CQL syntax** before committing detection changes: `python scripts/resource_deploy.py validate-query --template <path>`
-5. **Detection tuning requires approval.** The SOC skill presents a diff and waits for human confirmation.
-6. **Memory files are living documents.** Update them after every triage session with new patterns.
-
-## Credentials
-
-- **Location:** `~/.config/falcon/credentials.json`
-- **Format:**
-  ```json
-  {
-    "falcon_client_id": "...",
-    "falcon_client_secret": "...",
-    "base_url": "US1"
-  }
-- **Setup:** `python scripts/setup.py`
-- **Required API scopes:** Alerts (read/write), NGSIEM (read/write), Hosts (read), Cloud Security (read), Cases (read/write), Correlation Rules (read/write)
-- **Never commit credentials.** The `.gitignore` excludes credential files.
 
 ## Resource Types
 
@@ -133,23 +70,24 @@ Skills live in `.claude/skills/` and are invoked via Claude Code commands.
 | RTR Script | `resources/rtr_scripts/` | Real Time Response scripts |
 | RTR Put File | `resources/rtr_put_files/` | Files pushed to endpoints via RTR |
 
+## Credentials
+
+- **Location:** `~/.config/falcon/credentials.json`
+- **Format:**
+  ```json
+  {
+    "falcon_client_id": "...",
+    "falcon_client_secret": "...",
+    "base_url": "US1"
+  }
+  ```
+- **Setup:** `python scripts/setup.py`
+- **Never commit credentials.** The `.gitignore` excludes credential files.
+
 ## Project Structure
 
 ```
-ClaudeStrike/
-├── .claude/
-│   ├── commands/              # /soc, /research, /discuss
-│   ├── settings.local.json    # Tool permissions
-│   └── skills/                # All Claude Code skills
-│       ├── soc-v1/            # Battle-tested SOC skill
-│       ├── soc-v2/            # Experimental phased SOC
-│       ├── soc-v3/            # Experimental agent-delegated SOC
-│       ├── behavioral-detections/
-│       ├── cql-patterns/
-│       ├── detection-tuning/
-│       ├── fusion-workflows/
-│       ├── logscale-security-queries/
-│       └── soc-workspace/     # Eval harness and iteration history
+talonctl/
 ├── .crowdstrike/              # State files (deployed_state.json)
 ├── .github/workflows/         # CI/CD: plan on PR, apply on merge
 ├── resources/                 # IaC templates
