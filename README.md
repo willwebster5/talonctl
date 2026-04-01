@@ -1,36 +1,42 @@
-# ClaudeStrike
+# talonctl
 
-Claude Code skills for CrowdStrike NG-SIEM — AI-assisted SOC operations and detection engineering as code.
+Infrastructure as code for CrowdStrike. Manage detections, workflows, saved searches, and more with a Terraform-like lifecycle.
 
 ## What This Is
 
-I'm a security engineer who's been using Claude Code as my SOC co-pilot for the past year. This repo is the skills, playbooks, and IaC system I've built over months of daily alert triage, detection writing, and incident response.
-
-It's a work in progress. I'm sharing it because people asked and I dont feel like im getting enough use out of it in my small deployment.
+I'm a security engineer who built this to manage my CrowdStrike tenant as code. It started as the deployment engine behind an AI-assisted SOC project and works just as well standalone. If you use CrowdStrike NG-SIEM and want version-controlled, CI/CD-deployed resources — this is it.
 
 What you get:
-- **A ReadMe I de-AI** - Gosh I can see AI writing from a mile away, It helped me put everything together for this repo but I will edit the readme now
-- **AI SOC analyst skills** — three iterations of a skill that triages CrowdStrike alerts, investigates threats, hunts for IOCs, and tunes detections (This is major WIP, it uses an MCP to interact with crowdstrike, with modular tooling so you dont have to give it any write permissions and I'd recommend not in production obviously)
-- **Terraform-like deployment** — This is sorta the engine that the skills work off of.  plan/apply/import/drift for NGSIEM resources (detections, saved searches, workflows, lookup files, RTR scripts).  It provides your AI Agent a searchable index of your CS Environment, and has the added benefit of allowing IaC management as well.
+- **Terraform-like deployment** — plan/apply/import/drift/sync for CrowdStrike NGSIEM resources
+- **Six resource types** — detections, saved searches, workflows, lookup files, RTR scripts, RTR put files
 - **CI/CD workflows** — GitHub Actions for automated plan-on-PR, apply-on-merge
-- **Behavioral detection patterns** — attack chain templates for writing correlation rules across AWS, EntraID, endpoint, and more
-- **CQL query library** — patterns for aggregation, correlation, scoring, baselining, and enrichment in LogScale/NG-SIEM
+- **State management** — tracks deployed resources, content hashes, and CrowdStrike API IDs
+- **Dependency resolution** — DAG-based ordering so resources deploy in the right sequence
+- **Drift detection** — catch manual console changes that diverge from your templates
 
+## What It Manages
+
+| Resource Type | Template Dir | Description |
+|--------------|-------------|-------------|
+| Detection | `resources/detections/` | Correlation rules (CQL queries with severity, MITRE mapping) |
+| Saved Search | `resources/saved_searches/` | Reusable CQL functions called with `$function_name()` |
+| Workflow | `resources/workflows/` | Falcon Fusion automation workflows |
+| Lookup File | `resources/lookup_files/` | CSV lookup tables for enrichment |
+| RTR Script | `resources/rtr_scripts/` | Real Time Response scripts |
+| RTR Put File | `resources/rtr_put_files/` | Files pushed to endpoints via RTR |
 
 ## Prerequisites
 
 - CrowdStrike Falcon tenant with NG-SIEM (LogScale)
-- [Claude Code CLI](https://docs.anthropic.com/en/docs/claude-code)
 - Python 3.11+
 - CrowdStrike API credentials (Falcon Console > Support & Resources > API Clients and Keys)
-- A CrowdStrike MCP server (for the SOC skill to query alerts and run CQL — see [crowdstrike-mcp](https://github.com/CrowdStrike/foundry-sample-rapid-response) or build your own)
 
 ## Quick Start
 
 ```bash
 # Clone
-git clone https://github.com/yourusername/ClaudeStrike.git
-cd ClaudeStrike
+git clone https://github.com/willwebster5/talonctl.git
+cd talonctl
 
 # Install dependencies
 python -m venv .venv
@@ -44,99 +50,25 @@ python scripts/setup.py
 python scripts/resource_deploy.py import --plan              # preview what would be imported
 python scripts/resource_deploy.py import --resources=detection  # import detection rules
 
-# Start using the SOC skill
-claude   # start Claude Code in this directory
-/soc daily   # review today's untriaged alerts
+# Plan and deploy
+python scripts/resource_deploy.py plan    # preview changes
+python scripts/resource_deploy.py apply   # deploy
 ```
 
-## Project Structure
-
-```
-ClaudeStrike/
-├── .claude/
-│   ├── commands/                  # Slash commands: /soc, /research, /discuss
-│   └── skills/
-│       ├── soc-v1/                # Battle-tested daily driver
-│       ├── soc-v2/                # Experimental: phased memory loading
-│       ├── soc-v3/                # Experimental: agent-delegated architecture
-│       ├── behavioral-detections/ # Attack chain rule patterns
-│       ├── cql-patterns/          # CQL query pattern library
-│       ├── detection-tuning/      # FP tuning with enrichment function catalog
-│       ├── fusion-workflows/      # Falcon Fusion workflow templates
-│       ├── logscale-security-queries/  # LogScale query reference
-│       └── soc-workspace/         # Eval harness and iteration history
-├── .crowdstrike/                  # State files (deployed_state.json)
-├── .github/workflows/             # CI/CD: plan on PR, apply on merge
-├── resources/                     # IaC templates (your detections live here)
-│   ├── detections/                # Correlation rules
-│   ├── saved_searches/            # Reusable CQL functions
-│   ├── workflows/                 # Falcon Fusion workflows
-│   ├── lookup_files/              # CSV lookup tables
-│   ├── rtr_scripts/               # Real Time Response scripts
-│   └── rtr_put_files/             # RTR file deployments
-├── scripts/                       # Deployment engine
-│   ├── resource_deploy.py         # Main CLI (plan/apply/import/drift/sync)
-│   ├── setup.py                   # Credential setup wizard
-│   ├── core/                      # Orchestrator, state manager, drift detector
-│   └── providers/                 # Per-resource-type API adapters
-├── tests/                         # Unit tests
-└── examples/                      # Dashboards, parsers, lookup templates
-```
-
-## The Skills
-
-### SOC Skill (v1) — Daily Driver
-
-The skill I actually use every day. Unified alert lifecycle: triage, investigate, classify, close, tune.
-
-```
-/soc daily              # batch triage today's alerts
-/soc triage <alert-id>  # deep-dive a specific alert
-/soc hunt <IOCs>        # threat hunting
-/soc tune <detection>   # tune a detection for false positives
-```
-
-It loads environmental context and memory files (known FP/TP patterns, investigation techniques, tuning history), routes to the right playbook based on alert type, runs investigation queries via MCP tools, and presents a triage summary for human review. It never closes an alert without asking(Not true, definetly has closed a FP without asking before)
-
-### SOC Skill (v2) — Experimental
-
-Decomposes v1 into explicit phases with staged memory loading. The idea: don't load FP patterns until after you've collected evidence independently, so you avoid confirmation bias. Phases: Intake > Triage > Classify > Close > Tune.
-
-### SOC Skill (v3) — Experimental
-
-Agent-delegated architecture. Decomposes investigation into sub-agents (alert formatter, CQL query builder, MCP investigator, evidence summarizer). Still being evaluated. (Honestly not good, V2 probably is a sweet spot ill build off of, V3 Is VERY Eager to close out a detection on its own if its a confident FP, and it is not relying on its agents as much as I hoped, I think giving it an Orchestrator role has had side effects, I'm really just playing around with agentic capabilities, I wouldnt rely on this at all)
-
-### Other Skills
-
-- **behavioral-detections** — attack chain patterns for AWS, EntraID, endpoint. Templates for writing multi-stage correlation rules.
-- **cql-patterns** — CQL query cookbook: aggregation, correlation, scoring, baselining, string/decode, enrichment, output formatting.
-- **detection-tuning** — catalog of 38+ enrichment functions, tuning patterns, and FP resolution strategies.
-- **fusion-workflows** — Falcon Fusion YAML schema, workflow templates, trigger/action reference.
-- **logscale-security-queries** — LogScale query reference, investigation playbooks, troubleshooting.
-
-### Commands
-
-| Command | What It Does |
-|---------|-------------|
-| `/soc` | SOC operations (triage, daily, hunt, tune) |
-| `/research` | Deep technical research with web search |
-| `/discuss` | Exploratory discussion mode — no file changes |
-
-## The IaC System
-
-Terraform-like lifecycle for CrowdStrike NGSIEM resources.
+## Commands
 
 ```bash
-python scripts/resource_deploy.py validate   # check templates
-python scripts/resource_deploy.py plan       # preview changes
-python scripts/resource_deploy.py apply      # deploy
-python scripts/resource_deploy.py import     # onboard existing resources
-python scripts/resource_deploy.py sync       # reconcile state with tenant
-python scripts/resource_deploy.py drift      # detect manual console changes
-python scripts/resource_deploy.py show       # display current state
+python scripts/resource_deploy.py validate       # check templates (no API calls)
+python scripts/resource_deploy.py plan            # preview changes
+python scripts/resource_deploy.py apply           # deploy changes
+python scripts/resource_deploy.py import          # onboard existing resources
+python scripts/resource_deploy.py import --plan   # preview import
+python scripts/resource_deploy.py sync            # reconcile state with tenant
+python scripts/resource_deploy.py drift           # detect manual console changes
+python scripts/resource_deploy.py show            # display current state
 ```
 
-### Import Command
+## Import
 
 Already have detections in your tenant? Import them:
 
@@ -147,21 +79,26 @@ python scripts/resource_deploy.py import --plan
 # Import specific resource types
 python scripts/resource_deploy.py import --resources=detection
 python scripts/resource_deploy.py import --resources=saved_search,detection
+
+# Import everything
+python scripts/resource_deploy.py import
 ```
 
 This generates YAML templates in `resources/` and updates the state file, bringing existing resources under IaC management.
 
-### CI/CD
+## CI/CD
 
 GitHub Actions workflows included:
-- **PR opened** — runs `plan`, posts a summary comment
-- **Merge to main** — runs `apply --auto-approve`
+
+- **PR opened** — runs `plan`, posts a summary comment with what would change
+- **Merge to main** — runs `apply --auto-approve` to deploy
+- **Weekly** — template discovery for new CrowdStrike OOTB content
 
 Required secrets: `FALCON_CLIENT_ID`, `FALCON_CLIENT_SECRET`, `FALCON_BASE_URL`
 
 ## Required API Scopes
 
-### IaC Engine — By Resource Type
+### By Resource Type
 
 | Resource Type | Read (plan/sync/drift/import) | Write (apply) |
 |--------------|-------------------------------|---------------|
@@ -172,7 +109,7 @@ Required secrets: `FALCON_CLIENT_ID`, `FALCON_CLIENT_SECRET`, `FALCON_BASE_URL`
 | RTR Script | `real-time-response-admin:write` | `real-time-response-admin:write` |
 | RTR Put File | `real-time-response-admin:write` | `real-time-response-admin:write` |
 
-### IaC Engine — By Command
+### By Command
 
 | Command | Required Scopes | Notes |
 |---------|----------------|-------|
@@ -185,14 +122,6 @@ Required secrets: `FALCON_CLIENT_ID`, `FALCON_CLIENT_SECRET`, `FALCON_BASE_URL`
 | `show` | None | Reads local state file only |
 | `validate-query` | `ngsiem:read` | Validates CQL syntax via API |
 
-### SOC Skill (via MCP Server)
-
-The SOC skills don't call the Falcon API directly — they use MCP tools provided by a [CrowdStrike MCP server](https://github.com/willwebster5/crowdstrike-mcp). See that repo's README for the full tool-to-scope mapping.
-
-**Minimum for read-only triage:** `alerts:read`, `ngsiem:read`, `hosts:read`, `detects:read`
-
-**With status updates and case management:** add `alerts:write`, `cases:read`, `cases:write`
-
 ### Minimum Scopes by Workflow
 
 | Workflow | Scopes |
@@ -201,12 +130,19 @@ The SOC skills don't call the Falcon API directly — they use MCP tools provide
 | **Detections + saved searches** | Above + `ngsiem:read`, `ngsiem:write` |
 | **Full IaC** (all resource types) | All read + write scopes above |
 | **Import only** (onboarding) | Read scopes for target resource types |
-| **SOC triage** (read-only) | `alerts:read`, `ngsiem:read`, `hosts:read`, `detects:read` |
-| **SOC triage + close/tune** | Above + `alerts:write`, `correlation-rules:read`, `correlation-rules:write` |
 
 ### Setup Script
 
 `python scripts/setup.py` uses `sensor-installers:read` to validate credentials. This scope is only needed for the one-time setup check.
+
+## Ecosystem
+
+talonctl was built alongside a set of AI-assisted security skills and a CrowdStrike MCP server. Together they form a detection engineering and SOC operations toolkit:
+
+- **[agent-skills](https://github.com/willwebster5/agent-skills)** — Claude Code plugin marketplace with CrowdStrike skills for SOC triage, detection engineering, threat hunting, and more. The skills are designed to work on top of talonctl-managed resources.
+- **[crowdstrike-mcp](https://github.com/willwebster5/crowdstrike-mcp)** — MCP server for querying alerts, running CQL, host lookup, and case management. Used by the agent-skills plugins.
+
+To use talonctl with AI-assisted workflows: install the agent-skills plugins into Claude Code, point them at a talonctl-managed repo, and copy `CLAUDE.integrated.md` over `CLAUDE.md` for the full experience.
 
 ## License
 
