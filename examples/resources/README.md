@@ -1,6 +1,6 @@
 # Resource Format Examples
 
-One example of each resource type managed by the ClaudeStrike IaC engine.
+One example of each resource type managed by the talonctl IaC engine.
 
 | File | Resource Type | Description |
 |------|--------------|-------------|

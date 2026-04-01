@@ -1,4 +1,4 @@
-"""Pytest configuration for ClaudeStrike unit tests."""
+"""Pytest configuration for talonctl unit tests."""
 
 import os
 import sys

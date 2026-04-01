@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-CrowdStrike ClaudeStrike Setup Wizard
+talonctl Setup Wizard
 
 Interactive credential setup for the CrowdStrike Falcon API.
 Validates the connection and saves credentials to ~/.config/falcon/credentials.json.
@@ -32,7 +32,7 @@ def print_banner():
     """Print setup wizard banner"""
     print()
     print("=" * 60)
-    print("  CrowdStrike ClaudeStrike - Setup Wizard")
+    print("  talonctl - Setup Wizard")
     print("=" * 60)
     print()
     print("This wizard will configure your CrowdStrike API credentials.")
