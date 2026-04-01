@@ -1,6 +1,6 @@
 # Getting Started
 
-Detailed onboarding walkthrough for ClaudeStrike.
+Detailed onboarding walkthrough for talonctl.
 
 ## 1. Prerequisites
 
@@ -9,18 +9,16 @@ You need:
 - **CrowdStrike Falcon tenant** with NG-SIEM (LogScale) enabled
 - **CrowdStrike API credentials** — create an API client in the Falcon Console:
   - Go to **Support & Resources > API Clients and Keys**
-  - Create a new client with scopes: Alerts (Read/Write), Custom IOA Rules (Read/Write), Hosts (Read), Real Time Response (Read/Write), Saved Searches (Read/Write), Workflows (Read/Write), Cases (Read/Write)
-- **Claude Code CLI** — installed and authenticated ([docs](https://docs.anthropic.com/en/docs/claude-code))
+  - Create a new client with the scopes needed for your resource types (see README for scope reference)
 - **Python 3.11+** — with pip
 - **Git**
-- **A CrowdStrike MCP server** — the SOC skill uses MCP tools to query alerts and run CQL. You'll need a running MCP server that exposes tools like `ngsiem_query`, `get_alerts`, `alert_analysis`, etc.
 
 ## 2. Installation
 
 ```bash
 # Clone the repo
-git clone https://github.com/yourusername/ClaudeStrike.git
-cd ClaudeStrike
+git clone https://github.com/willwebster5/talonctl.git
+cd talonctl
 
 # Create a virtual environment
 python -m venv .venv
@@ -117,113 +115,17 @@ python scripts/resource_deploy.py validate
 python scripts/resource_deploy.py show
 ```
 
-## 5. Using the SOC Skill
-
-Start Claude Code in the ClaudeStrike directory:
+## 5. Plan and Deploy
 
 ```bash
-claude
+# See what would change
+python scripts/resource_deploy.py plan
+
+# Deploy (after reviewing the plan)
+python scripts/resource_deploy.py apply
 ```
 
-The SOC skill activates via the `/soc` command:
-
-```
-/soc daily              # Review today's untriaged alerts
-/soc daily endpoint     # Only endpoint alerts
-/soc daily ngsiem       # Only NGSIEM correlation alerts
-/soc triage <alert-id>  # Deep-dive a specific alert
-/soc hunt <description> # Threat hunting with IOCs or hypothesis
-/soc tune <detection>   # Tune a detection for false positives
-```
-
-### What to Expect
-
-**Daily mode** (`/soc daily`):
-1. Loads environmental context and memory files
-2. Fetches untriaged alerts by product category
-3. Assigns triage depth tiers (fast-track, pattern-match, standard, deep)
-4. Presents a summary table and waits for you to pick which alerts to investigate
-5. Walks through triage for each selected alert
-6. Proposes classification (TP/FP) and waits for your approval before closing
-
-**Single alert triage** (`/soc triage <id>`):
-1. Loads the matching investigation playbook
-2. Calls `alert_analysis` for enriched alert data
-3. Runs investigation queries (CQL, host lookup, cloud asset checks)
-4. Presents evidence and classification
-5. If FP: proposes detection tuning with a diff
-6. If TP: generates escalation package with timeline, scope, IOCs, and hunting queries
-
-The skill never closes an alert without your confirmation.
-
-### MCP Server Requirement
-
-The SOC skill depends on CrowdStrike MCP tools being available in your Claude Code session. You need to configure a CrowdStrike MCP server in your `.mcp.json` (project root or `~/.claude/.mcp.json`):
-
-```json
-{
-  "mcpServers": {
-    "crowdstrike": {
-      "command": "path/to/your/mcp/server",
-      "args": ["--config", "path/to/config"]
-    }
-  }
-}
-```
-
-The specific MCP tools used by the SOC skill:
-- `ngsiem_query` — execute CQL queries
-- `get_alerts` — retrieve alerts with filters
-- `alert_analysis` — deep-dive enrichment on a single alert
-- `update_alert_status` — close/tag alerts
-- `host_lookup` — device posture
-- `host_login_history`, `host_network_history` — host context
-- `cloud_query_assets`, `cloud_get_iom_detections`, `cloud_get_risks` — cloud security
-- `case_create`, `case_update`, `case_add_alert_evidence` — case management
-
-## 6. Customizing Skills
-
-### Environmental Context
-
-Edit `.claude/skills/soc-v1/environmental-context.md` (or the v2/v3 equivalent) to teach the SOC skill about your environment:
-
-- **Known service accounts** — so it doesn't flag them as suspicious
-- **Expected IP ranges** — VPN, office, CI/CD runner IPs
-- **Business context** — what's normal in your org (deployment windows, admin patterns)
-- **Cloud accounts** — account IDs, names, trust relationships
-- **User groups** — admin groups, service teams, automation accounts
-
-The more context you provide, the fewer false positives and the better the triage quality.
-
-### Memory Files
-
-Memory files in `memory/` (v2/v3) or single-file `MEMORY.md` (v1) accumulate institutional knowledge:
-
-| File | What Goes Here |
-|------|---------------|
-| `fp-patterns.md` | Known false positive signatures with specific IOCs |
-| `tp-patterns.md` | Confirmed true positive indicators |
-| `fast-track-patterns.md` | High-confidence bulk-close patterns (must be 100% noise) |
-| `investigation-techniques.md` | CQL query patterns, field gotchas, repo mapping |
-| `tuning-log.md` | History of tuning decisions with rationale |
-| `tuning-backlog.md` | Pending tuning work |
-| `detection-ideas.md` | New detection concepts discovered during triage |
-
-These start empty. They fill up organically as you triage alerts — the skill proposes updates after each session.
-
-### Playbooks
-
-Investigation playbooks in `playbooks/` guide the skill through specific alert types:
-
-- `cloud-security-aws.md` — AWS CloudTrail and cloud security alerts
-- `entraid-signin-alert.md` — EntraID sign-in third-party alerts
-- `entraid-risky-signin.md` — EntraID risky sign-in NGSIEM detections
-- `knowbe4-phisher.md` — KnowBe4 PhishER alerts
-- `container-sensor-investigation.md` — container/ECS sensor questions
-
-Add your own playbooks for alert types specific to your environment.
-
-## 7. CI/CD Setup
+## 6. CI/CD Setup
 
 Two GitHub Actions workflows are included in `.github/workflows/`:
 
@@ -245,7 +147,15 @@ Set these in your GitHub repo under **Settings > Secrets and variables > Actions
 
 ### weekly-template-discovery.yml
 
-Runs weekly to discover new resource templates that may have been added outside the IaC workflow. Helpful for catching drift.
+Runs weekly to discover new CrowdStrike OOTB templates. Creates a PR with any new templates found for your review.
+
+## 7. Using with AI Skills (Optional)
+
+If you want AI-assisted SOC operations on top of talonctl, see the [agent-skills](https://github.com/willwebster5/agent-skills) repo. To set it up:
+
+1. Install the agent-skills plugins into Claude Code
+2. Copy the integrated instructions: `cp CLAUDE.integrated.md CLAUDE.md`
+3. Configure a [CrowdStrike MCP server](https://github.com/willwebster5/crowdstrike-mcp) for live alert/query access
 
 ## 8. Troubleshooting
 
@@ -269,14 +179,6 @@ No resources found for type: detection
 - Confirm your API client has the required scopes (Custom IOA Rules: Read)
 - Check that you're pointing at the right tenant/region
 - Try `python scripts/resource_deploy.py import --plan` to see the full discovery output
-
-### MCP Tools Not Available
-
-If `/soc` can't find CrowdStrike MCP tools:
-- Verify your `.mcp.json` has a `crowdstrike` server configured
-- Check that the MCP server process is running
-- Restart Claude Code to reload MCP server connections
-- Check `enabledMcpjsonServers` in `.claude/settings.local.json` includes `"crowdstrike"`
 
 ### Plan Shows Unexpected Changes
 
