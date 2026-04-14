@@ -150,6 +150,33 @@ class DetectionProvider(BaseResourceProvider):
         # Legacy format: top-level tactic/technique fields are also valid
         # No validation needed - these are optional
 
+        # Validate ADS metadata if present (optional block, strict when present)
+        ads = template.get('ads')
+        if ads is not None:
+            if not isinstance(ads, dict):
+                errors.append("'ads' must be a dictionary")
+            else:
+                # Required fields when ads block is present
+                for field in self.ADS_REQUIRED_FIELDS:
+                    val = ads.get(field)
+                    if not val or (isinstance(val, str) and not val.strip()):
+                        errors.append(f"ads.{field} is required when ads block is present")
+
+                # Reject unknown fields
+                unknown = set(ads.keys()) - self.ADS_ALLOWED_FIELDS
+                if unknown:
+                    errors.append(f"Unknown ads fields: {', '.join(sorted(unknown))}")
+
+                # Type-check list fields
+                for field in self.ADS_LIST_FIELDS:
+                    if field in ads and not isinstance(ads[field], list):
+                        errors.append(f"ads.{field} must be a list")
+
+                # Type-check string fields
+                for field in self.ADS_STRING_FIELDS:
+                    if field in ads and not isinstance(ads[field], str):
+                        errors.append(f"ads.{field} must be a string")
+
         return errors
 
     def fetch_remote_state(self, resource_id: str) -> Optional[Dict[str, Any]]:
@@ -788,6 +815,20 @@ class DetectionProvider(BaseResourceProvider):
     # These are the fields we control via IaC templates.
     CONTENT_FIELDS = ('name', 'description', 'severity', 'status', 'type')
     SEARCH_FIELDS = ('filter', 'lookback', 'outcome', 'trigger_mode', 'use_ingest_time', 'execution_mode')
+
+    # ADS (Alerting and Detection Strategy) metadata fields.
+    # Optional block on detection templates — strict validation when present.
+    ADS_ALLOWED_FIELDS = {
+        'goal', 'mitre_attack', 'strategy_abstract', 'technical_context',
+        'blind_spots', 'false_positives', 'validation', 'priority_rationale',
+        'response', 'ads_created', 'ads_updated', 'ads_author',
+    }
+    ADS_REQUIRED_FIELDS = {'goal'}
+    ADS_LIST_FIELDS = {'mitre_attack', 'blind_spots', 'false_positives', 'validation'}
+    ADS_STRING_FIELDS = {
+        'goal', 'strategy_abstract', 'technical_context', 'priority_rationale',
+        'response', 'ads_created', 'ads_updated', 'ads_author',
+    }
 
     def compute_content_hash(self, template: Dict[str, Any]) -> str:
         """
