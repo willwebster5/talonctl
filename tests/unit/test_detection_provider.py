@@ -433,5 +433,168 @@ class TestDetectionProvider:
         assert 'template_id' not in payload
 
 
+    # --- ADS metadata validation ---
+
+    def test_validate_template_ads_absent_passes(self, provider):
+        """ads: block is optional — absence should not cause errors"""
+        template = {
+            'name': 'Test Rule',
+            'description': 'Test',
+            'severity': 50,
+            'search': {'query': 'test'}
+        }
+        errors = provider.validate_template(template)
+        assert errors == []
+
+    def test_validate_template_ads_valid(self, provider):
+        """Valid ads: block with required goal field"""
+        template = {
+            'name': 'Test Rule',
+            'description': 'Test',
+            'severity': 50,
+            'search': {'query': 'test'},
+            'ads': {
+                'goal': 'Detect unauthorized access to EC2 security groups',
+                'mitre_attack': ['Defense Evasion / Impair Defenses'],
+                'blind_spots': ['Service-linked role changes not logged'],
+                'strategy_abstract': 'Correlates EC2 SG changes with known CI/CD patterns',
+            }
+        }
+        errors = provider.validate_template(template)
+        assert errors == []
+
+    def test_validate_template_ads_missing_goal(self, provider):
+        """ads: block present without goal should fail"""
+        template = {
+            'name': 'Test Rule',
+            'description': 'Test',
+            'severity': 50,
+            'search': {'query': 'test'},
+            'ads': {
+                'strategy_abstract': 'Some strategy',
+            }
+        }
+        errors = provider.validate_template(template)
+        assert any('ads.goal' in err for err in errors)
+
+    def test_validate_template_ads_empty_goal(self, provider):
+        """ads: block with empty goal should fail"""
+        template = {
+            'name': 'Test Rule',
+            'description': 'Test',
+            'severity': 50,
+            'search': {'query': 'test'},
+            'ads': {
+                'goal': '',
+            }
+        }
+        errors = provider.validate_template(template)
+        assert any('ads.goal' in err for err in errors)
+
+    def test_validate_template_ads_unknown_field(self, provider):
+        """Unknown fields in ads: block should be rejected"""
+        template = {
+            'name': 'Test Rule',
+            'description': 'Test',
+            'severity': 50,
+            'search': {'query': 'test'},
+            'ads': {
+                'goal': 'Detect something',
+                'unknown_field': 'value',
+            }
+        }
+        errors = provider.validate_template(template)
+        assert any('unknown_field' in err for err in errors)
+
+    def test_validate_template_ads_list_field_not_list(self, provider):
+        """List fields in ads: must be lists"""
+        template = {
+            'name': 'Test Rule',
+            'description': 'Test',
+            'severity': 50,
+            'search': {'query': 'test'},
+            'ads': {
+                'goal': 'Detect something',
+                'blind_spots': 'not a list',
+            }
+        }
+        errors = provider.validate_template(template)
+        assert any('ads.blind_spots' in err and 'list' in err for err in errors)
+
+    def test_validate_template_ads_string_field_not_string(self, provider):
+        """String fields in ads: must be strings"""
+        template = {
+            'name': 'Test Rule',
+            'description': 'Test',
+            'severity': 50,
+            'search': {'query': 'test'},
+            'ads': {
+                'goal': ['not', 'a', 'string'],
+            }
+        }
+        errors = provider.validate_template(template)
+        assert any('ads.goal' in err and 'string' in err for err in errors)
+
+    def test_validate_template_ads_not_dict(self, provider):
+        """ads: must be a dictionary if present"""
+        template = {
+            'name': 'Test Rule',
+            'description': 'Test',
+            'severity': 50,
+            'search': {'query': 'test'},
+            'ads': 'not a dict',
+        }
+        errors = provider.validate_template(template)
+        assert any("'ads' must be a dictionary" in err for err in errors)
+
+    def test_validate_template_ads_false_positives_mixed_entries(self, provider):
+        """false_positives can contain both dicts and string references"""
+        template = {
+            'name': 'Test Rule',
+            'description': 'Test',
+            'severity': 50,
+            'search': {'query': 'test'},
+            'ads': {
+                'goal': 'Detect something',
+                'false_positives': [
+                    {
+                        'pattern': 'CI/CD Terraform deployments',
+                        'characteristics': 'github-actions-role ARN',
+                        'tuning': 'Filtered via $aws_service_account_detector()',
+                        'status': 'tuned',
+                    },
+                    '-> knowledge/patterns/aws.md#autoscaling-service-role',
+                ],
+            }
+        }
+        errors = provider.validate_template(template)
+        assert errors == []
+
+    def test_validate_template_ads_all_optional_fields(self, provider):
+        """All optional ADS fields should be accepted"""
+        template = {
+            'name': 'Test Rule',
+            'description': 'Test',
+            'severity': 50,
+            'search': {'query': 'test'},
+            'ads': {
+                'goal': 'Detect unauthorized access',
+                'mitre_attack': ['TA0005:T1562'],
+                'strategy_abstract': 'Correlates SG changes',
+                'technical_context': 'CloudTrail, EC2 SG API calls',
+                'blind_spots': ['Service-linked roles'],
+                'false_positives': ['CI/CD automation'],
+                'validation': ['Modify SG from unapproved role'],
+                'priority_rationale': 'High-value asset modification',
+                'response': 'See playbook cloud-security-aws.md',
+                'ads_created': '2026-04-14',
+                'ads_updated': '2026-04-14',
+                'ads_author': 'Will Webster',
+            }
+        }
+        errors = provider.validate_template(template)
+        assert errors == []
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])
