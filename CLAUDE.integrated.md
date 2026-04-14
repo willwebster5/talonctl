@@ -114,7 +114,7 @@ The following skills are available when the [agent-skills](https://github.com/wi
 3. **Saved search description limit: 2000 characters.** The API silently truncates beyond this.
 4. **Validate CQL syntax** before committing detection changes: `python scripts/resource_deploy.py validate-query --template <path>`
 5. **Detection tuning requires approval.** The SOC skill presents a diff and waits for human confirmation.
-6. **Memory files are living documents.** Update them after every triage session with new patterns.
+6. **Knowledge base files are living documents.** Update `knowledge/` files after every triage session with new patterns, metrics, and tuning decisions.
 
 ## Credentials
 
@@ -150,6 +150,7 @@ The following skills are available when the [agent-skills](https://github.com/wi
 talonctl/
 ├── .crowdstrike/              # State files (deployed_state.json)
 ├── .github/workflows/         # CI/CD: plan on PR, apply on merge
+├── knowledge/                 # Living operational knowledge base
 ├── resources/                 # IaC templates
 │   ├── detections/
 │   ├── saved_searches/
@@ -166,6 +167,75 @@ talonctl/
 │   └── utils/                 # Auth, NGSIEM client, MITRE processor
 ├── tests/                     # Unit tests
 └── examples/                  # Dashboards, parsers, lookup file templates
+```
+
+## Knowledge Base
+
+The `knowledge/` directory holds living operational documents that compound over time through triage sessions.
+
+### Tiered Loading
+
+| Tier | Load When | Files |
+|------|-----------|-------|
+| L1 | Every session | `knowledge/INDEX.md`, `knowledge/context/environmental-context.md` |
+| L2 | Per-task | `knowledge/patterns/<platform>.md`, `knowledge/techniques/investigation-techniques.md`, `knowledge/tuning/tuning-backlog.md` |
+| L3 | On-demand | `knowledge/tuning/tuning-log.md`, `knowledge/metrics/detection-metrics.jsonl`, `knowledge/hunts/*.md`, `knowledge/ideas/detection-ideas.md` |
+
+### Phase Loading Boundaries (Anti-Bias)
+
+| Phase | Loads | Does NOT Load |
+|-------|-------|---------------|
+| Phase 1 (Intake) | INDEX.md, environmental-context.md | Platform patterns, investigation techniques |
+| Phase 2 (Triage) | investigation-techniques.md, relevant playbook | Platform pattern files |
+| Phase 3 (Classification) | patterns/\<platform\>.md for relevant platform | — |
+| Phase 4 (Closure) | Writes to: INDEX.md, patterns/\<platform\>.md, detection-metrics.jsonl, tuning-backlog.md | — |
+
+### ADS Metadata Schema
+
+Detection templates support an optional `ads:` block for Alerting and Detection Strategy documentation. If present, `goal` is required and only known fields are allowed. Unknown keys are rejected by `validate`.
+
+```yaml
+ads:
+  goal: ""              # Required — what behavior does this detection identify?
+  mitre_attack: []      # Analyst-facing MITRE mappings (can differ from top-level)
+  strategy_abstract: "" # How the detection works
+  technical_context: "" # Data sources, key fields, enrichment
+  blind_spots: []       # Known limitations
+  false_positives: []   # Inline FP summaries or references to knowledge/patterns/
+  validation: []        # Steps to trigger a true positive
+  priority_rationale: ""# Why this severity level?
+  response: ""          # Response steps or playbook reference
+  ads_created: ""       # ISO date
+  ads_updated: ""       # ISO date
+  ads_author: ""        # Who wrote/updated
+```
+
+The `ads.mitre_attack` field is analyst-facing and can include parent/child categories (e.g., "Defense Evasion / Impair Defenses") that the API doesn't support. The top-level `mitre_attack` field is what deploys via the CrowdStrike API. Both coexist.
+
+### Detection Metrics
+
+Append one JSONL line to `knowledge/metrics/detection-metrics.jsonl` per alert disposition:
+
+```json
+{"date":"2026-04-14","detection":"AWS - CloudTrail - EC2 SG Anomaly","resource_id":"aws_cloudtrail_ec2_sg_anomaly","disposition":"false_positive","fp_reason":"ci_cd_automation","tier":"pattern_match","est_minutes":3,"alert_count":1,"case_created":false,"composite_id":"ngsiem:bf7f...:abc123"}
+```
+
+Dispositions: `true_positive`, `false_positive`, `tuning_needed`, `inconclusive`.
+
+### Tuning Log Format
+
+Structured entries in `knowledge/tuning/tuning-log.md`:
+
+```markdown
+## YYYY-MM-DD — resource_id
+
+**Trigger:** What prompted the tuning
+**Change:** Summary of what was modified
+**Before:** `<before CQL snippet>`
+**After:** `<after CQL snippet>`
+**Alerts:** [composite_ids that triggered this]
+**Validation:** validate-query result
+**PR:** #number
 ```
 
 ## CI/CD

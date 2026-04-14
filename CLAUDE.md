@@ -91,6 +91,7 @@ python scripts/resource_deploy.py show
 talonctl/
 ├── .crowdstrike/              # State files (deployed_state.json)
 ├── .github/workflows/         # CI/CD: plan on PR, apply on merge
+├── knowledge/                 # Living operational knowledge base
 ├── resources/                 # IaC templates
 │   ├── detections/
 │   ├── saved_searches/
@@ -108,6 +109,20 @@ talonctl/
 ├── tests/                     # Unit tests
 └── examples/                  # Dashboards, parsers, lookup file templates
 ```
+
+## Knowledge Base
+
+The `knowledge/` directory contains living operational documents maintained through triage sessions:
+- `INDEX.md` — routing table loaded every session (<150 lines)
+- `context/` — environmental baselines
+- `patterns/` — per-platform FP/TP pattern libraries
+- `techniques/` — investigation query patterns and field gotchas
+- `tuning/` — tuning backlog and historical decision log
+- `metrics/` — per-alert disposition records (JSONL append-only)
+- `hunts/` — threat hunt reports
+- `ideas/` — detection concepts from triage and hunting
+
+Format documentation is in each file's header.
 
 ## CI/CD
 
