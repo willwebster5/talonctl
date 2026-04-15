@@ -12,7 +12,7 @@ on:
       - 'resources/**/*.yml'
       - 'resources/rtr_scripts/scripts/**'        # RTR script files (.ps1, .sh)
       - 'resources/rtr_put_files/binaries/**'     # RTR binary files
-      - 'scripts/**'                               # Provider code changes
+      - 'src/talonctl/**'                            # Package code changes
       - 'tests/**'                                 # Test changes should verify they pass
   pull_request:
     # Always run on PRs to test deployment system and show current state
@@ -32,7 +32,7 @@ jobs:
         python-version: '3.11'
 
     - name: Install dependencies
-      run: pip install -r requirements.txt
+      run: pip install -e .[dev]
 
     - name: Run unit tests
       run: |
@@ -68,7 +68,7 @@ jobs:
 
     - name: Install dependencies
       run: |
-        pip install -r requirements.txt
+        pip install -e .[dev]
 
     - name: Set up credentials
       run: |
@@ -106,7 +106,7 @@ jobs:
     - name: Validate templates
       run: |
         echo "🔍 Validating all resource templates..."
-        python scripts/resource_deploy.py validate | tee validation_output.txt
+        talonctl validate | tee validation_output.txt
 
         echo "## Template Validation" >> $GITHUB_STEP_SUMMARY
         echo '```' >> $GITHUB_STEP_SUMMARY
@@ -121,7 +121,7 @@ jobs:
       run: |
         # Generate plan with error handling using unified CLI (all resource types)
         echo "🔍 Generating deployment plan for all resources..."
-        python scripts/resource_deploy.py plan --remote-state 2>&1 | tee plan_output.txt
+        talonctl plan --remote-state 2>&1 | tee plan_output.txt
 
         # Check if plan succeeded (exit code 0 or 1 are both valid - 1 means validation errors but plan still generated)
         PLAN_EXIT_CODE=${PIPESTATUS[0]}
@@ -337,7 +337,7 @@ jobs:
 
     - name: Install dependencies
       run: |
-        pip install -r requirements.txt
+        pip install -e .[dev]
 
     - name: Set up credentials
       run: |
@@ -376,7 +376,7 @@ jobs:
         # Capture exit code but don't fail immediately - need to save state first
         # --remote-state syncs state to/from NGSIEM lookup file for consistency
         set +e  # Don't exit on error
-        python scripts/resource_deploy.py apply --remote-state --auto-approve | tee production_deploy.log
+        talonctl apply --remote-state --auto-approve | tee production_deploy.log
         DEPLOY_EXIT_CODE=$?
         set -e  # Re-enable exit on error
 
@@ -451,7 +451,7 @@ jobs:
       run: |
         echo "📊 Deployment State (All Resources)" >> $GITHUB_STEP_SUMMARY
         echo '```' >> $GITHUB_STEP_SUMMARY
-        python scripts/resource_deploy.py show >> $GITHUB_STEP_SUMMARY 2>&1 || echo "No state available yet" >> $GITHUB_STEP_SUMMARY
+        talonctl show >> $GITHUB_STEP_SUMMARY 2>&1 || echo "No state available yet" >> $GITHUB_STEP_SUMMARY
         echo '```' >> $GITHUB_STEP_SUMMARY
 
     - name: Upload metrics
@@ -498,7 +498,7 @@ jobs:
 
     - name: Install dependencies
       run: |
-        pip install -r requirements.txt
+        pip install -e .[dev]
 
     - name: Set up credentials
       run: |
@@ -525,7 +525,7 @@ jobs:
         echo "## Drift Detection Report (All Resources)" >> $GITHUB_STEP_SUMMARY
         echo "" >> $GITHUB_STEP_SUMMARY
         echo '```' >> $GITHUB_STEP_SUMMARY
-        python scripts/resource_deploy.py drift >> $GITHUB_STEP_SUMMARY 2>&1
+        talonctl drift >> $GITHUB_STEP_SUMMARY 2>&1
         echo '```' >> $GITHUB_STEP_SUMMARY
 
     - name: Cleanup credentials

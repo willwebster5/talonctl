@@ -46,7 +46,8 @@ jobs:
     - name: Install dependencies
       run: |
         python -m pip install --upgrade pip
-        pip install crowdstrike-falconpy rich pyyaml requests fuzzywuzzy python-levenshtein
+        pip install -e .
+        pip install fuzzywuzzy python-levenshtein
         
     - name: Create credentials directory
       run: |
