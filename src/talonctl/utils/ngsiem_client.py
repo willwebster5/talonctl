@@ -6,23 +6,6 @@ Provides a unified interface for NGSIEM operations with improved error handling,
 retry logic, and result processing.
 """
 
-import sys
-from pathlib import Path
-
-def find_scripts_dir():
-    """Find scripts directory from any subdirectory"""
-    current = Path(__file__).resolve().parent
-    while current.name != 'scripts' and current != current.parent:
-        current = current.parent
-    return current if current.name == 'scripts' else Path(__file__).parent
-
-SCRIPTS_DIR = find_scripts_dir()
-if str(SCRIPTS_DIR) not in sys.path:
-    sys.path.insert(0, str(SCRIPTS_DIR))
-
-from common import PATHS, load_auth, setup_imports
-setup_imports()
-
 import time
 import json
 import logging
@@ -30,13 +13,8 @@ from datetime import datetime, timedelta
 from typing import Dict, List, Optional, Union, Any
 from dataclasses import dataclass
 
-try:
-    from falconpy import NGSIEM
-    from utils.auth import load_credentials
-except ImportError as e:
-    print(f"Error importing required modules: {e}")
-    print("Please ensure FalconPy is installed and utils/auth.py exists.")
-    sys.exit(1)
+from falconpy import NGSIEM
+from talonctl.utils.auth import load_credentials
 
 logger = logging.getLogger(__name__)
 
