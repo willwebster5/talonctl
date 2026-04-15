@@ -22,6 +22,7 @@ logger = logging.getLogger(__name__)
 @dataclass
 class DriftItem:
     """Single drift finding"""
+
     resource_type: str
     resource_id: str  # Stable IaC identifier (resource_id / template.name)
     display_name: str
@@ -34,6 +35,7 @@ class DriftItem:
 @dataclass
 class DriftReport:
     """Categorized drift detection results"""
+
     config_drift: List[DriftItem] = field(default_factory=list)
     missing: List[DriftItem] = field(default_factory=list)
     orphaned: List[DriftItem] = field(default_factory=list)
@@ -49,11 +51,7 @@ class DriftReport:
     @property
     def total_checked(self) -> int:
         return (
-            len(self.config_drift)
-            + len(self.missing)
-            + len(self.orphaned)
-            + len(self.stale_state)
-            + self.in_sync_count
+            len(self.config_drift) + len(self.missing) + len(self.orphaned) + len(self.stale_state) + self.in_sync_count
         )
 
 
@@ -66,15 +64,9 @@ class DriftDetector:
     """
 
     # Resource types that support bulk remote fetch
-    FETCHABLE_TYPES = {'detection', 'saved_search', 'rtr_script', 'rtr_put_file', 'workflow', 'lookup_file'}
+    FETCHABLE_TYPES = {"detection", "saved_search", "rtr_script", "rtr_put_file", "workflow", "lookup_file"}
 
-    def __init__(
-        self,
-        falcon_client: Any,
-        state_manager: Any,
-        provider_adapter: Any,
-        template_discovery: Any
-    ):
+    def __init__(self, falcon_client: Any, state_manager: Any, provider_adapter: Any, template_discovery: Any):
         self.falcon = falcon_client
         self.state_manager = state_manager
         self.provider_adapter = provider_adapter
@@ -84,7 +76,7 @@ class DriftDetector:
         self,
         resource_types: Optional[List[str]] = None,
         tags: Optional[List[str]] = None,
-        names: Optional[List[str]] = None
+        names: Optional[List[str]] = None,
     ) -> DriftReport:
         """
         Run drift detection across resource types.
@@ -100,11 +92,7 @@ class DriftDetector:
         report = DriftReport()
 
         # Discover templates (respecting filters)
-        discovered = self.template_discovery.discover_all(
-            resource_types=resource_types,
-            tags=tags,
-            names=names
-        )
+        discovered = self.template_discovery.discover_all(resource_types=resource_types, tags=tags, names=names)
 
         types_to_check = resource_types if resource_types else list(discovered.keys())
 
@@ -124,10 +112,7 @@ class DriftDetector:
 
             try:
                 self._detect_for_type(
-                    resource_type=resource_type,
-                    templates=templates,
-                    provider=provider,
-                    report=report
+                    resource_type=resource_type, templates=templates, provider=provider, report=report
                 )
             except Exception as e:
                 logger.error(f"Error during drift detection for {resource_type}: {e}")
@@ -135,13 +120,7 @@ class DriftDetector:
 
         return report
 
-    def _detect_for_type(
-        self,
-        resource_type: str,
-        templates: List[Any],
-        provider: Any,
-        report: DriftReport
-    ) -> None:
+    def _detect_for_type(self, resource_type: str, templates: List[Any], provider: Any, report: DriftReport) -> None:
         """
         Three-way drift detection for a single resource type.
 
@@ -155,13 +134,13 @@ class DriftDetector:
         # Get raw API data for hash comparison (detections have raw cache)
         # Raw data preserves the original API structure needed for accurate hashing
         remote_raw = {}
-        if hasattr(provider, 'get_raw_remote_rules'):
+        if hasattr(provider, "get_raw_remote_rules"):
             remote_raw = provider.get_raw_remote_rules()
 
         # Build remote lookup by rule_id for reliable matching
         remote_by_rule_id = {}
         for remote_name, remote_data in remote_resources.items():
-            rid = remote_data.get('rule_id', '')
+            rid = remote_data.get("rule_id", "")
             if rid:
                 remote_by_rule_id[rid] = remote_data
 
@@ -169,15 +148,12 @@ class DriftDetector:
         state_entries = self.state_manager.get_all_resources(resource_type)
         state_by_name = {}
         for full_id, state in state_entries.items():
-            name = full_id.split('.', 1)[1] if '.' in full_id else full_id
+            name = full_id.split(".", 1)[1] if "." in full_id else full_id
             state_by_name[name] = state
 
         # 3. Build template lookups
         template_by_id = {t.name: t for t in templates}
-        template_by_display = {
-            t.display_name: t for t in templates
-            if t.display_name and t.display_name != t.name
-        }
+        template_by_display = {t.display_name: t for t in templates if t.display_name and t.display_name != t.name}
 
         # Track which remote rule_ids are matched (for orphan detection)
         matched_remote_rule_ids = set()
@@ -200,7 +176,7 @@ class DriftDetector:
             # Strategy 1: Match via rule_id from state entry (most reliable)
             if state_entry:
                 pm = state_entry.provider_metadata if isinstance(state_entry.provider_metadata, dict) else {}
-                state_rule_id = pm.get('rule_id', '') or state_entry.id
+                state_rule_id = pm.get("rule_id", "") or state_entry.id
                 if state_rule_id and state_rule_id in remote_by_rule_id:
                     remote_data = remote_by_rule_id[state_rule_id]
 
@@ -210,13 +186,13 @@ class DriftDetector:
 
             if remote_data:
                 # Found remotely - track matched rule_id
-                rid = remote_data.get('rule_id', '')
+                rid = remote_data.get("rule_id", "")
                 if rid:
                     matched_remote_rule_ids.add(rid)
 
                 # Use raw API data for hash comparison (same structure as templates)
                 # Fall back to normalized data for non-detection types
-                remote_name = remote_data.get('name', '')
+                remote_name = remote_data.get("name", "")
                 raw_data = remote_raw.get(remote_name, remote_data) if remote_raw else remote_data
 
                 # Compare hashes
@@ -226,48 +202,44 @@ class DriftDetector:
                     report.in_sync_count += 1
                 else:
                     # Config drift detected - use raw data for field diffs too
-                    diffs = self._compute_field_diffs(
-                        template.template_data, raw_data, resource_type
+                    diffs = self._compute_field_diffs(template.template_data, raw_data, resource_type)
+                    report.config_drift.append(
+                        DriftItem(
+                            resource_type=resource_type,
+                            resource_id=resource_id,
+                            display_name=display_name,
+                            template_hash=template_hash,
+                            remote_hash=remote_hash,
+                            field_diffs=diffs,
+                        )
                     )
-                    report.config_drift.append(DriftItem(
-                        resource_type=resource_type,
-                        resource_id=resource_id,
-                        display_name=display_name,
-                        template_hash=template_hash,
-                        remote_hash=remote_hash,
-                        field_diffs=diffs
-                    ))
             else:
                 # Not found remotely
                 if state_entry:
                     # In state but not remote -> missing (deleted from CrowdStrike)
-                    report.missing.append(DriftItem(
-                        resource_type=resource_type,
-                        resource_id=resource_id,
-                        display_name=display_name,
-                        template_hash=template_hash
-                    ))
+                    report.missing.append(
+                        DriftItem(
+                            resource_type=resource_type,
+                            resource_id=resource_id,
+                            display_name=display_name,
+                            template_hash=template_hash,
+                        )
+                    )
                 else:
                     # Not in state, not remote -> never deployed (not drift, skip)
-                    logger.debug(
-                        f"Template {resource_id} not deployed and not in state - skipping"
-                    )
+                    logger.debug(f"Template {resource_id} not deployed and not in state - skipping")
 
         # 5. Check for orphaned resources (remote but no template)
         for remote_name, remote_data in remote_resources.items():
-            rid = remote_data.get('rule_id', '')
+            rid = remote_data.get("rule_id", "")
             if rid and rid not in matched_remote_rule_ids:
-                report.orphaned.append(DriftItem(
-                    resource_type=resource_type,
-                    resource_id=remote_name,
-                    display_name=remote_name
-                ))
+                report.orphaned.append(
+                    DriftItem(resource_type=resource_type, resource_id=remote_name, display_name=remote_name)
+                )
             elif not rid and remote_name not in template_by_id and remote_name not in template_by_display:
-                report.orphaned.append(DriftItem(
-                    resource_type=resource_type,
-                    resource_id=remote_name,
-                    display_name=remote_name
-                ))
+                report.orphaned.append(
+                    DriftItem(resource_type=resource_type, resource_id=remote_name, display_name=remote_name)
+                )
 
         # 6. Check for stale state entries (in state, no template, no remote)
         remote_rule_ids = set(remote_by_rule_id.keys())
@@ -281,7 +253,7 @@ class DriftDetector:
 
             # Check by rule_id first
             pm = state_entry.provider_metadata if isinstance(state_entry.provider_metadata, dict) else {}
-            state_rule_id = pm.get('rule_id', '') or state_entry.id
+            state_rule_id = pm.get("rule_id", "") or state_entry.id
             has_remote = state_rule_id in remote_rule_ids if state_rule_id else False
 
             if not has_remote:
@@ -290,17 +262,15 @@ class DriftDetector:
                 has_remote = state_entry.display_name in remote_resources
 
             if not has_remote:
-                report.stale_state.append(DriftItem(
-                    resource_type=resource_type,
-                    resource_id=state_name,
-                    display_name=state_entry.display_name or state_name
-                ))
+                report.stale_state.append(
+                    DriftItem(
+                        resource_type=resource_type,
+                        resource_id=state_name,
+                        display_name=state_entry.display_name or state_name,
+                    )
+                )
 
-    def _fetch_all_remote(
-        self,
-        provider: Any,
-        resource_type: str
-    ) -> Dict[str, Dict[str, Any]]:
+    def _fetch_all_remote(self, provider: Any, resource_type: str) -> Dict[str, Dict[str, Any]]:
         """
         Fetch all remote resources of a given type from CrowdStrike.
 
@@ -311,38 +281,38 @@ class DriftDetector:
         """
         deployed = {}
 
-        if resource_type == 'detection':
-            if hasattr(provider, '_fetch_all_remote_rules'):
+        if resource_type == "detection":
+            if hasattr(provider, "_fetch_all_remote_rules"):
                 deployed = provider._fetch_all_remote_rules()
             else:
                 logger.warning("Detection provider missing _fetch_all_remote_rules method")
 
-        elif resource_type == 'saved_search':
-            if hasattr(provider, '_fetch_all_remote_searches'):
+        elif resource_type == "saved_search":
+            if hasattr(provider, "_fetch_all_remote_searches"):
                 deployed = provider._fetch_all_remote_searches()
             else:
                 logger.warning("Saved search provider missing _fetch_all_remote_searches")
 
-        elif resource_type == 'rtr_script':
-            if hasattr(provider, '_fetch_all_remote_scripts'):
+        elif resource_type == "rtr_script":
+            if hasattr(provider, "_fetch_all_remote_scripts"):
                 deployed = provider._fetch_all_remote_scripts()
             else:
                 logger.warning("RTR script provider missing _fetch_all_remote_scripts")
 
-        elif resource_type == 'rtr_put_file':
-            if hasattr(provider, '_fetch_all_remote_put_files'):
+        elif resource_type == "rtr_put_file":
+            if hasattr(provider, "_fetch_all_remote_put_files"):
                 deployed = provider._fetch_all_remote_put_files()
             else:
                 logger.warning("RTR put file provider missing _fetch_all_remote_put_files")
 
-        elif resource_type == 'workflow':
-            if hasattr(provider, '_fetch_all_remote_workflows'):
+        elif resource_type == "workflow":
+            if hasattr(provider, "_fetch_all_remote_workflows"):
                 deployed = provider._fetch_all_remote_workflows()
             else:
                 logger.warning("Workflow provider missing _fetch_all_remote_workflows")
 
-        elif resource_type == 'lookup_file':
-            if hasattr(provider, '_fetch_all_remote_lookup_files'):
+        elif resource_type == "lookup_file":
+            if hasattr(provider, "_fetch_all_remote_lookup_files"):
                 deployed = provider._fetch_all_remote_lookup_files()
             else:
                 logger.warning("Lookup file provider missing _fetch_all_remote_lookup_files")
@@ -355,29 +325,30 @@ class DriftDetector:
     # Fields that matter for drift comparison per resource type.
     # Only these fields are compared - everything else is API/system metadata.
     DRIFT_FIELDS = {
-        'detection': {
-            'name', 'description', 'severity', 'type',
-            'search', 'operation', 'mitre_attack'
+        "detection": {"name", "description", "severity", "type", "search", "operation", "mitre_attack"},
+        "saved_search": {
+            "name",
+            "description",
+            "queryString",
         },
-        'saved_search': {
-            'name', 'description', 'queryString',
+        "rtr_script": {
+            "name",
+            "description",
+            "content",
+            "platform",
+            "permission_type",
         },
-        'rtr_script': {
-            'name', 'description', 'content', 'platform', 'permission_type',
-        },
-        'rtr_put_file': {
-            'name', 'description',
+        "rtr_put_file": {
+            "name",
+            "description",
         },
     }
 
     # Sub-fields of search that we control via templates
-    SEARCH_SUBFIELDS = {'filter', 'lookback', 'outcome', 'trigger_mode', 'use_ingest_time', 'execution_mode'}
+    SEARCH_SUBFIELDS = {"filter", "lookback", "outcome", "trigger_mode", "use_ingest_time", "execution_mode"}
 
     def _compute_field_diffs(
-        self,
-        template_data: Dict[str, Any],
-        remote_data: Dict[str, Any],
-        resource_type: str
+        self, template_data: Dict[str, Any], remote_data: Dict[str, Any], resource_type: str
     ) -> Dict[str, Dict[str, Any]]:
         """
         Compute field-level differences between template and remote data.
@@ -400,7 +371,7 @@ class DriftDetector:
                 continue
 
             # For search dict, compare only IaC-managed sub-fields
-            if field_name == 'search' and isinstance(template_value, dict) and isinstance(remote_value, dict):
+            if field_name == "search" and isinstance(template_value, dict) and isinstance(remote_value, dict):
                 search_diffs = {}
                 for subfield in self.SEARCH_SUBFIELDS:
                     tv = template_value.get(subfield)
@@ -410,36 +381,31 @@ class DriftDetector:
                     t_norm = self._normalize_value(tv)
                     r_norm = self._normalize_value(rv)
                     if t_norm != r_norm:
-                        search_diffs[subfield] = {'template': tv, 'remote': rv}
+                        search_diffs[subfield] = {"template": tv, "remote": rv}
                 if search_diffs:
-                    diffs['search'] = {
-                        'template': {k: template_value.get(k) for k in self.SEARCH_SUBFIELDS if k in template_value},
-                        'remote': {k: remote_value.get(k) for k in self.SEARCH_SUBFIELDS if k in remote_value},
-                        '_sub_diffs': search_diffs
+                    diffs["search"] = {
+                        "template": {k: template_value.get(k) for k in self.SEARCH_SUBFIELDS if k in template_value},
+                        "remote": {k: remote_value.get(k) for k in self.SEARCH_SUBFIELDS if k in remote_value},
+                        "_sub_diffs": search_diffs,
                     }
                 continue
 
             # For operation dict, compare only schedule
-            if field_name == 'operation' and isinstance(template_value, dict) and isinstance(remote_value, dict):
-                t_sched = template_value.get('schedule')
-                r_sched = remote_value.get('schedule') if remote_value else None
+            if field_name == "operation" and isinstance(template_value, dict) and isinstance(remote_value, dict):
+                t_sched = template_value.get("schedule")
+                r_sched = remote_value.get("schedule") if remote_value else None
                 if t_sched and t_sched != r_sched:
-                    diffs['operation.schedule'] = {
-                        'template': t_sched,
-                        'remote': r_sched
-                    }
+                    diffs["operation.schedule"] = {"template": t_sched, "remote": r_sched}
                 continue
 
             # For mitre_attack, normalize both string and dict formats to canonical form
-            if field_name == 'mitre_attack':
+            if field_name == "mitre_attack":
                 from talonctl.providers.detection_provider import DetectionProvider
+
                 t_norm = DetectionProvider._normalize_mitre_for_hash(template_value or [])
                 r_norm = DetectionProvider._normalize_mitre_for_hash(remote_value or [])
                 if t_norm != r_norm:
-                    diffs[field_name] = {
-                        'template': template_value,
-                        'remote': remote_value
-                    }
+                    diffs[field_name] = {"template": template_value, "remote": remote_value}
                 continue
 
             # Standard comparison
@@ -447,10 +413,7 @@ class DriftDetector:
             r_val = self._normalize_value(remote_value)
 
             if t_val != r_val and remote_value is not None:
-                diffs[field_name] = {
-                    'template': template_value,
-                    'remote': remote_value
-                }
+                diffs[field_name] = {"template": template_value, "remote": remote_value}
 
         return diffs
 

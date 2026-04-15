@@ -1,9 +1,6 @@
 """Unit tests for talonctl auth command."""
 
-import json
-import pytest
-from pathlib import Path
-from unittest.mock import patch, MagicMock
+from unittest.mock import patch
 from click.testing import CliRunner
 
 from talonctl.commands.auth import auth
@@ -30,11 +27,20 @@ class TestAuthSetup:
         mock_path.__str__ = lambda self: str(creds_file)
 
         runner = CliRunner()
-        result = runner.invoke(auth, ["setup", "--non-interactive",
-                                       "--client-id", "test_id",
-                                       "--client-secret", "test_secret",
-                                       "--region", "US1",
-                                       "--skip-validation"])
+        result = runner.invoke(
+            auth,
+            [
+                "setup",
+                "--non-interactive",
+                "--client-id",
+                "test_id",
+                "--client-secret",
+                "test_secret",
+                "--region",
+                "US1",
+                "--skip-validation",
+            ],
+        )
         assert result.exit_code == 0
 
     def test_check_without_credentials(self, tmp_path):

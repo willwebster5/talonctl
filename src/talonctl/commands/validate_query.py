@@ -5,15 +5,18 @@ import click
 from talonctl.commands._common import console
 
 
-@click.command('validate_query')
-@click.option('--query', '-q', type=str, help='Query string to validate (use quotes)')
-@click.option('--file', '-f', 'query_file', type=str, help='Path to file containing query')
-@click.option('--template', '-t', type=str, help='Path to YAML template (extracts search.filter, search.query, or queryString)')
+@click.command("validate_query")
+@click.option("--query", "-q", type=str, help="Query string to validate (use quotes)")
+@click.option("--file", "-f", "query_file", type=str, help="Path to file containing query")
+@click.option(
+    "--template", "-t", type=str, help="Path to YAML template (extracts search.filter, search.query, or queryString)"
+)
 @click.pass_context
 def validate_query(ctx, query, query_file, template):
     """Validate a single LogScale/NGSIEM query."""
     import yaml
     from pathlib import Path
+
     # Determine query source
     resolved_query = None
 
@@ -35,10 +38,10 @@ def validate_query(ctx, query, query_file, template):
         try:
             with open(template_path) as f:
                 template_data = yaml.safe_load(f)
-            search = template_data.get('search', {})
-            resolved_query = search.get('filter') or search.get('query')
+            search = template_data.get("search", {})
+            resolved_query = search.get("filter") or search.get("query")
             if not resolved_query:
-                resolved_query = template_data.get('queryString')
+                resolved_query = template_data.get("queryString")
             if not resolved_query:
                 console.print("INVALID: No search.filter, search.query, or queryString found in template")
                 ctx.exit(1)
@@ -59,7 +62,7 @@ def validate_query(ctx, query, query_file, template):
         ngsiem_client = NGSIEMClient()
         result = ngsiem_client.test_query_syntax(resolved_query)
 
-        if result['valid']:
+        if result["valid"]:
             console.print("VALID")
         else:
             console.print(f"INVALID: {result.get('message', 'Unknown error')}")

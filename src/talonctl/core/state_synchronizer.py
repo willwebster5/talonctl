@@ -42,10 +42,7 @@ class StateSynchronizer:
         self.provider_adapter = provider_adapter
 
     def update_after_deployment(
-        self,
-        deployed: List[str],
-        changes: List[ResourceChange],
-        deploy_results: Optional[Dict[str, Any]] = None
+        self, deployed: List[str], changes: List[ResourceChange], deploy_results: Optional[Dict[str, Any]] = None
     ) -> None:
         """
         Update state after successful deployment.
@@ -62,10 +59,11 @@ class StateSynchronizer:
 
         # Pre-fetch remote caches ONCE for all CREATE actions (optimization)
         # This prevents fetching all rules N times for N CREATE actions
-        create_resources = [r for r in deployed if any(
-            c.resource_id == r and c.action in (ResourceAction.CREATE, ResourceAction.REPLACE)
-            for c in changes
-        )]
+        create_resources = [
+            r
+            for r in deployed
+            if any(c.resource_id == r and c.action in (ResourceAction.CREATE, ResourceAction.REPLACE) for c in changes)
+        ]
         if create_resources:
             self._prefetch_remote_caches(create_resources, changes)
 
@@ -79,8 +77,8 @@ class StateSynchronizer:
             resource_type = change.resource_type
             resource_name = change.resource_name
 
-            if resource_type not in state['resources']:
-                state['resources'][resource_type] = {}
+            if resource_type not in state["resources"]:
+                state["resources"][resource_type] = {}
 
             provider = self.provider_adapter.providers.get(resource_type)
             if not provider:
@@ -89,7 +87,7 @@ class StateSynchronizer:
 
             # Fast path: use UUID directly from provider response (most reliable — no re-fetch needed)
             provider_result = (deploy_results or {}).get(resource_id, {})
-            fast_path_id = provider_result.get('id') or provider_result.get('rule_id')
+            fast_path_id = provider_result.get("id") or provider_result.get("rule_id")
 
             if provider_result and not fast_path_id:
                 logger.warning(
@@ -102,16 +100,14 @@ class StateSynchronizer:
                 remote_state = provider_result  # store as provider_metadata
             else:
                 # Fallback: fetch current state from CrowdStrike API
-                actual_resource_id, remote_state = self._fetch_deployed_state(
-                    provider, change, resource_name
-                )
+                actual_resource_id, remote_state = self._fetch_deployed_state(provider, change, resource_name)
                 # Override UUID from remote_state if available (slow-path only)
                 if remote_state:
-                    if 'rule_id' in remote_state:
-                        actual_resource_id = remote_state['rule_id']
+                    if "rule_id" in remote_state:
+                        actual_resource_id = remote_state["rule_id"]
                         logger.debug(f"Updated actual_resource_id from remote_state rule_id: {actual_resource_id}")
-                    elif 'id' in remote_state:
-                        actual_resource_id = remote_state['id']
+                    elif "id" in remote_state:
+                        actual_resource_id = remote_state["id"]
                         logger.debug(f"Updated actual_resource_id from remote_state id: {actual_resource_id}")
 
             # Always compute hash from template for consistent change detection (Terraform model)
@@ -120,45 +116,45 @@ class StateSynchronizer:
             logger.debug(f"Stored template hash for {resource_id} (hash: {content_hash[:8]}...)")
 
             # Extract display_name from template
-            display_name = change.new_value.get('name') if change.new_value else None
+            display_name = change.new_value.get("name") if change.new_value else None
 
             # Create state entry with all metadata
             state_entry = self._build_state_entry(
                 resource_type=resource_type,
                 resource_id=actual_resource_id if actual_resource_id else resource_id,
                 content_hash=content_hash,
-                template_path=change.template_path or '',
+                template_path=change.template_path or "",
                 remote_state=remote_state,
-                display_name=display_name
+                display_name=display_name,
             )
 
             # Store provider_metadata if we fetched remote state (makes state more robust)
             if remote_state:
                 logger.debug(f"[DEBUG] Stored provider_metadata for {resource_name}")
 
-            state['resources'][resource_type][resource_name] = state_entry
+            state["resources"][resource_type][resource_name] = state_entry
 
             logger.debug(f"[DEBUG] Stored state for {resource_name} with id: {actual_resource_id}")
 
             # Write rule_id back to template file for CREATE actions
             # This allows templates to be self-contained and resilient to name changes in console
-            if change.action in (ResourceAction.CREATE, ResourceAction.REPLACE) and actual_resource_id and change.template_path:
+            if (
+                change.action in (ResourceAction.CREATE, ResourceAction.REPLACE)
+                and actual_resource_id
+                and change.template_path
+            ):
                 self._write_resource_id_to_template(
                     template_path=change.template_path,
                     resource_id=actual_resource_id,
                     resource_type=resource_type,
-                    resource_name=resource_name
+                    resource_name=resource_name,
                 )
 
         # Save updated state
         self.state_manager.save()
         logger.info("State updated successfully")
 
-    def _prefetch_remote_caches(
-        self,
-        create_resource_ids: List[str],
-        changes: List[ResourceChange]
-    ) -> None:
+    def _prefetch_remote_caches(self, create_resource_ids: List[str], changes: List[ResourceChange]) -> None:
         """
         Pre-fetch remote caches for CREATE operations (one API call per resource type).
 
@@ -182,21 +178,18 @@ class StateSynchronizer:
             if not provider:
                 continue
 
-            if hasattr(provider, '_fetch_all_remote_rules'):
+            if hasattr(provider, "_fetch_all_remote_rules"):
                 logger.info(f"Pre-fetching remote rules cache for {len(create_resource_ids)} CREATE operations")
                 provider._fetch_all_remote_rules()
-            elif hasattr(provider, '_fetch_all_remote_searches'):
-                logger.info(f"Pre-fetching remote searches cache for CREATE operations")
+            elif hasattr(provider, "_fetch_all_remote_searches"):
+                logger.info("Pre-fetching remote searches cache for CREATE operations")
                 provider._fetch_all_remote_searches()
-            elif hasattr(provider, '_fetch_all_remote_dashboards'):
-                logger.info(f"Pre-fetching remote dashboards cache for CREATE operations")
+            elif hasattr(provider, "_fetch_all_remote_dashboards"):
+                logger.info("Pre-fetching remote dashboards cache for CREATE operations")
                 provider._fetch_all_remote_dashboards()
 
     def _fetch_deployed_state(
-        self,
-        provider,
-        change: ResourceChange,
-        resource_name: str
+        self, provider, change: ResourceChange, resource_name: str
     ) -> tuple[Optional[str], Optional[Dict[str, Any]]]:
         """
         Fetch actual deployed state from CrowdStrike API.
@@ -218,16 +211,16 @@ class StateSynchronizer:
         # CRITICAL: For detections, we need rule_id (permanent), not version_id
 
         # First try to get rule_id from provider_metadata if available (most reliable)
-        if change.old_value and 'provider_metadata' in change.old_value:
-            actual_resource_id = change.old_value['provider_metadata'].get('rule_id')
+        if change.old_value and "provider_metadata" in change.old_value:
+            actual_resource_id = change.old_value["provider_metadata"].get("rule_id")
             logger.debug(f"Using rule_id from provider_metadata: {actual_resource_id}")
 
         # Fallback to 'id' field from old_value (may be stale for detections)
         if not actual_resource_id and change.old_value:
-            actual_resource_id = change.old_value.get('id')
+            actual_resource_id = change.old_value.get("id")
             logger.debug(f"Using id from old_value: {actual_resource_id}")
 
-        if not hasattr(provider, 'fetch_remote_state'):
+        if not hasattr(provider, "fetch_remote_state"):
             return actual_resource_id, None
 
         try:
@@ -244,21 +237,23 @@ class StateSynchronizer:
                 # Detection provider uses _remote_rules_cache with 'rule_id'
                 # Saved search provider uses _remote_searches_cache with 'id'
                 cache = None
-                id_field = 'rule_id'  # Default for detections
+                id_field = "rule_id"  # Default for detections
 
-                if hasattr(provider, '_remote_rules_cache') and provider._remote_rules_cache:
+                if hasattr(provider, "_remote_rules_cache") and provider._remote_rules_cache:
                     cache = provider._remote_rules_cache
-                    id_field = 'rule_id'
-                elif hasattr(provider, '_remote_searches_cache') and provider._remote_searches_cache:
+                    id_field = "rule_id"
+                elif hasattr(provider, "_remote_searches_cache") and provider._remote_searches_cache:
                     cache = provider._remote_searches_cache
-                    id_field = 'id'
+                    id_field = "id"
 
                 if cache:
                     for resource_key, resource_data in cache.items():
                         if resource_key == resource_name:
                             remote_state = resource_data
                             actual_resource_id = resource_data.get(id_field)
-                            logger.debug(f"Found newly created resource {change.resource_id} with {id_field} {actual_resource_id}")
+                            logger.debug(
+                                f"Found newly created resource {change.resource_id} with {id_field} {actual_resource_id}"
+                            )
                             break
 
                 if not remote_state:
@@ -276,7 +271,7 @@ class StateSynchronizer:
         content_hash: str,
         template_path: str,
         remote_state: Optional[Dict[str, Any]],
-        display_name: Optional[str] = None
+        display_name: Optional[str] = None,
     ) -> Dict[str, Any]:
         """
         Build state entry for a deployed resource.
@@ -293,34 +288,29 @@ class StateSynchronizer:
             State entry dictionary
         """
         state_entry = {
-            'type': resource_type,
-            'id': resource_id,  # Use rule_id for detections
-            'content_hash': content_hash,
-            'deployed_at': datetime.now(timezone.utc).isoformat(),
-            'last_modified': datetime.now(timezone.utc).isoformat(),
-            'template_path': template_path,
-            'dependencies': []  # Dependencies are handled by resource graph, not stored per-resource
+            "type": resource_type,
+            "id": resource_id,  # Use rule_id for detections
+            "content_hash": content_hash,
+            "deployed_at": datetime.now(timezone.utc).isoformat(),
+            "last_modified": datetime.now(timezone.utc).isoformat(),
+            "template_path": template_path,
+            "dependencies": [],  # Dependencies are handled by resource graph, not stored per-resource
         }
 
         # Store display_name if provided
         if display_name:
-            state_entry['display_name'] = display_name
+            state_entry["display_name"] = display_name
 
         # Store provider_metadata if we fetched remote state (makes state more robust)
         if remote_state:
             # Filter out non-JSON-serializable fields (e.g., bytes content from lookup files)
-            filtered_metadata = {k: v for k, v in remote_state.items()
-                                 if not isinstance(v, bytes)}
-            state_entry['provider_metadata'] = filtered_metadata
+            filtered_metadata = {k: v for k, v in remote_state.items() if not isinstance(v, bytes)}
+            state_entry["provider_metadata"] = filtered_metadata
 
         return state_entry
 
     def _write_resource_id_to_template(
-        self,
-        template_path: str,
-        resource_id: str,
-        resource_type: str,
-        resource_name: str
+        self, template_path: str, resource_id: str, resource_type: str, resource_name: str
     ) -> None:
         """
         Write resource ID back to template file after creation.
@@ -344,11 +334,11 @@ class StateSynchronizer:
                 return
 
             # Only write rule_id for detection templates
-            if resource_type != 'detection':
+            if resource_type != "detection":
                 return
 
             # Read template file preserving formatting
-            with open(template_file, 'r', encoding='utf-8') as f:
+            with open(template_file, "r", encoding="utf-8") as f:
                 lines = f.readlines()
 
             # Find where to insert rule_id (after name field)
@@ -358,7 +348,7 @@ class StateSynchronizer:
 
             for i, line in enumerate(lines):
                 # Check if rule_id already exists
-                if line.strip().startswith('rule_id:'):
+                if line.strip().startswith("rule_id:"):
                     rule_id_exists = True
                     # Update existing rule_id
                     modified_lines.append(f"rule_id: {resource_id}\n")
@@ -368,13 +358,13 @@ class StateSynchronizer:
                 modified_lines.append(line)
 
                 # Insert rule_id after name field if it doesn't exist
-                if not rule_id_exists and not rule_id_written and line.strip().startswith('name:'):
+                if not rule_id_exists and not rule_id_written and line.strip().startswith("name:"):
                     modified_lines.append(f"rule_id: {resource_id}\n")
                     rule_id_written = True
 
             if rule_id_written:
                 # Write back to file
-                with open(template_file, 'w', encoding='utf-8') as f:
+                with open(template_file, "w", encoding="utf-8") as f:
                     f.writelines(modified_lines)
 
                 if rule_id_exists:

@@ -2,16 +2,9 @@
 Unit tests for soc_metrics.py — metric aggregation and CSV management.
 """
 
-import pytest
-import csv
-import io
-from pathlib import Path
-from datetime import datetime, timezone
-
 from talonctl.commands.metrics import (
     MetricsAggregator,
     WeeklyDetectionRow,
-    WeeklyKPIRow,
     compute_week_start,
 )
 

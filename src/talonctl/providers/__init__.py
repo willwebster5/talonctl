@@ -21,11 +21,11 @@ from .rtr_put_file_provider import RTRPutFileProvider
 from .dashboard_provider import DashboardProvider
 
 __all__ = [
-    'DetectionProvider',
-    'WorkflowProvider',
-    'SavedSearchProvider',
-    'LookupFileProvider',
-    'RTRScriptProvider',
-    'RTRPutFileProvider',
-    'DashboardProvider',
+    "DetectionProvider",
+    "WorkflowProvider",
+    "SavedSearchProvider",
+    "LookupFileProvider",
+    "RTRScriptProvider",
+    "RTRPutFileProvider",
+    "DashboardProvider",
 ]

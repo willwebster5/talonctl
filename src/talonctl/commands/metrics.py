@@ -34,6 +34,7 @@ def compute_week_start(date_str: str) -> str:
 @dataclass
 class WeeklyDetectionRow:
     """One row in detection_health_metrics.csv."""
+
     week_start: str
     resource_id: str
     platform: str
@@ -86,6 +87,7 @@ class WeeklyDetectionRow:
 @dataclass
 class WeeklyKPIRow:
     """One row in soc_weekly_kpis.csv."""
+
     week_start: str
     total_alerts: int
     total_triaged: int
@@ -107,16 +109,36 @@ class WeeklyKPIRow:
 
 
 DETECTION_METRICS_HEADER = [
-    "week_start", "resource_id", "platform", "severity", "enabled",
-    "alert_count", "fp_count", "tp_count", "info_count", "fp_rate",
-    "last_alert_at", "dependency_status",
+    "week_start",
+    "resource_id",
+    "platform",
+    "severity",
+    "enabled",
+    "alert_count",
+    "fp_count",
+    "tp_count",
+    "info_count",
+    "fp_rate",
+    "last_alert_at",
+    "dependency_status",
 ]
 
 KPI_HEADER = [
-    "week_start", "total_alerts", "total_triaged", "fp_count", "tp_count",
-    "info_count", "fp_rate", "mttt_hours", "detections_total",
-    "detections_enabled", "detections_zero_hit", "detections_error",
-    "detections_deployed_new", "detections_tuned", "detections_retired",
+    "week_start",
+    "total_alerts",
+    "total_triaged",
+    "fp_count",
+    "tp_count",
+    "info_count",
+    "fp_rate",
+    "mttt_hours",
+    "detections_total",
+    "detections_enabled",
+    "detections_zero_hit",
+    "detections_error",
+    "detections_deployed_new",
+    "detections_tuned",
+    "detections_retired",
 ]
 
 
@@ -232,8 +254,9 @@ def update_detections(report, csv_path):
     agg = MetricsAggregator(retention_weeks=52)
     existing = agg.read_csv(target)
 
-    new_rows = [WeeklyDetectionRow.from_health_entry(week, det).to_csv_dict()
-                for det in report_data.get("detections", [])]
+    new_rows = [
+        WeeklyDetectionRow.from_health_entry(week, det).to_csv_dict() for det in report_data.get("detections", [])
+    ]
 
     merged = agg.merge_rows(existing, new_rows)
     trimmed = agg.trim_old_weeks(merged, week)
@@ -263,13 +286,18 @@ def update_kpis(report, csv_path):
         week_start=week,
         total_alerts=total_alerts,
         total_triaged=0,
-        fp_count=0, tp_count=0, info_count=0,
-        fp_rate=0.0, mttt_hours=0.0,
+        fp_count=0,
+        tp_count=0,
+        info_count=0,
+        fp_rate=0.0,
+        mttt_hours=0.0,
         detections_total=summary.get("total_detections", 0),
         detections_enabled=summary.get("total_detections", 0) - summary.get("disabled", 0),
         detections_zero_hit=summary.get("zero_hits", 0),
         detections_error=summary.get("broken_dependencies", 0),
-        detections_deployed_new=0, detections_tuned=0, detections_retired=0,
+        detections_deployed_new=0,
+        detections_tuned=0,
+        detections_retired=0,
     )
 
     agg = MetricsAggregator(retention_weeks=520)

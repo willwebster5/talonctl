@@ -13,16 +13,17 @@ from typing import List, Set
 logger = logging.getLogger(__name__)
 
 # Pattern: $function_name() — optionally with arguments inside parens
-FUNCTION_REF_PATTERN = re.compile(r'\$([a-zA-Z_][a-zA-Z0-9_]*)\s*\(')
+FUNCTION_REF_PATTERN = re.compile(r"\$([a-zA-Z_][a-zA-Z0-9_]*)\s*\(")
 
 
 @dataclass
 class DependencyIssue:
     """A single broken dependency found in a detection."""
-    detection_id: str      # e.g., "detection.aws_broken_rule"
-    detection_name: str    # Human-readable name
+
+    detection_id: str  # e.g., "detection.aws_broken_rule"
+    detection_name: str  # Human-readable name
     missing_function: str  # The $function_name that has no matching saved search
-    cql_snippet: str       # Context around the reference (for error messages)
+    cql_snippet: str  # Context around the reference (for error messages)
 
 
 class DependencyValidator:
@@ -101,18 +102,17 @@ class DependencyValidator:
                 continue
 
             # Find a snippet around the reference for context
-            snippet_match = re.search(
-                rf'.{{0,30}}\${re.escape(func_name)}\s*\(.{{0,30}}',
-                cql
-            )
+            snippet_match = re.search(rf".{{0,30}}\${re.escape(func_name)}\s*\(.{{0,30}}", cql)
             snippet = snippet_match.group(0).strip() if snippet_match else f"${func_name}()"
 
-            issues.append(DependencyIssue(
-                detection_id=detection_template.resource_id,
-                detection_name=getattr(detection_template, 'display_name', None) or detection_template.name,
-                missing_function=func_name,
-                cql_snippet=snippet,
-            ))
+            issues.append(
+                DependencyIssue(
+                    detection_id=detection_template.resource_id,
+                    detection_name=getattr(detection_template, "display_name", None) or detection_template.name,
+                    missing_function=func_name,
+                    cql_snippet=snippet,
+                )
+            )
 
         return issues
 

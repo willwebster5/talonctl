@@ -2,9 +2,7 @@
 
 import json
 import os
-import sys
 from pathlib import Path
-from getpass import getpass
 
 import click
 
@@ -30,7 +28,12 @@ def auth():
 @click.option("--non-interactive", is_flag=True, help="Non-interactive mode (requires --client-id and --client-secret)")
 @click.option("--client-id", type=str, help="CrowdStrike API client ID")
 @click.option("--client-secret", type=str, help="CrowdStrike API client secret")
-@click.option("--region", type=click.Choice(list(CLOUD_REGIONS.keys()), case_sensitive=False), default="US1", help="CrowdStrike cloud region")
+@click.option(
+    "--region",
+    type=click.Choice(list(CLOUD_REGIONS.keys()), case_sensitive=False),
+    default="US1",
+    help="CrowdStrike cloud region",
+)
 @click.option("--skip-validation", is_flag=True, help="Skip API connection validation")
 @click.option("--force", is_flag=True, help="Overwrite existing credentials without prompting")
 def setup(non_interactive, client_id, client_secret, region, skip_validation, force):
@@ -42,7 +45,9 @@ def setup(non_interactive, client_id, client_secret, region, skip_validation, fo
             existing = json.loads(DEFAULT_CREDS_PATH.read_text())
             cid = existing.get("falcon_client_id", "")
             masked = f"{cid[:4]}...{cid[-4:]}" if len(cid) > 8 else "****"
-            console.print(f"Existing credentials found: Client ID [bold]{masked}[/bold], Region [bold]{existing.get('base_url', 'unknown')}[/bold]")
+            console.print(
+                f"Existing credentials found: Client ID [bold]{masked}[/bold], Region [bold]{existing.get('base_url', 'unknown')}[/bold]"
+            )
             if not non_interactive:
                 if not click.confirm("Overwrite?", default=False):
                     console.print("[dim]Keeping existing credentials.[/dim]")
@@ -58,7 +63,9 @@ def setup(non_interactive, client_id, client_secret, region, skip_validation, fo
         console.print("[dim]Find these at: Falcon Console > Support & Resources > API Clients & Keys[/dim]\n")
         client_id = click.prompt("Client ID")
         client_secret = click.prompt("Client Secret", hide_input=True)
-        region = click.prompt("Cloud region", type=click.Choice(list(CLOUD_REGIONS.keys()), case_sensitive=False), default="US1")
+        region = click.prompt(
+            "Cloud region", type=click.Choice(list(CLOUD_REGIONS.keys()), case_sensitive=False), default="US1"
+        )
 
     creds = {
         "falcon_client_id": client_id,

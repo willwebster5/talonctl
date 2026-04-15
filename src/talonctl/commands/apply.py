@@ -4,8 +4,12 @@ import click
 from rich.prompt import Confirm
 
 from talonctl.commands._common import (
-    console, filter_options, state_options, remote_state_options,
-    parse_filters, init_orchestrator,
+    console,
+    filter_options,
+    state_options,
+    remote_state_options,
+    parse_filters,
+    init_orchestrator,
 )
 
 
@@ -13,17 +17,28 @@ from talonctl.commands._common import (
 @filter_options
 @state_options
 @remote_state_options
-@click.option('--auto-approve', is_flag=True, help='Skip confirmation prompts')
-@click.option('--parallel', type=int, default=10, help='Max parallel operations')
-@click.option('--skip-query-validation', is_flag=True, help='Skip CQL query validation')
-@click.option('--validation-workers', type=int, default=20, help='Parallel validation workers')
+@click.option("--auto-approve", is_flag=True, help="Skip confirmation prompts")
+@click.option("--parallel", type=int, default=10, help="Max parallel operations")
+@click.option("--skip-query-validation", is_flag=True, help="Skip CQL query validation")
+@click.option("--validation-workers", type=int, default=20, help="Parallel validation workers")
 @click.pass_context
-def apply(ctx, resources, tags, names, state_file, remote_state,
-          remote_state_search_domain, remote_state_filename,
-          auto_approve, parallel, skip_query_validation, validation_workers):
+def apply(
+    ctx,
+    resources,
+    tags,
+    names,
+    state_file,
+    remote_state,
+    remote_state_search_domain,
+    remote_state_filename,
+    auto_approve,
+    parallel,
+    skip_query_validation,
+    validation_workers,
+):
     """Execute planned changes."""
     console.print("[bold blue]Applying changes...[/bold blue]\n")
-    verbose = ctx.obj.get('verbose', False)
+    verbose = ctx.obj.get("verbose", False)
 
     orchestrator = init_orchestrator(
         state_file=state_file,
@@ -32,11 +47,12 @@ def apply(ctx, resources, tags, names, state_file, remote_state,
         remote_state_filename=remote_state_filename,
     )
     filters = parse_filters(resources, tags, names)
-    filters['skip_query_validation'] = skip_query_validation
-    filters['validation_workers'] = validation_workers
+    filters["skip_query_validation"] = skip_query_validation
+    filters["validation_workers"] = validation_workers
 
     try:
         from talonctl.core import PlanFormatter, ResourceAction
+
         plan_result = orchestrator.plan(**filters)
         formatter = PlanFormatter(console, verbose=verbose)
         formatter.format_plan(plan_result)
@@ -82,5 +98,6 @@ def apply(ctx, resources, tags, names, state_file, remote_state,
         console.print(f"[red]✗ Error during apply: {e}[/red]")
         if verbose:
             import traceback
+
             traceback.print_exc()
         ctx.exit(1)

@@ -6,7 +6,7 @@ It builds a directed acyclic graph (DAG) of resource dependencies and provides
 topological sorting to determine safe deployment order.
 """
 
-from typing import Dict, List, Set, Tuple, Optional
+from typing import Dict, List, Set
 from collections import defaultdict, deque
 from dataclasses import dataclass
 
@@ -14,6 +14,7 @@ from dataclasses import dataclass
 @dataclass
 class DependencyCycle:
     """Represents a circular dependency detected in the graph"""
+
     cycle_path: List[str]
 
     def __str__(self) -> str:
@@ -205,17 +206,14 @@ class ResourceGraph:
                 # This shouldn't happen if topological_sort succeeded,
                 # but check anyway
                 remaining = [n for n in sorted_nodes if n not in deployed]
-                raise ValueError(
-                    f"Cannot determine deployment order. "
-                    f"Remaining nodes: {remaining}"
-                )
+                raise ValueError(f"Cannot determine deployment order. Remaining nodes: {remaining}")
 
             waves.append(wave)
             deployed.update(wave)
 
         return waves
 
-    def get_subgraph(self, resource_ids: List[str]) -> 'ResourceGraph':
+    def get_subgraph(self, resource_ids: List[str]) -> "ResourceGraph":
         """
         Create a subgraph containing only specified resources and their dependencies.
 
@@ -257,13 +255,10 @@ class ResourceGraph:
         Returns:
             Dictionary mapping each node to its list of dependencies
         """
-        return {
-            node: list(self.edges.get(node, set()))
-            for node in self.nodes
-        }
+        return {node: list(self.edges.get(node, set())) for node in self.nodes}
 
     @classmethod
-    def from_dict(cls, data: Dict[str, List[str]]) -> 'ResourceGraph':
+    def from_dict(cls, data: Dict[str, List[str]]) -> "ResourceGraph":
         """
         Import graph from dictionary format.
 

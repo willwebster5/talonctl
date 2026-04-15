@@ -18,11 +18,7 @@ from datetime import datetime, timezone
 # Import FalconPy service class for RTR Admin
 from falconpy import RealTimeResponseAdmin
 
-from talonctl.core.base_provider import (
-    BaseResourceProvider,
-    ResourceAction,
-    ResourceChange
-)
+from talonctl.core.base_provider import BaseResourceProvider, ResourceAction, ResourceChange
 
 logger = logging.getLogger(__name__)
 
@@ -57,7 +53,7 @@ class RTRPutFileProvider(BaseResourceProvider):
         """
         self.falcon = falcon_client
         self.config = config or {}
-        self.timeout = self.config.get('timeout', 30)
+        self.timeout = self.config.get("timeout", 30)
         self._remote_files_cache: Optional[Dict[str, Any]] = None
 
         # Create RealTimeResponseAdmin service class instance for RTR operations
@@ -67,29 +63,25 @@ class RTRPutFileProvider(BaseResourceProvider):
 
         try:
             # Try to get credentials from config first (passed from orchestrator)
-            creds = self.config.get('credentials')
+            creds = self.config.get("credentials")
 
             if creds:
-                client_id = creds.get('falcon_client_id')
-                client_secret = creds.get('falcon_client_secret')
-                base_url = creds.get('base_url', 'US1')
+                client_id = creds.get("falcon_client_id")
+                client_secret = creds.get("falcon_client_secret")
+                base_url = creds.get("base_url", "US1")
             else:
                 # Fallback: try to extract from falcon_client's auth object
-                auth_object = getattr(falcon_client, 'auth_object', None)
+                auth_object = getattr(falcon_client, "auth_object", None)
                 if auth_object:
-                    client_id = auth_object.creds.get('client_id')
-                    client_secret = auth_object.creds.get('client_secret')
-                    base_url = getattr(falcon_client, 'base_url', 'US1')
+                    client_id = auth_object.creds.get("client_id")
+                    client_secret = auth_object.creds.get("client_secret")
+                    base_url = getattr(falcon_client, "base_url", "US1")
                 else:
                     # No credentials available - this is OK for validation mode
                     logger.info("RTR Put File Provider: No credentials available (validation mode)")
                     return
 
-            self.rtr_admin = RealTimeResponseAdmin(
-                client_id=client_id,
-                client_secret=client_secret,
-                base_url=base_url
-            )
+            self.rtr_admin = RealTimeResponseAdmin(client_id=client_id, client_secret=client_secret, base_url=base_url)
             logger.info("RTR Put File Provider: Using RealTimeResponseAdmin service class")
 
         except Exception as e:
@@ -113,28 +105,28 @@ class RTRPutFileProvider(BaseResourceProvider):
         errors = []
 
         # Required fields
-        required_fields = ['name', 'description', 'file_path']
+        required_fields = ["name", "description", "file_path"]
         for field in required_fields:
             if field not in template:
                 errors.append(f"Missing required field: {field}")
 
         # Validate name is non-empty string
-        name = template.get('name', '')
+        name = template.get("name", "")
         if not isinstance(name, str) or not name.strip():
             errors.append("'name' must be a non-empty string")
 
         # Validate description
-        description = template.get('description', '')
+        description = template.get("description", "")
         if not isinstance(description, str) or not description.strip():
             errors.append("'description' must be a non-empty string")
 
         # Validate file_path
-        file_path = template.get('file_path', '')
+        file_path = template.get("file_path", "")
         if not isinstance(file_path, str) or not file_path.strip():
             errors.append("'file_path' must be a non-empty string")
         else:
             # Check if file exists (relative to template location)
-            template_dir = Path(template.get('_template_path', '.')).parent
+            template_dir = Path(template.get("_template_path", ".")).parent
             full_path = template_dir / file_path
 
             if not full_path.exists():
@@ -143,8 +135,8 @@ class RTRPutFileProvider(BaseResourceProvider):
                 errors.append(f"Path is not a file: {file_path}")
 
         # Validate comments_for_audit_log if provided
-        if 'comments_for_audit_log' in template:
-            if not isinstance(template['comments_for_audit_log'], str):
+        if "comments_for_audit_log" in template:
+            if not isinstance(template["comments_for_audit_log"], str):
                 errors.append("'comments_for_audit_log' must be a string")
 
         return errors
@@ -166,9 +158,9 @@ class RTRPutFileProvider(BaseResourceProvider):
         try:
             response = self.rtr_admin.get_put_files_v2(ids=resource_id)
 
-            if response.get('status_code') == 200:
-                body = response.get('body', {})
-                resources = body.get('resources', [])
+            if response.get("status_code") == 200:
+                body = response.get("body", {})
+                resources = body.get("resources", [])
 
                 if resources and len(resources) > 0:
                     file_data = resources[0]
@@ -199,12 +191,12 @@ class RTRPutFileProvider(BaseResourceProvider):
             # First, get list of put file IDs
             response = self.rtr_admin.list_put_files()
 
-            if response.get('status_code') != 200:
+            if response.get("status_code") != 200:
                 logger.warning(f"Failed to list RTR put files: status {response.get('status_code')}")
                 return {}
 
-            body = response.get('body', {})
-            file_ids = body.get('resources', [])
+            body = response.get("body", {})
+            file_ids = body.get("resources", [])
 
             if not file_ids:
                 logger.info("No RTR put files found")
@@ -214,12 +206,12 @@ class RTRPutFileProvider(BaseResourceProvider):
             put_files = {}
             response = self.rtr_admin.get_put_files_v2(ids=file_ids)
 
-            if response.get('status_code') == 200:
-                body = response.get('body', {})
-                resources = body.get('resources', [])
+            if response.get("status_code") == 200:
+                body = response.get("body", {})
+                resources = body.get("resources", [])
 
                 for file_data in resources:
-                    file_name = file_data.get('name')
+                    file_name = file_data.get("name")
                     if file_name:
                         put_files[file_name] = file_data
                         logger.debug(f"Discovered RTR put file: {file_name} (ID: {file_data.get('id')})")
@@ -231,11 +223,7 @@ class RTRPutFileProvider(BaseResourceProvider):
             logger.error(f"Failed to fetch RTR put files: {e}")
             return {}
 
-    def create_resource(
-        self,
-        resource_id: Optional[str],
-        template: Dict[str, Any]
-    ) -> Dict[str, Any]:
+    def create_resource(self, resource_id: Optional[str], template: Dict[str, Any]) -> Dict[str, Any]:
         """
         Create a new RTR put file
 
@@ -254,12 +242,12 @@ class RTRPutFileProvider(BaseResourceProvider):
 
         try:
             # Resolve file path
-            file_path = template['file_path']
-            template_path = Path(template.get('_template_path', '.'))
+            file_path = template["file_path"]
+            template_path = Path(template.get("_template_path", "."))
             template_dir = template_path.parent
             full_path = template_dir / file_path
 
-            logger.debug(f"Resolving put file path:")
+            logger.debug("Resolving put file path:")
             logger.debug(f"  Template path: {template_path}")
             logger.debug(f"  Template dir: {template_dir}")
             logger.debug(f"  File path (from template): {file_path}")
@@ -277,7 +265,7 @@ class RTRPutFileProvider(BaseResourceProvider):
                 )
 
             # Read binary file content
-            with open(full_path, 'rb') as f:
+            with open(full_path, "rb") as f:
                 file_content = f.read()
 
             logger.info(f"Loaded put file from {full_path} ({len(file_content)} bytes)")
@@ -289,55 +277,48 @@ class RTRPutFileProvider(BaseResourceProvider):
                 raise RuntimeError(f"Put file too large ({len(file_content)} bytes, max 100MB)")
 
             # Prepare multipart/form-data for file upload
-            file_name = template['name']
+            file_name = template["name"]
 
-            files = [
-                ('file', (file_name, file_content, 'application/octet-stream'))
-            ]
+            files = [("file", (file_name, file_content, "application/octet-stream"))]
 
             # Call RTR_CreatePut_Files
             response = self.rtr_admin.create_put_files(
-                description=template['description'],
+                description=template["description"],
                 name=file_name,
-                comments_for_audit_log=template.get('comments_for_audit_log', f"Created via IaC: {file_name}"),
-                files=files
+                comments_for_audit_log=template.get("comments_for_audit_log", f"Created via IaC: {file_name}"),
+                files=files,
             )
 
             logger.debug(f"Create RTR put file response status: {response.get('status_code')}")
             logger.debug(f"Create response body: {json.dumps(response.get('body', {}), indent=2)[:500]}")
 
-            if response.get('status_code') not in (200, 201):
-                raise RuntimeError(
-                    f"Failed to create RTR put file '{file_name}': {response}"
-                )
+            if response.get("status_code") not in (200, 201):
+                raise RuntimeError(f"Failed to create RTR put file '{file_name}': {response}")
 
             # Extract ID from response
-            body = response.get('body', {})
-            resources = body.get('resources', [])
+            body = response.get("body", {})
+            resources = body.get("resources", [])
 
             if resources and len(resources) > 0:
                 file_id = resources[0]
             else:
-                file_id = body.get('id', 'unknown')
+                file_id = body.get("id", "unknown")
 
             logger.info(f"Created RTR put file: {file_name} (ID: {file_id})")
 
             return {
-                'id': file_id,
-                'name': file_name,
-                'size': len(file_content),
-                'created_at': datetime.now(timezone.utc).isoformat(),
-                'response': body
+                "id": file_id,
+                "name": file_name,
+                "size": len(file_content),
+                "created_at": datetime.now(timezone.utc).isoformat(),
+                "response": body,
             }
 
         except Exception as e:
             raise RuntimeError(f"Failed to create RTR put file: {e}") from e
 
     def update_resource(
-        self,
-        resource_id: str,
-        template: Dict[str, Any],
-        current_state: Dict[str, Any]
+        self, resource_id: str, template: Dict[str, Any], current_state: Dict[str, Any]
     ) -> Dict[str, Any]:
         """
         Update an existing RTR put file
@@ -365,10 +346,7 @@ class RTRPutFileProvider(BaseResourceProvider):
             # Create new file
             result = self.create_resource(None, template)
 
-            logger.info(
-                f"RTR put file recreated: {resource_id} -> {result['id']} "
-                f"(delete + create pattern)"
-            )
+            logger.info(f"RTR put file recreated: {resource_id} -> {result['id']} (delete + create pattern)")
 
             return result
 
@@ -392,24 +370,19 @@ class RTRPutFileProvider(BaseResourceProvider):
             raise RuntimeError("RTR admin not initialized - cannot delete put files (credentials required)")
 
         try:
-            response = self.rtr_admin.delete_put_files(
-                ids=resource_id
-            )
+            response = self.rtr_admin.delete_put_files(ids=resource_id)
 
-            status_code = response.get('status_code')
+            status_code = response.get("status_code")
 
             if status_code == 200:
                 logger.info(f"Deleted RTR put file: {resource_id}")
-                return {
-                    'id': resource_id,
-                    'deleted_at': datetime.now(timezone.utc).isoformat()
-                }
+                return {"id": resource_id, "deleted_at": datetime.now(timezone.utc).isoformat()}
             elif status_code == 404:
                 logger.warning(f"RTR put file {resource_id} not found - may have been already deleted")
                 return {
-                    'id': resource_id,
-                    'deleted_at': datetime.now(timezone.utc).isoformat(),
-                    'note': 'Resource not found (may have been already deleted)'
+                    "id": resource_id,
+                    "deleted_at": datetime.now(timezone.utc).isoformat(),
+                    "note": "Resource not found (may have been already deleted)",
                 }
             else:
                 raise RuntimeError(
@@ -432,16 +405,16 @@ class RTRPutFileProvider(BaseResourceProvider):
             SHA256 hash as hex string
         """
         # Calculate hash of the binary file
-        file_path = template.get('file_path', '')
-        file_hash = ''
+        file_path = template.get("file_path", "")
+        file_hash = ""
 
         if file_path:
             try:
-                template_dir = Path(template.get('_template_path', '.')).parent
+                template_dir = Path(template.get("_template_path", ".")).parent
                 full_path = template_dir / file_path
 
                 if full_path.exists():
-                    with open(full_path, 'rb') as f:
+                    with open(full_path, "rb") as f:
                         file_content = f.read()
                         file_hash = hashlib.sha256(file_content).hexdigest()
             except Exception as e:
@@ -449,9 +422,9 @@ class RTRPutFileProvider(BaseResourceProvider):
 
         # Normalize content for consistent hashing
         normalized_content = {
-            'name': template.get('name', ''),
-            'description': template.get('description', ''),
-            'file_hash': file_hash
+            "name": template.get("name", ""),
+            "description": template.get("description", ""),
+            "file_hash": file_hash,
         }
 
         # Calculate hash
@@ -479,16 +452,13 @@ class RTRPutFileProvider(BaseResourceProvider):
         return ResourceChange(
             action=ResourceAction.CREATE,
             resource_type=self.get_resource_type(),
-            resource_name=template['name'],
+            resource_name=template["name"],
             new_value=template,
-            template_path=template_path
+            template_path=template_path,
         )
 
     def plan_update(
-        self,
-        template: Dict[str, Any],
-        current_state: Dict[str, Any],
-        template_path: str
+        self, template: Dict[str, Any], current_state: Dict[str, Any], template_path: str
     ) -> ResourceChange:
         """Plan an update to an existing RTR put file"""
         # Calculate content hashes
@@ -499,54 +469,54 @@ class RTRPutFileProvider(BaseResourceProvider):
             return ResourceChange(
                 action=ResourceAction.NO_CHANGE,
                 resource_type=self.get_resource_type(),
-                resource_name=template['name'],
-                resource_id=current_state.get('id'),
+                resource_name=template["name"],
+                resource_id=current_state.get("id"),
                 old_value=current_state,
                 new_value=template,
-                template_path=template_path
+                template_path=template_path,
             )
 
         # Detect changes
         changes = {}
-        for key in ['name', 'description', 'file_hash']:
+        for key in ["name", "description", "file_hash"]:
             # For file content, compare hashes
-            if key == 'file_hash':
+            if key == "file_hash":
                 old_hash = self._get_file_hash(current_state)
                 new_hash = self._get_file_hash(template)
                 if old_hash != new_hash:
-                    changes['file_content'] = {'old': f"SHA256:{old_hash[:16]}...", 'new': f"SHA256:{new_hash[:16]}..."}
+                    changes["file_content"] = {"old": f"SHA256:{old_hash[:16]}...", "new": f"SHA256:{new_hash[:16]}..."}
             else:
                 old_val = current_state.get(key)
                 new_val = template.get(key)
                 if old_val != new_val and (old_val is not None or new_val is not None):
-                    changes[key] = {'old': old_val, 'new': new_val}
+                    changes[key] = {"old": old_val, "new": new_val}
 
         return ResourceChange(
             action=ResourceAction.UPDATE,
             resource_type=self.get_resource_type(),
-            resource_name=template['name'],
-            resource_id=current_state.get('id'),
+            resource_name=template["name"],
+            resource_id=current_state.get("id"),
             old_value=current_state,
             new_value=template,
             changes=changes,
-            template_path=template_path
+            template_path=template_path,
         )
 
     def _get_file_hash(self, data: Dict[str, Any]) -> str:
         """Helper to extract/compute file hash from template or state"""
-        file_path = data.get('file_path', '')
+        file_path = data.get("file_path", "")
         if file_path:
             try:
-                template_dir = Path(data.get('_template_path', '.')).parent
+                template_dir = Path(data.get("_template_path", ".")).parent
                 full_path = template_dir / file_path
                 if full_path.exists():
-                    with open(full_path, 'rb') as f:
+                    with open(full_path, "rb") as f:
                         return hashlib.sha256(f.read()).hexdigest()
             except Exception:
                 pass
 
         # Try to get from state metadata
-        return data.get('file_hash', data.get('sha256', ''))
+        return data.get("file_hash", data.get("sha256", ""))
 
     def plan_delete(self, resource_id: str, resource_name: str) -> ResourceChange:
         """Plan the deletion of an RTR put file"""
@@ -554,7 +524,7 @@ class RTRPutFileProvider(BaseResourceProvider):
             action=ResourceAction.DELETE,
             resource_type=self.get_resource_type(),
             resource_name=resource_name,
-            resource_id=resource_id
+            resource_id=resource_id,
         )
 
     # Convenience methods matching BaseResourceProvider naming
@@ -563,12 +533,7 @@ class RTRPutFileProvider(BaseResourceProvider):
         """Alias for create_resource (BaseResourceProvider compatibility)"""
         return self.create_resource(None, template)
 
-    def apply_update(
-        self,
-        resource_id: str,
-        template: Dict[str, Any],
-        current_state: Dict[str, Any]
-    ) -> Dict[str, Any]:
+    def apply_update(self, resource_id: str, template: Dict[str, Any], current_state: Dict[str, Any]) -> Dict[str, Any]:
         """Alias for update_resource (BaseResourceProvider compatibility)"""
         return self.update_resource(resource_id, template, current_state)
 
@@ -589,14 +554,14 @@ class RTRPutFileProvider(BaseResourceProvider):
         Returns:
             Template dict ready for YAML serialization
         """
-        name = remote_resource.get('name', '')
-        resource_id = self._name_to_resource_id(name) if name else 'unknown'
+        name = remote_resource.get("name", "")
+        resource_id = self._name_to_resource_id(name) if name else "unknown"
 
         template = {
-            'resource_id': resource_id,
-            'name': name,
-            'description': remote_resource.get('description', ''),
-            'file_path': f"files/{name}",  # Placeholder — user must provide actual file
+            "resource_id": resource_id,
+            "name": name,
+            "description": remote_resource.get("description", ""),
+            "file_path": f"files/{name}",  # Placeholder — user must provide actual file
         }
 
         return template
@@ -611,8 +576,8 @@ class RTRPutFileProvider(BaseResourceProvider):
         Returns:
             Relative path like 'rtr_put_files/my_binary.yaml'
         """
-        resource_id = template.get('resource_id', '')
+        resource_id = template.get("resource_id", "")
         if not resource_id:
-            resource_id = self._name_to_resource_id(template.get('name', 'unknown'))
+            resource_id = self._name_to_resource_id(template.get("name", "unknown"))
 
         return f"rtr_put_files/{resource_id}.yaml"

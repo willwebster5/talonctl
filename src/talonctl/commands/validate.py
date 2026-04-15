@@ -3,7 +3,11 @@
 import click
 
 from talonctl.commands._common import (
-    console, filter_options, state_options, parse_filters, init_orchestrator,
+    console,
+    filter_options,
+    state_options,
+    parse_filters,
+    init_orchestrator,
 )
 
 
@@ -14,13 +18,14 @@ from talonctl.commands._common import (
 def validate(ctx, resources, tags, names, state_file):
     """Validate all templates without deploying."""
     console.print("[bold blue]Validating templates...[/bold blue]\n")
-    verbose = ctx.obj.get('verbose', False)
+    verbose = ctx.obj.get("verbose", False)
 
     orchestrator = init_orchestrator(state_file=state_file, require_credentials=False)
     filters = parse_filters(resources, tags, names)
 
     try:
         from talonctl.core import PlanFormatter
+
         results = orchestrator.validate(**filters)
         formatter = PlanFormatter(console, verbose=verbose)
         formatter.format_validation_results(results)
@@ -30,5 +35,6 @@ def validate(ctx, resources, tags, names, state_file):
         console.print(f"[red]✗ Error during validation: {e}[/red]")
         if verbose:
             import traceback
+
             traceback.print_exc()
         ctx.exit(1)

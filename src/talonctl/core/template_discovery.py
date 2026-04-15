@@ -18,6 +18,7 @@ logger = logging.getLogger(__name__)
 @dataclass
 class DiscoveredTemplate:
     """Represents a discovered template with metadata"""
+
     resource_type: str
     name: str  # Stable resource identifier (from resource_id field or fallback to name)
     file_path: Path
@@ -46,10 +47,18 @@ class TemplateDiscovery:
     """
 
     # Valid resource types
-    VALID_RESOURCE_TYPES = ['detection', 'workflow', 'saved_search', 'lookup_file', 'rtr_script', 'rtr_put_file', 'dashboard']
+    VALID_RESOURCE_TYPES = [
+        "detection",
+        "workflow",
+        "saved_search",
+        "lookup_file",
+        "rtr_script",
+        "rtr_put_file",
+        "dashboard",
+    ]
 
     # Default resources directory
-    DEFAULT_RESOURCES_DIR = 'resources'
+    DEFAULT_RESOURCES_DIR = "resources"
 
     def __init__(self, resources_dir: Optional[Path] = None, project_root: Optional[Path] = None):
         """
@@ -72,13 +81,14 @@ class TemplateDiscovery:
     def _find_project_root(self) -> Path:
         """Find project root directory by walking up from CWD looking for .crowdstrike/."""
         from talonctl.project import find_project_root
+
         return find_project_root()
 
     def discover_all(
         self,
         resource_types: Optional[List[str]] = None,
         tags: Optional[List[str]] = None,
-        names: Optional[List[str]] = None
+        names: Optional[List[str]] = None,
     ) -> Dict[str, List[DiscoveredTemplate]]:
         """
         Discover all templates matching filters
@@ -91,9 +101,7 @@ class TemplateDiscovery:
         Returns:
             Dictionary mapping resource type to list of templates
         """
-        discovered: Dict[str, List[DiscoveredTemplate]] = {
-            rt: [] for rt in self.VALID_RESOURCE_TYPES
-        }
+        discovered: Dict[str, List[DiscoveredTemplate]] = {rt: [] for rt in self.VALID_RESOURCE_TYPES}
 
         # Apply resource type filter
         types_to_scan = resource_types if resource_types else self.VALID_RESOURCE_TYPES
@@ -131,13 +139,13 @@ class TemplateDiscovery:
 
         # Map resource type to directory name
         type_to_dir = {
-            'detection': 'detections',
-            'workflow': 'workflows',
-            'saved_search': 'saved_searches',
-            'lookup_file': 'lookup_files',
-            'rtr_script': 'rtr_scripts',
-            'rtr_put_file': 'rtr_put_files',
-            'dashboard': 'dashboards'
+            "detection": "detections",
+            "workflow": "workflows",
+            "saved_search": "saved_searches",
+            "lookup_file": "lookup_files",
+            "rtr_script": "rtr_scripts",
+            "rtr_put_file": "rtr_put_files",
+            "dashboard": "dashboards",
         }
 
         dir_name = type_to_dir.get(resource_type)
@@ -152,7 +160,7 @@ class TemplateDiscovery:
             return templates
 
         # Recursively find all YAML files
-        for yaml_file in type_dir.rglob('*.yaml'):
+        for yaml_file in type_dir.rglob("*.yaml"):
             try:
                 template = self._load_template(yaml_file, resource_type)
                 if template:
@@ -177,7 +185,7 @@ class TemplateDiscovery:
             DiscoveredTemplate or None if invalid
         """
         try:
-            with open(file_path, 'r') as f:
+            with open(file_path, "r") as f:
                 data = yaml.safe_load(f)
 
             if not isinstance(data, dict):
@@ -188,27 +196,24 @@ class TemplateDiscovery:
             # Note: 'type' can be a resource type (detection, saved_search) OR a rule
             # sub-type (behavioral). Sub-types like 'behavioral' are valid detection rules
             # that get passed through to the API as the rule type.
-            DETECTION_SUBTYPES = {'behavioral'}
+            DETECTION_SUBTYPES = {"behavioral"}
 
-            template_type = data.get('type')
+            template_type = data.get("type")
             if not template_type:
                 logger.debug(f"Template {file_path} missing 'type' field, inferring as {expected_type}")
                 template_type = expected_type
-            elif template_type in DETECTION_SUBTYPES and expected_type == 'detection':
+            elif template_type in DETECTION_SUBTYPES and expected_type == "detection":
                 # 'behavioral' is a sub-type of detection, not a different resource type
                 # Keep 'type: behavioral' in data for the API, but route as detection
                 template_type = expected_type
             elif template_type != expected_type:
-                logger.warning(
-                    f"Template {file_path} type mismatch: "
-                    f"expected {expected_type}, got {template_type}"
-                )
+                logger.warning(f"Template {file_path} type mismatch: expected {expected_type}, got {template_type}")
                 return None
 
             # Extract resource_id and name
             # Phase 1: Support resource_id field as stable identifier
-            resource_id = data.get('resource_id')  # Stable IaC identifier
-            display_name = data.get('name')  # Human-readable display name
+            resource_id = data.get("resource_id")  # Stable IaC identifier
+            display_name = data.get("name")  # Human-readable display name
 
             if not display_name:
                 logger.warning(f"Template {file_path} missing 'name' field")
@@ -220,18 +225,17 @@ class TemplateDiscovery:
             stable_id = resource_id if resource_id else display_name
 
             logger.debug(
-                f"Template {file_path}: resource_id={resource_id}, "
-                f"name={display_name}, using stable_id={stable_id}"
+                f"Template {file_path}: resource_id={resource_id}, name={display_name}, using stable_id={stable_id}"
             )
 
             # Extract tags
-            tags = data.get('tags', [])
+            tags = data.get("tags", [])
             if not isinstance(tags, list):
                 tags = []
 
             # Add template path to data for providers that need to resolve relative paths
             # Use resolve() to ensure absolute path for CI/CD compatibility
-            data['_template_path'] = str(file_path.resolve())
+            data["_template_path"] = str(file_path.resolve())
 
             return DiscoveredTemplate(
                 resource_type=template_type,
@@ -239,7 +243,7 @@ class TemplateDiscovery:
                 file_path=file_path,
                 template_data=data,
                 tags=tags,
-                display_name=display_name  # Store display name separately
+                display_name=display_name,  # Store display name separately
             )
 
         except yaml.YAMLError as e:
@@ -306,7 +310,7 @@ class TemplateDiscovery:
             return self._template_cache[resource_id]
 
         # Parse resource ID
-        parts = resource_id.split('.', 1)
+        parts = resource_id.split(".", 1)
         if len(parts) != 2:
             logger.error(f"Invalid resource ID format: {resource_id}")
             return None

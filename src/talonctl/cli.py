@@ -11,19 +11,19 @@ from talonctl.commands._common import console
 
 @click.group()
 @click.version_option(version=__version__, prog_name="talonctl")
-@click.option('--verbose', '-v', is_flag=True, help='Enable verbose output')
+@click.option("--verbose", "-v", is_flag=True, help="Enable verbose output")
 @click.pass_context
 def cli(ctx, verbose):
     """Infrastructure as code for CrowdStrike NGSIEM."""
     ctx.ensure_object(dict)
-    ctx.obj['verbose'] = verbose
+    ctx.obj["verbose"] = verbose
 
     if verbose:
         logging.getLogger().setLevel(logging.DEBUG)
 
     logging.basicConfig(
         level=logging.INFO,
-        format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+        format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
     )
 
     console.print(f"\n[bold cyan]talonctl[/bold cyan] [dim]v{__version__}[/dim]")
@@ -55,9 +55,9 @@ cli.add_command(show)
 cli.add_command(sync)
 cli.add_command(drift)
 cli.add_command(destroy)
-cli.add_command(import_cmd, name='import')
+cli.add_command(import_cmd, name="import")
 cli.add_command(publish)
-cli.add_command(validate_query, name='validate-query')
+cli.add_command(validate_query, name="validate-query")
 cli.add_command(init)
 cli.add_command(discover)
 cli.add_command(backup)

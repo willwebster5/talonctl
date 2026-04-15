@@ -9,13 +9,18 @@ import click
 from talonctl.commands._common import console
 
 RESOURCE_DIRS = [
-    'detections', 'saved_searches', 'dashboards', 'workflows',
-    'lookup_files', 'rtr_scripts', 'rtr_put_files',
+    "detections",
+    "saved_searches",
+    "dashboards",
+    "workflows",
+    "lookup_files",
+    "rtr_scripts",
+    "rtr_put_files",
 ]
 
 
 @click.command()
-@click.argument('path', required=False, type=click.Path())
+@click.argument("path", required=False, type=click.Path())
 @click.pass_context
 def init(ctx, path):
     """Scaffold a new talonctl project."""
@@ -23,7 +28,7 @@ def init(ctx, path):
     project_dir = project_dir.resolve()
 
     # Refuse if already initialized
-    if (project_dir / '.crowdstrike').exists():
+    if (project_dir / ".crowdstrike").exists():
         console.print("[red]✗ Directory already contains a talonctl project (.crowdstrike/ exists)[/red]")
         ctx.exit(1)
         return
@@ -32,27 +37,25 @@ def init(ctx, path):
 
     # Create resource directories
     for resource_type in RESOURCE_DIRS:
-        (project_dir / 'resources' / resource_type).mkdir(parents=True, exist_ok=True)
+        (project_dir / "resources" / resource_type).mkdir(parents=True, exist_ok=True)
 
     # Create knowledge directories
-    for subdir in ['context', 'patterns', 'techniques', 'tuning', 'metrics', 'hunts', 'ideas']:
-        (project_dir / 'knowledge' / subdir).mkdir(parents=True, exist_ok=True)
+    for subdir in ["context", "patterns", "techniques", "tuning", "metrics", "hunts", "ideas"]:
+        (project_dir / "knowledge" / subdir).mkdir(parents=True, exist_ok=True)
 
     # Copy template files from bundled templates
-    templates_dir = Path(__file__).parent.parent / 'templates' / 'init'
+    templates_dir = Path(__file__).parent.parent / "templates" / "init"
     _copy_templates(templates_dir, project_dir)
 
     # Create state file
-    (project_dir / '.crowdstrike').mkdir(exist_ok=True)
+    (project_dir / ".crowdstrike").mkdir(exist_ok=True)
     state = {"format_version": "3.0", "resources": {}}
-    (project_dir / '.crowdstrike' / 'deployed_state.json').write_text(
-        json.dumps(state, indent=2) + '\n'
-    )
+    (project_dir / ".crowdstrike" / "deployed_state.json").write_text(json.dumps(state, indent=2) + "\n")
 
     # Create .gitignore
-    gitignore_template = templates_dir / 'gitignore'
+    gitignore_template = templates_dir / "gitignore"
     if gitignore_template.exists():
-        shutil.copy2(gitignore_template, project_dir / '.gitignore')
+        shutil.copy2(gitignore_template, project_dir / ".gitignore")
 
     console.print(f"[green]✓ Initialized talonctl project at {project_dir}[/green]\n")
     console.print("Next steps:")
@@ -66,8 +69,8 @@ def _copy_templates(templates_dir: Path, project_dir: Path):
     """Copy template files from bundled templates to project directory."""
     if not templates_dir.exists():
         return
-    for template_file in templates_dir.rglob('*'):
-        if template_file.is_file() and template_file.name != 'gitignore' and template_file.name != 'state.json':
+    for template_file in templates_dir.rglob("*"):
+        if template_file.is_file() and template_file.name != "gitignore" and template_file.name != "state.json":
             relative = template_file.relative_to(templates_dir)
             target = project_dir / relative
             target.parent.mkdir(parents=True, exist_ok=True)

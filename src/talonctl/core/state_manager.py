@@ -21,6 +21,7 @@ logger = logging.getLogger(__name__)
 @dataclass
 class ResourceState:
     """Represents the state of a single deployed resource"""
+
     type: str  # Resource type (detection, workflow, saved_search, etc.)
     id: str  # Unique ID from CrowdStrike
     content_hash: str  # SHA256 hash for change detection
@@ -71,7 +72,7 @@ class StateManager:
         falcon_client=None,
         remote_state_enabled: bool = False,
         remote_state_search_domain: str = "falcon",
-        remote_state_filename: str = "unified_deployment_state.json"
+        remote_state_filename: str = "unified_deployment_state.json",
     ):
         """
         Initialize state manager.
@@ -93,10 +94,10 @@ class StateManager:
         self.remote_state_filename = remote_state_filename
 
         # Override from environment
-        if os.getenv('REMOTE_STATE_ENABLED', '').lower() in ('true', '1', 'yes'):
+        if os.getenv("REMOTE_STATE_ENABLED", "").lower() in ("true", "1", "yes"):
             self.remote_state_enabled = True
-        if os.getenv('NGSIEM_SEARCH_DOMAIN'):
-            self.remote_state_search_domain = os.getenv('NGSIEM_SEARCH_DOMAIN')
+        if os.getenv("NGSIEM_SEARCH_DOMAIN"):
+            self.remote_state_search_domain = os.getenv("NGSIEM_SEARCH_DOMAIN")
 
         self._state = self._load_state()
 
@@ -113,7 +114,7 @@ class StateManager:
 
         if self.state_file_path.exists() and self.state_file_path.stat().st_size > 0:
             try:
-                with open(self.state_file_path, 'r') as f:
+                with open(self.state_file_path, "r") as f:
                     local_state = json.load(f)
 
             except json.JSONDecodeError as e:
@@ -165,12 +166,8 @@ class StateManager:
             "last_updated": datetime.now(timezone.utc).isoformat(),
             "metadata": {},
             "resources": {},
-            "resource_graph": {
-                "nodes": [],
-                "edges": []
-            }
+            "resource_graph": {"nodes": [], "edges": []},
         }
-
 
     def _sync_from_remote(self) -> Optional[Dict[str, Any]]:
         """
@@ -194,9 +191,7 @@ class StateManager:
             )
 
             remote_state, error = download_json(
-                self.falcon_client,
-                filename=self.remote_state_filename,
-                search_domain=self.remote_state_search_domain
+                self.falcon_client, filename=self.remote_state_filename, search_domain=self.remote_state_search_domain
             )
 
             if error:
@@ -216,11 +211,13 @@ class StateManager:
                 return None
 
             # Validate it's a valid state file
-            if 'version' in remote_state and 'resources' in remote_state:
+            if "version" in remote_state and "resources" in remote_state:
                 logger.info("Successfully loaded remote state")
                 return remote_state
             else:
-                logger.warning(f"Remote state has invalid format (missing keys), ignoring. Keys: {list(remote_state.keys())}")
+                logger.warning(
+                    f"Remote state has invalid format (missing keys), ignoring. Keys: {list(remote_state.keys())}"
+                )
                 return None
 
         except ImportError as e:
@@ -242,19 +239,15 @@ class StateManager:
         Returns:
             The unique resource ID, or None if not found
         """
-        pm = resource.get('provider_metadata', {})
+        pm = resource.get("provider_metadata", {})
         if isinstance(pm, dict):
-            rid = pm.get('rule_id')
+            rid = pm.get("rule_id")
             if rid:
                 return rid
-        top_id = resource.get('id', '')
+        top_id = resource.get("id", "")
         return top_id if top_id else None
 
-    def _merge_remote_state(
-        self,
-        local_state: Dict[str, Any],
-        remote_state: Dict[str, Any]
-    ) -> Dict[str, Any]:
+    def _merge_remote_state(self, local_state: Dict[str, Any], remote_state: Dict[str, Any]) -> Dict[str, Any]:
         """
         Merge remote state with local state, preserving local template tracking.
 
@@ -280,7 +273,7 @@ class StateManager:
             "last_updated": remote_state.get("last_updated", datetime.now(timezone.utc).isoformat()),
             "metadata": remote_state.get("metadata", {}),
             "resource_graph": remote_state.get("resource_graph", {"nodes": [], "edges": []}),
-            "resources": {}
+            "resources": {},
         }
 
         # Get resources from both states
@@ -329,23 +322,20 @@ class StateManager:
                 # (resource_id keys are slugified, display-name keys have spaces)
                 canonical = None
                 for k in keys:
-                    if k in local_type_resources and ' ' not in k:
+                    if k in local_type_resources and " " not in k:
                         canonical = k
                         break
                 if not canonical:
                     # Fallback: prefer any key without spaces
                     for k in keys:
-                        if ' ' not in k:
+                        if " " not in k:
                             canonical = k
                             break
                 if canonical:
                     for k in keys:
                         if k != canonical:
                             stale_keys.add(k)
-                            logger.debug(
-                                f"Marking stale key '{k}' "
-                                f"(duplicate of '{canonical}' via id={uid})"
-                            )
+                            logger.debug(f"Marking stale key '{k}' (duplicate of '{canonical}' via id={uid})")
 
             # Get all resource names from both local and remote
             all_resource_names = set(local_type_resources.keys()) | set(remote_type_resources.keys())
@@ -369,7 +359,7 @@ class StateManager:
                         "deployed_at": remote_resource.get("deployed_at", local_resource.get("deployed_at", "")),
                         "last_modified": remote_resource.get("last_modified", local_resource.get("last_modified", "")),
                         "provider_metadata": remote_resource.get("provider_metadata", {}),  # Use remote metadata
-                        "dependencies": local_resource.get("dependencies", [])
+                        "dependencies": local_resource.get("dependencies", []),
                     }
                     logger.debug(f"Merged {resource_type}.{resource_name} (kept local tracking)")
 
@@ -393,8 +383,7 @@ class StateManager:
             logger.info(f"Deduplicated {dedup_count} stale display-name keys from remote state")
 
         logger.info(
-            f"State merge complete: "
-            f"{len([r for t in merged['resources'].values() for r in t.keys()])} total resources"
+            f"State merge complete: {len([r for t in merged['resources'].values() for r in t.keys()])} total resources"
         )
 
         return merged
@@ -424,18 +413,20 @@ class StateManager:
                 self.falcon_client,
                 data=self._state,
                 search_domain=self.remote_state_search_domain,
-                filename=self.remote_state_filename
+                filename=self.remote_state_filename,
             )
 
             # Check response
             if isinstance(response, dict):
-                status_code = response.get('status_code')
+                status_code = response.get("status_code")
                 if status_code in (200, 201):
                     logger.info("Successfully uploaded state to remote")
                     return True
-                elif 'errors' in response and response['errors']:
-                    errors = response.get('errors', [])
-                    error_msg = errors[0].get('message', str(errors[0])) if isinstance(errors[0], dict) else str(errors[0])
+                elif "errors" in response and response["errors"]:
+                    errors = response.get("errors", [])
+                    error_msg = (
+                        errors[0].get("message", str(errors[0])) if isinstance(errors[0], dict) else str(errors[0])
+                    )
                     logger.warning(f"Failed to upload state: {error_msg}")
                     return False
                 else:
@@ -469,8 +460,8 @@ class StateManager:
 
         try:
             # Write atomically via temp file with fsync for durability
-            temp_path = self.state_file_path.with_suffix('.tmp')
-            with open(temp_path, 'w') as f:
+            temp_path = self.state_file_path.with_suffix(".tmp")
+            with open(temp_path, "w") as f:
                 json.dump(state, f, indent=2, sort_keys=True)
                 f.flush()  # Flush to OS buffer
                 os.fsync(f.fileno())  # Force write to disk
@@ -485,7 +476,7 @@ class StateManager:
             if temp_path.exists():
                 try:
                     temp_path.unlink()
-                except:
+                except OSError:
                     pass
             raise
 
@@ -507,7 +498,7 @@ class StateManager:
         (e.g., provider_metadata, display_name). This ensures ResourceState(**data)
         always succeeds.
         """
-        data.setdefault('provider_metadata', {})
+        data.setdefault("provider_metadata", {})
         return data
 
     def get_resource(self, resource_type: str, resource_name: str) -> Optional[ResourceState]:
@@ -530,12 +521,7 @@ class StateManager:
 
         return ResourceState(**self._backfill_state_data(resource_data))
 
-    def set_resource(
-        self,
-        resource_type: str,
-        resource_name: str,
-        resource_state: ResourceState
-    ) -> None:
+    def set_resource(self, resource_type: str, resource_name: str, resource_state: ResourceState) -> None:
         """
         Update or create a resource in state.
 
@@ -623,7 +609,7 @@ class StateManager:
         """
         self._state["resource_graph"] = {
             "nodes": list(graph.nodes),
-            "edges": [[src, dst] for src in graph.nodes for dst in graph.edges.get(src, [])]
+            "edges": [[src, dst] for src in graph.nodes for dst in graph.edges.get(src, [])],
         }
 
     def get_metadata(self) -> Dict[str, Any]:
@@ -666,10 +652,7 @@ class StateManager:
         if resource_type:
             return len(self._state.get("resources", {}).get(resource_type, {}))
         else:
-            return sum(
-                len(resources)
-                for resources in self._state.get("resources", {}).values()
-            )
+            return sum(len(resources) for resources in self._state.get("resources", {}).values())
 
     def __repr__(self) -> str:
         """String representation"""

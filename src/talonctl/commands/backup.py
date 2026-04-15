@@ -56,7 +56,7 @@ class SimpleBackupSystem:
             package_name = f"detection-backup-{timestamp}.zip"
             package_path = self.backup_dir / package_name
 
-            with zipfile.ZipFile(package_path, 'w', zipfile.ZIP_DEFLATED) as zipf:
+            with zipfile.ZipFile(package_path, "w", zipfile.ZIP_DEFLATED) as zipf:
                 # Add state file
                 state_file = self.state_dir / "deployed_state.json"
                 if state_file.exists():
@@ -75,11 +75,11 @@ class SimpleBackupSystem:
                     "backup_date": datetime.now(timezone.utc).isoformat(),
                     "git_commit": self._get_git_commit(),
                     "git_branch": self._get_git_branch(),
-                    "state_version": self._get_state_version()
+                    "state_version": self._get_state_version(),
                 }
 
                 # Write metadata to temp file and add to zip
-                with tempfile.NamedTemporaryFile(mode='w', suffix='.json', delete=False) as f:
+                with tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False) as f:
                     json.dump(metadata, f, indent=2)
                     temp_path = f.name
 
@@ -110,9 +110,9 @@ class SimpleBackupSystem:
 {description}
 
 **Backup Information:**
-- Timestamp: {datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M:%S UTC')}
-- Git Commit: {self._get_git_commit() or 'unknown'}
-- Git Branch: {self._get_git_branch() or 'unknown'}
+- Timestamp: {datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")}
+- Git Commit: {self._get_git_commit() or "unknown"}
+- Git Branch: {self._get_git_branch() or "unknown"}
 
 ## Restoration Instructions
 
@@ -124,11 +124,16 @@ talonctl backup restore {tag}
 """
 
             cmd = [
-                "gh", "release", "create", tag,
+                "gh",
+                "release",
+                "create",
+                tag,
                 str(backup_path),
-                "--title", release_title,
-                "--notes", release_body,
-                "--prerelease"
+                "--title",
+                release_title,
+                "--notes",
+                release_body,
+                "--prerelease",
             ]
 
             result = subprocess.run(cmd, capture_output=True, text=True, cwd=self.repo_path)
@@ -149,7 +154,9 @@ talonctl backup restore {tag}
         try:
             result = subprocess.run(
                 ["gh", "release", "list", "--json", "tagName,createdAt,name"],
-                capture_output=True, text=True, cwd=self.repo_path
+                capture_output=True,
+                text=True,
+                cwd=self.repo_path,
             )
 
             if result.returncode != 0:
@@ -182,11 +189,7 @@ talonctl backup restore {tag}
 
             # Download backup file
             with tempfile.TemporaryDirectory() as temp_dir:
-                download_cmd = [
-                    "gh", "release", "download", tag,
-                    "--dir", temp_dir,
-                    "--pattern", "*.zip"
-                ]
+                download_cmd = ["gh", "release", "download", tag, "--dir", temp_dir, "--pattern", "*.zip"]
 
                 result = subprocess.run(download_cmd, capture_output=True, text=True, cwd=self.repo_path)
                 if result.returncode != 0:
@@ -203,7 +206,7 @@ talonctl backup restore {tag}
                 extract_dir = Path(temp_dir) / "extract"
                 extract_dir.mkdir()
 
-                with zipfile.ZipFile(backup_zip, 'r') as zipf:
+                with zipfile.ZipFile(backup_zip, "r") as zipf:
                     zipf.extractall(extract_dir)
 
                 # Restore state file
@@ -242,10 +245,7 @@ talonctl backup restore {tag}
     def _get_git_commit(self) -> Optional[str]:
         """Get current git commit hash."""
         try:
-            result = subprocess.run(
-                ["git", "rev-parse", "HEAD"],
-                capture_output=True, text=True, cwd=self.repo_path
-            )
+            result = subprocess.run(["git", "rev-parse", "HEAD"], capture_output=True, text=True, cwd=self.repo_path)
             return result.stdout.strip() if result.returncode == 0 else None
         except Exception:
             return None
@@ -254,8 +254,7 @@ talonctl backup restore {tag}
         """Get current git branch."""
         try:
             result = subprocess.run(
-                ["git", "branch", "--show-current"],
-                capture_output=True, text=True, cwd=self.repo_path
+                ["git", "branch", "--show-current"], capture_output=True, text=True, cwd=self.repo_path
             )
             return result.stdout.strip() if result.returncode == 0 else None
         except Exception:

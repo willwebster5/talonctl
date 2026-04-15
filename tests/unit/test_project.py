@@ -1,11 +1,5 @@
 """Tests for talonctl project root detection."""
 
-import os
-import tempfile
-from pathlib import Path
-
-import pytest
-
 from talonctl.project import find_project_root
 
 

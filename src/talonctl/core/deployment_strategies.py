@@ -6,7 +6,7 @@ Different strategies are used based on the current and target rule states.
 """
 
 from abc import ABC, abstractmethod
-from typing import Dict, Any, Callable, Optional
+from typing import Dict, Any, Callable
 import logging
 import time
 
@@ -33,7 +33,7 @@ class DeploymentStrategy(ABC):
         current_status: str,
         target_status: str,
         falcon_command: Callable,
-        wait_for_status: Callable[[str, str, int], bool]
+        wait_for_status: Callable[[str, str, int], bool],
     ):
         """
         Initialize deployment strategy.
@@ -137,27 +137,26 @@ class SinglePhaseStrategy(DeploymentStrategy):
     def execute(self, prepare_patch_payload: Callable) -> Dict[str, Any]:
         """Execute single-phase update"""
         payload = prepare_patch_payload(self.template)
-        payload['id'] = self.resource_id
+        payload["id"] = self.resource_id
 
         # Remove operation/schedule fields when rule is or will be STOPPED/INACTIVE
         # API restriction: "scheduled report can't be transitioned in state 'STOPPED'
         # and also update attributes 'schedule', 'start_on' or 'stop_on'"
-        if (self.current_status in ['STOPPED', 'INACTIVE'] or
-            self.target_status == 'inactive') and 'operation' in payload:
+        if (
+            self.current_status in ["STOPPED", "INACTIVE"] or self.target_status == "inactive"
+        ) and "operation" in payload:
             logger.info(
                 f"Removing operation fields for STOPPED/INACTIVE rule to avoid API conflict "
                 f"(current: {self.current_status}, target: {self.target_status})"
             )
-            del payload['operation']
+            del payload["operation"]
 
         logger.debug(f"[DEBUG] Single-phase PATCH payload keys: {list(payload.keys())}")
 
         response = self._patch_with_retry([payload])
 
         if response["status_code"] not in (200, 201):
-            raise RuntimeError(
-                f"Single-phase deployment failed for rule '{self.template['name']}': {response}"
-            )
+            raise RuntimeError(f"Single-phase deployment failed for rule '{self.template['name']}': {response}")
 
         return response
 
@@ -183,29 +182,24 @@ class TwoPhaseActivationStrategy(DeploymentStrategy):
         logger.info(f"Using {self.get_name()}")
 
         # Phase 1: Activate the rule only (no schedule changes)
-        phase1_payload = {
-            "id": self.resource_id,
-            "status": "active"
-        }
+        phase1_payload = {"id": self.resource_id, "status": "active"}
 
         logger.info("Phase 1: Activating rule...")
         response1 = self._patch_with_retry([phase1_payload], phase_label="Phase 1: ")
 
         if response1["status_code"] not in (200, 201):
-            raise RuntimeError(
-                f"Phase 1 failed: Could not activate rule '{self.template['name']}': {response1}"
-            )
+            raise RuntimeError(f"Phase 1 failed: Could not activate rule '{self.template['name']}': {response1}")
 
         logger.info("Phase 1 complete: Rule activated")
 
         # Wait for rule to reach active status with exponential backoff polling
-        if not self.wait_for_status(self.resource_id, 'active', 30):
+        if not self.wait_for_status(self.resource_id, "active", 30):
             logger.warning("Rule may not be fully active yet, continuing with Phase 2...")
 
         # Phase 2: Update schedule and other attributes
         phase2_payload = prepare_patch_payload(self.template)
-        phase2_payload['id'] = self.resource_id
-        phase2_payload['status'] = 'active'  # Maintain active status
+        phase2_payload["id"] = self.resource_id
+        phase2_payload["status"] = "active"  # Maintain active status
 
         logger.debug(f"[DEBUG] Phase 2 PATCH payload keys: {list(phase2_payload.keys())}")
 
@@ -214,9 +208,7 @@ class TwoPhaseActivationStrategy(DeploymentStrategy):
 
         if response["status_code"] not in (200, 201):
             logger.debug(f"[DEBUG] Phase 2 error response: {response}")
-            raise RuntimeError(
-                f"Phase 2 failed: Could not update schedule for '{self.template['name']}': {response}"
-            )
+            raise RuntimeError(f"Phase 2 failed: Could not update schedule for '{self.template['name']}': {response}")
 
         logger.info("Two-phase activation complete")
         return response
@@ -245,12 +237,12 @@ class TwoPhaseDeactivationStrategy(DeploymentStrategy):
 
         # Phase 1: Update all attributes EXCEPT status and operation/schedule
         phase1_payload = prepare_patch_payload(self.template)
-        phase1_payload['id'] = self.resource_id
-        phase1_payload['status'] = self.current_status.lower()  # Keep current status
+        phase1_payload["id"] = self.resource_id
+        phase1_payload["status"] = self.current_status.lower()  # Keep current status
 
         # Remove operation fields to avoid API conflict
-        if 'operation' in phase1_payload:
-            del phase1_payload['operation']
+        if "operation" in phase1_payload:
+            del phase1_payload["operation"]
 
         logger.info("Phase 1: Updating attributes (excluding schedule)...")
         response1 = self._patch_with_retry([phase1_payload], phase_label="Phase 1: ")
@@ -263,18 +255,13 @@ class TwoPhaseDeactivationStrategy(DeploymentStrategy):
         logger.info("Phase 1 complete: Attributes updated")
 
         # Phase 2: Deactivate the rule
-        phase2_payload = {
-            "id": self.resource_id,
-            "status": "inactive"
-        }
+        phase2_payload = {"id": self.resource_id, "status": "inactive"}
 
         logger.info("Phase 2: Deactivating rule...")
         response = self._patch_with_retry([phase2_payload], phase_label="Phase 2: ")
 
         if response["status_code"] not in (200, 201):
-            raise RuntimeError(
-                f"Phase 2 failed: Could not deactivate rule '{self.template['name']}': {response}"
-            )
+            raise RuntimeError(f"Phase 2 failed: Could not deactivate rule '{self.template['name']}': {response}")
 
         logger.info("Two-phase deactivation complete")
         return response
@@ -306,10 +293,7 @@ class ThreePhaseStoppedScheduleStrategy(DeploymentStrategy):
         logger.info("(Required because API won't allow schedule updates while rule is stopped)")
 
         # Phase 1: Temporarily activate the rule (no schedule)
-        phase1_payload = {
-            "id": self.resource_id,
-            "status": "active"
-        }
+        phase1_payload = {"id": self.resource_id, "status": "active"}
 
         logger.info("Phase 1: Temporarily activating rule...")
         response1 = self._patch_with_retry([phase1_payload], phase_label="Phase 1: ")
@@ -322,41 +306,37 @@ class ThreePhaseStoppedScheduleStrategy(DeploymentStrategy):
         logger.info("Phase 1 complete: Rule temporarily activated")
 
         # Wait for rule to reach active status
-        if not self.wait_for_status(self.resource_id, 'active', 30):
+        if not self.wait_for_status(self.resource_id, "active", 30):
             logger.warning("Rule may not be fully active yet, continuing with Phase 2...")
 
         # Phase 2: Update schedule and other attributes while active
         phase2_payload = prepare_patch_payload(self.template)
-        phase2_payload['id'] = self.resource_id
-        phase2_payload['status'] = 'active'  # Keep active for now
+        phase2_payload["id"] = self.resource_id
+        phase2_payload["status"] = "active"  # Keep active for now
 
         logger.info("Phase 2: Updating schedule and attributes (while active)...")
         response2 = self._patch_with_retry([phase2_payload], phase_label="Phase 2: ")
 
         if response2["status_code"] not in (200, 201):
-            raise RuntimeError(
-                f"Phase 2 failed: Could not update schedule for '{self.template['name']}': {response2}"
-            )
+            raise RuntimeError(f"Phase 2 failed: Could not update schedule for '{self.template['name']}': {response2}")
 
         logger.info("Phase 2 complete: Schedule and attributes updated")
 
         # Wait briefly for updates to settle
-        if not self.wait_for_status(self.resource_id, 'active', 10):
+        if not self.wait_for_status(self.resource_id, "active", 10):
             logger.warning("Rule may not be stable yet, continuing with Phase 3...")
 
         # Phase 3: Deactivate back to target status
         phase3_payload = {
             "id": self.resource_id,
-            "status": self.target_status  # inactive or stopped
+            "status": self.target_status,  # inactive or stopped
         }
 
         logger.info(f"Phase 3: Deactivating rule back to '{self.target_status}'...")
         response = self._patch_with_retry([phase3_payload], phase_label="Phase 3: ")
 
         if response["status_code"] not in (200, 201):
-            raise RuntimeError(
-                f"Phase 3 failed: Could not deactivate rule '{self.template['name']}': {response}"
-            )
+            raise RuntimeError(f"Phase 3 failed: Could not deactivate rule '{self.template['name']}': {response}")
 
         logger.info("Three-phase deployment complete")
         return response
@@ -376,7 +356,7 @@ class DeploymentStrategyFactory:
         template: Dict[str, Any],
         current_status: str,
         falcon_command: Callable,
-        wait_for_status: Callable
+        wait_for_status: Callable,
     ) -> DeploymentStrategy:
         """
         Create appropriate deployment strategy.
@@ -391,48 +371,38 @@ class DeploymentStrategyFactory:
         Returns:
             DeploymentStrategy instance
         """
-        target_status = template.get('status', 'active').lower()
+        target_status = template.get("status", "active").lower()
         current_normalized = current_status.upper()
 
         # Check if there are schedule changes
-        has_schedule_changes = (
-            'operation' in template and
-            'schedule' in template.get('operation', {})
-        )
+        has_schedule_changes = "operation" in template and "schedule" in template.get("operation", {})
 
         # Determine state transitions
-        is_activating = current_normalized in ['STOPPED', 'INACTIVE'] and target_status == 'active'
-        is_deactivating = current_normalized in ['ACTIVE', 'RUNNING'] and target_status == 'inactive'
-        is_staying_stopped = (
-            current_normalized in ['STOPPED', 'INACTIVE'] and
-            target_status != 'active'
-        )
+        is_activating = current_normalized in ["STOPPED", "INACTIVE"] and target_status == "active"
+        is_deactivating = current_normalized in ["ACTIVE", "RUNNING"] and target_status == "inactive"
+        is_staying_stopped = current_normalized in ["STOPPED", "INACTIVE"] and target_status != "active"
 
         # Select strategy based on conditions
         if is_staying_stopped and has_schedule_changes:
             # Three-phase: activate → update schedule → deactivate back
             return ThreePhaseStoppedScheduleStrategy(
-                resource_id, template, current_status, target_status,
-                falcon_command, wait_for_status
+                resource_id, template, current_status, target_status, falcon_command, wait_for_status
             )
 
         elif is_activating and has_schedule_changes:
             # Two-phase activation: activate → update schedule
             return TwoPhaseActivationStrategy(
-                resource_id, template, current_status, target_status,
-                falcon_command, wait_for_status
+                resource_id, template, current_status, target_status, falcon_command, wait_for_status
             )
 
         elif is_deactivating:
             # Two-phase deactivation: update attrs → deactivate
             return TwoPhaseDeactivationStrategy(
-                resource_id, template, current_status, target_status,
-                falcon_command, wait_for_status
+                resource_id, template, current_status, target_status, falcon_command, wait_for_status
             )
 
         else:
             # Standard single-phase deployment
             return SinglePhaseStrategy(
-                resource_id, template, current_status, target_status,
-                falcon_command, wait_for_status
+                resource_id, template, current_status, target_status, falcon_command, wait_for_status
             )

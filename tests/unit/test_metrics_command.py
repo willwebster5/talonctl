@@ -1,8 +1,6 @@
 """Unit tests for talonctl metrics command."""
 
 import json
-import pytest
-from pathlib import Path
 from unittest.mock import patch, MagicMock
 from click.testing import CliRunner
 
@@ -33,8 +31,14 @@ class TestMetricsCommand:
             "generated_at": "2026-04-14T00:00:00Z",
             "summary": {"total_detections": 5, "disabled": 1},
             "detections": [
-                {"resource_id": "test", "platform": "aws", "severity": 50,
-                 "enabled": True, "alert_count": 10, "dependencies_valid": True}
+                {
+                    "resource_id": "test",
+                    "platform": "aws",
+                    "severity": 50,
+                    "enabled": True,
+                    "alert_count": 10,
+                    "dependencies_valid": True,
+                }
             ],
         }
         report_file.write_text(json.dumps(report_data))
@@ -46,5 +50,7 @@ class TestMetricsCommand:
         MockAgg.return_value = mock_agg
 
         runner = CliRunner()
-        result = runner.invoke(metrics, ["update-detections", "--report", str(report_file), "--csv-path", str(csv_file)])
+        result = runner.invoke(
+            metrics, ["update-detections", "--report", str(report_file), "--csv-path", str(csv_file)]
+        )
         assert result.exit_code == 0

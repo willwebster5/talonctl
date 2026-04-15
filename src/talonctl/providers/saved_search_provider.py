@@ -11,15 +11,10 @@ import json
 import yaml
 import hashlib
 import logging
-from pathlib import Path
-from typing import Dict, List, Optional, Any, Tuple
+from typing import Dict, List, Optional, Any
 from datetime import datetime, timezone
 
-from talonctl.core.base_provider import (
-    BaseResourceProvider,
-    ResourceAction,
-    ResourceChange
-)
+from talonctl.core.base_provider import BaseResourceProvider, ResourceAction, ResourceChange
 
 logger = logging.getLogger(__name__)
 
@@ -39,7 +34,7 @@ class SavedSearchProvider(BaseResourceProvider):
     """
 
     # Valid search domain options
-    VALID_SEARCH_DOMAINS = ['all', 'falcon', 'third-party', 'dashboards']
+    VALID_SEARCH_DOMAINS = ["all", "falcon", "third-party", "dashboards"]
 
     # Default values for optional fields (matches CrowdStrike API defaults)
     # These ensure consistent hash computation between templates and remote state
@@ -56,7 +51,7 @@ class SavedSearchProvider(BaseResourceProvider):
         """
         self.falcon = falcon_client
         self.config = config or {}
-        self.timeout = self.config.get('timeout', 30)
+        self.timeout = self.config.get("timeout", 30)
         self._remote_searches_cache: Optional[Dict[str, Dict[str, Any]]] = None
 
     def get_resource_type(self) -> str:
@@ -76,40 +71,37 @@ class SavedSearchProvider(BaseResourceProvider):
         errors = []
 
         # Required fields for LogScale saved query schema
-        required_fields = ['$schema', 'name', 'queryString']
+        required_fields = ["$schema", "name", "queryString"]
         for field in required_fields:
             if field not in template:
                 errors.append(f"Missing required field: {field}")
 
         # Check for API parameter
-        if '_search_domain' not in template:
+        if "_search_domain" not in template:
             errors.append("Missing required API parameter: _search_domain")
 
         # Validate _search_domain
-        search_domain = template.get('_search_domain')
+        search_domain = template.get("_search_domain")
         if search_domain and search_domain not in self.VALID_SEARCH_DOMAINS:
-            errors.append(
-                f"Invalid _search_domain: {search_domain}. "
-                f"Must be one of {self.VALID_SEARCH_DOMAINS}"
-            )
+            errors.append(f"Invalid _search_domain: {search_domain}. Must be one of {self.VALID_SEARCH_DOMAINS}")
 
         # Validate queryString is non-empty string
-        query_string = template.get('queryString', '')
+        query_string = template.get("queryString", "")
         if not isinstance(query_string, str) or not query_string.strip():
             errors.append("'queryString' must be a non-empty string")
 
         # Validate name is non-empty string
-        name = template.get('name', '')
+        name = template.get("name", "")
         if not isinstance(name, str) or not name.strip():
             errors.append("'name' must be a non-empty string")
 
         # Validate optional fields if present
-        if 'description' in template:
-            if not isinstance(template['description'], str):
+        if "description" in template:
+            if not isinstance(template["description"], str):
                 errors.append("'description' must be a string")
 
-        if 'timeInterval' in template:
-            time_interval = template['timeInterval']
+        if "timeInterval" in template:
+            time_interval = template["timeInterval"]
             if not isinstance(time_interval, (str, int)):
                 errors.append("'timeInterval' must be a string or integer")
 
@@ -138,11 +130,7 @@ class SavedSearchProvider(BaseResourceProvider):
             logger.error(f"Failed to fetch saved query {resource_id}: {e}")
             return None
 
-    def _fetch_saved_query_by_id(
-        self,
-        resource_id: str,
-        search_domain: str
-    ) -> Optional[Dict[str, Any]]:
+    def _fetch_saved_query_by_id(self, resource_id: str, search_domain: str) -> Optional[Dict[str, Any]]:
         """
         Fetch a specific saved query by ID from a search domain
 
@@ -160,16 +148,12 @@ class SavedSearchProvider(BaseResourceProvider):
             override = f"GET,{endpoint}"
 
             response = self.falcon.command(
-                override=override,
-                parameters={
-                    'ids': resource_id,
-                    'search_domain': search_domain
-                }
+                override=override, parameters={"ids": resource_id, "search_domain": search_domain}
             )
 
-            if response.get('status_code') == 200:
-                body = response.get('body', {})
-                resources = body.get('resources', [])
+            if response.get("status_code") == 200:
+                body = response.get("body", {})
+                resources = body.get("resources", [])
 
                 if resources and len(resources) > 0:
                     # Parse YAML template
@@ -178,26 +162,26 @@ class SavedSearchProvider(BaseResourceProvider):
                     if isinstance(yaml_content, str):
                         # API returned YAML as string
                         query_data = yaml.safe_load(yaml_content)
-                        query_data['id'] = resource_id
-                        query_data['_search_domain'] = search_domain
-                        query_data['yaml_template'] = yaml_content  # Keep raw YAML
+                        query_data["id"] = resource_id
+                        query_data["_search_domain"] = search_domain
+                        query_data["yaml_template"] = yaml_content  # Keep raw YAML
                         return query_data
 
                     elif isinstance(yaml_content, dict):
                         # API returned a dict - check if it has yaml_template field to parse
-                        if 'yaml_template' in yaml_content:
+                        if "yaml_template" in yaml_content:
                             # Parse the embedded YAML template
-                            yaml_str = yaml_content['yaml_template']
+                            yaml_str = yaml_content["yaml_template"]
                             parsed_data = yaml.safe_load(yaml_str)
                             # Merge parsed data with metadata
-                            parsed_data['id'] = resource_id
-                            parsed_data['_search_domain'] = search_domain
-                            parsed_data['yaml_template'] = yaml_str  # Keep raw YAML
+                            parsed_data["id"] = resource_id
+                            parsed_data["_search_domain"] = search_domain
+                            parsed_data["yaml_template"] = yaml_str  # Keep raw YAML
                             return parsed_data
                         else:
                             # No yaml_template field, use dict as-is
-                            yaml_content['id'] = resource_id
-                            yaml_content['_search_domain'] = search_domain
+                            yaml_content["id"] = resource_id
+                            yaml_content["_search_domain"] = search_domain
                             return yaml_content
 
             return None
@@ -206,10 +190,7 @@ class SavedSearchProvider(BaseResourceProvider):
             logger.debug(f"Saved query {resource_id} not found in {search_domain}: {e}")
             return None
 
-    def _fetch_all_remote_searches(
-        self,
-        search_domain: str = 'all'
-    ) -> Dict[str, Dict[str, Any]]:
+    def _fetch_all_remote_searches(self, search_domain: str = "all") -> Dict[str, Dict[str, Any]]:
         """
         Fetch all saved queries from a search domain
 
@@ -233,23 +214,17 @@ class SavedSearchProvider(BaseResourceProvider):
             while True:
                 # Fetch batch of saved query IDs
                 response = self.falcon.command(
-                    override=override,
-                    parameters={
-                        'search_domain': search_domain,
-                        'limit': limit,
-                        'offset': offset
-                    }
+                    override=override, parameters={"search_domain": search_domain, "limit": limit, "offset": offset}
                 )
 
-                if response.get('status_code') != 200:
+                if response.get("status_code") != 200:
                     logger.warning(
-                        f"Failed to fetch saved queries (offset {offset}): "
-                        f"status {response.get('status_code')}"
+                        f"Failed to fetch saved queries (offset {offset}): status {response.get('status_code')}"
                     )
                     break
 
-                body = response.get('body', {})
-                resources = body.get('resources', [])
+                body = response.get("body", {})
+                resources = body.get("resources", [])
 
                 if not resources:
                     # No more results
@@ -261,7 +236,7 @@ class SavedSearchProvider(BaseResourceProvider):
                     try:
                         query_data = self._fetch_saved_query_by_id(query_id, search_domain)
                         if query_data:
-                            query_name = query_data.get('name')
+                            query_name = query_data.get("name")
                             if query_name:
                                 saved_queries[query_name] = query_data
                                 logger.debug(f"Discovered saved query: {query_name} (ID: {query_id})")
@@ -270,9 +245,9 @@ class SavedSearchProvider(BaseResourceProvider):
                         continue
 
                 # Check pagination
-                meta = body.get('meta', {})
-                pagination = meta.get('pagination', {})
-                total = pagination.get('total', 0)
+                meta = body.get("meta", {})
+                pagination = meta.get("pagination", {})
+                total = pagination.get("total", 0)
 
                 offset += limit
 
@@ -287,11 +262,7 @@ class SavedSearchProvider(BaseResourceProvider):
             logger.error(f"Failed to fetch saved queries from {search_domain}: {e}")
             return {}
 
-    def create_resource(
-        self,
-        resource_id: Optional[str],
-        template: Dict[str, Any]
-    ) -> Dict[str, Any]:
+    def create_resource(self, resource_id: Optional[str], template: Dict[str, Any]) -> Dict[str, Any]:
         """
         Create a new saved query in NGSIEM
 
@@ -307,7 +278,7 @@ class SavedSearchProvider(BaseResourceProvider):
         """
         try:
             # Extract API parameter (not part of YAML template)
-            search_domain = template.get('_search_domain', 'falcon')
+            search_domain = template.get("_search_domain", "falcon")
 
             # DEBUG: Log template before cleaning
             logger.debug(f"[DEBUG] Original template keys: {list(template.keys())}")
@@ -316,8 +287,8 @@ class SavedSearchProvider(BaseResourceProvider):
             # Create clean template without API parameters and IaC-only metadata fields
             # Exclude: fields starting with '_' (e.g., _search_domain), 'type' (added by template discovery),
             # and IaC-only fields that are not part of the LogScale saved query schema
-            IAC_ONLY_FIELDS = {'type', 'resource_id', 'dependencies'}
-            clean_template = {k: v for k, v in template.items() if not k.startswith('_') and k not in IAC_ONLY_FIELDS}
+            IAC_ONLY_FIELDS = {"type", "resource_id", "dependencies"}
+            clean_template = {k: v for k, v in template.items() if not k.startswith("_") and k not in IAC_ONLY_FIELDS}
 
             # DEBUG: Log cleaned template
             logger.debug(f"[DEBUG] Cleaned template keys: {list(clean_template.keys())}")
@@ -331,9 +302,8 @@ class SavedSearchProvider(BaseResourceProvider):
             logger.debug(f"[DEBUG] YAML first 500 chars:\n{yaml_template[:500]}")
 
             # Save to temp file for inspection
-            import tempfile
             temp_yaml_path = f"/tmp/saved_search_debug_{template.get('name', 'unknown')}.yaml"
-            with open(temp_yaml_path, 'w') as f:
+            with open(temp_yaml_path, "w") as f:
                 f.write(yaml_template)
             logger.debug(f"[DEBUG] Full YAML saved to: {temp_yaml_path}")
 
@@ -342,38 +312,28 @@ class SavedSearchProvider(BaseResourceProvider):
 
             # Prepare multipart/form-data
             # yaml_template must be sent as file content
-            files = [
-                ('yaml_template', ('query.yaml', yaml_template.encode('utf-8'), 'text/yaml'))
-            ]
+            files = [("yaml_template", ("query.yaml", yaml_template.encode("utf-8"), "text/yaml"))]
 
             # search_domain as query parameter
-            params = {
-                'search_domain': search_domain
-            }
+            params = {"search_domain": search_domain}
 
             # DEBUG: Log API request details
             logger.debug(f"[DEBUG] Creating saved search with endpoint: {endpoint}")
             logger.debug(f"[DEBUG] Parameters: {params}")
 
-            response = self.falcon.command(
-                override=override,
-                files=files,
-                parameters=params
-            )
+            response = self.falcon.command(override=override, files=files, parameters=params)
 
             # DEBUG: Log API response
             logger.debug(f"[DEBUG] Create response status: {response.get('status_code')}")
             logger.debug(f"[DEBUG] Create response body:\n{json.dumps(response.get('body', {}), indent=2)[:1000]}...")
 
-            if response.get('status_code') not in (200, 201):
+            if response.get("status_code") not in (200, 201):
                 logger.debug(f"[DEBUG] Full error response:\n{json.dumps(response, indent=2)}")
-                raise RuntimeError(
-                    f"Failed to create saved query '{template['name']}': {response}"
-                )
+                raise RuntimeError(f"Failed to create saved query '{template['name']}': {response}")
 
             # Extract ID from response
-            body = response.get('body', {})
-            resources = body.get('resources', [])
+            body = response.get("body", {})
+            resources = body.get("resources", [])
 
             if resources and len(resources) > 0:
                 # API may return string ID or dict with 'id' field
@@ -381,29 +341,26 @@ class SavedSearchProvider(BaseResourceProvider):
                 if isinstance(resource, str):
                     query_id = resource
                 elif isinstance(resource, dict):
-                    query_id = resource.get('id', 'unknown')
+                    query_id = resource.get("id", "unknown")
                 else:
                     query_id = str(resource)
             else:
                 # Fallback - try to extract from body
-                query_id = body.get('id', 'unknown')
+                query_id = body.get("id", "unknown")
 
             return {
-                'id': query_id,
-                'name': template['name'],
-                'search_domain': search_domain,
-                'created_at': datetime.now(timezone.utc).isoformat(),
-                'response': body
+                "id": query_id,
+                "name": template["name"],
+                "search_domain": search_domain,
+                "created_at": datetime.now(timezone.utc).isoformat(),
+                "response": body,
             }
 
         except Exception as e:
             raise RuntimeError(f"Failed to create saved query: {e}") from e
 
     def update_resource(
-        self,
-        resource_id: str,
-        template: Dict[str, Any],
-        current_state: Dict[str, Any]
+        self, resource_id: str, template: Dict[str, Any], current_state: Dict[str, Any]
     ) -> Dict[str, Any]:
         """
         Update an existing saved query in NGSIEM
@@ -423,7 +380,7 @@ class SavedSearchProvider(BaseResourceProvider):
         """
         try:
             # Extract API parameter (not part of YAML template)
-            search_domain = template.get('_search_domain', 'falcon')
+            search_domain = template.get("_search_domain", "falcon")
 
             # DEBUG: Log template before cleaning
             logger.debug(f"[DEBUG] UPDATE - Original template keys: {list(template.keys())}")
@@ -432,8 +389,8 @@ class SavedSearchProvider(BaseResourceProvider):
             # Create clean template without API parameters and IaC-only metadata fields
             # Exclude: fields starting with '_' (e.g., _search_domain), 'type' (added by template discovery),
             # and IaC-only fields that are not part of the LogScale saved query schema
-            IAC_ONLY_FIELDS = {'type', 'resource_id', 'dependencies'}
-            clean_template = {k: v for k, v in template.items() if not k.startswith('_') and k not in IAC_ONLY_FIELDS}
+            IAC_ONLY_FIELDS = {"type", "resource_id", "dependencies"}
+            clean_template = {k: v for k, v in template.items() if not k.startswith("_") and k not in IAC_ONLY_FIELDS}
 
             # DEBUG: Log cleaned template
             logger.debug(f"[DEBUG] UPDATE - Cleaned template keys: {list(clean_template.keys())}")
@@ -450,39 +407,28 @@ class SavedSearchProvider(BaseResourceProvider):
 
             # Prepare multipart/form-data
             # yaml_template must be sent as file content
-            files = [
-                ('yaml_template', ('query.yaml', yaml_template.encode('utf-8'), 'text/yaml'))
-            ]
+            files = [("yaml_template", ("query.yaml", yaml_template.encode("utf-8"), "text/yaml"))]
 
             # search_domain and ids as query parameters
-            params = {
-                'search_domain': search_domain,
-                'ids': resource_id
-            }
+            params = {"search_domain": search_domain, "ids": resource_id}
 
             # DEBUG: Log API request details
             logger.debug(f"[DEBUG] UPDATE - Updating saved search with endpoint: {endpoint}")
             logger.debug(f"[DEBUG] UPDATE - Parameters: {params}")
 
-            response = self.falcon.command(
-                override=override,
-                files=files,
-                parameters=params
-            )
+            response = self.falcon.command(override=override, files=files, parameters=params)
 
             # DEBUG: Log API response
             logger.debug(f"[DEBUG] UPDATE - Response status: {response.get('status_code')}")
             logger.debug(f"[DEBUG] UPDATE - Response body:\n{json.dumps(response.get('body', {}), indent=2)[:1000]}...")
 
-            if response.get('status_code') not in (200, 201):
+            if response.get("status_code") not in (200, 201):
                 logger.debug(f"[DEBUG] UPDATE - Full error response:\n{json.dumps(response, indent=2)}")
-                raise RuntimeError(
-                    f"Failed to update saved query '{template['name']}' (ID: {resource_id}): {response}"
-                )
+                raise RuntimeError(f"Failed to update saved query '{template['name']}' (ID: {resource_id}): {response}")
 
             # Extract NEW ID from response
-            body = response.get('body', {})
-            resources = body.get('resources', [])
+            body = response.get("body", {})
+            resources = body.get("resources", [])
 
             if resources and len(resources) > 0:
                 # API may return string ID or dict with 'id' field
@@ -490,25 +436,22 @@ class SavedSearchProvider(BaseResourceProvider):
                 if isinstance(resource, str):
                     new_id = resource
                 elif isinstance(resource, dict):
-                    new_id = resource.get('id', resource_id)
+                    new_id = resource.get("id", resource_id)
                 else:
                     new_id = str(resource)
             else:
                 # Fallback
-                new_id = body.get('id', resource_id)
+                new_id = body.get("id", resource_id)
 
-            logger.info(
-                f"Saved query updated: {resource_id} -> {new_id} "
-                f"(PATCH returns new ID)"
-            )
+            logger.info(f"Saved query updated: {resource_id} -> {new_id} (PATCH returns new ID)")
 
             return {
-                'id': new_id,
-                'old_id': resource_id,  # Track the ID change!
-                'name': template['name'],
-                'search_domain': search_domain,
-                'updated_at': datetime.now(timezone.utc).isoformat(),
-                'response': body
+                "id": new_id,
+                "old_id": resource_id,  # Track the ID change!
+                "name": template["name"],
+                "search_domain": search_domain,
+                "updated_at": datetime.now(timezone.utc).isoformat(),
+                "response": body,
             }
 
         except Exception as e:
@@ -540,22 +483,18 @@ class SavedSearchProvider(BaseResourceProvider):
                     override = f"DELETE,{endpoint}"
 
                     response = self.falcon.command(
-                        override=override,
-                        parameters={
-                            'ids': resource_id,
-                            'search_domain': search_domain
-                        }
+                        override=override, parameters={"ids": resource_id, "search_domain": search_domain}
                     )
 
                     last_response = response
-                    status_code = response.get('status_code')
-                    body = response.get('body', {})
+                    status_code = response.get("status_code")
+                    body = response.get("body", {})
 
                     # Check for successful deletion (200 with resources_affected > 0)
                     if status_code == 200:
                         # Verify deletion in response body
-                        resources_affected = body.get('meta', {}).get('writes', {}).get('resources_affected', 0)
-                        resources = body.get('resources', [])
+                        resources_affected = body.get("meta", {}).get("writes", {}).get("resources_affected", 0)
+                        resources = body.get("resources", [])
 
                         if resources_affected > 0 or (resources and resource_id in resources):
                             logger.info(
@@ -566,9 +505,7 @@ class SavedSearchProvider(BaseResourceProvider):
                             break
                         else:
                             # 200 but no resources affected - may be wrong domain
-                            logger.debug(
-                                f"Got 200 but no resources affected in {search_domain}, trying next domain"
-                            )
+                            logger.debug(f"Got 200 but no resources affected in {search_domain}, trying next domain")
                             continue
 
                     # 404 means resource not found in this domain - try next
@@ -578,9 +515,7 @@ class SavedSearchProvider(BaseResourceProvider):
 
                     # Other error codes
                     else:
-                        logger.debug(
-                            f"Failed to delete from {search_domain}: status {status_code}"
-                        )
+                        logger.debug(f"Failed to delete from {search_domain}: status {status_code}")
                         continue
 
                 except Exception as e:
@@ -590,16 +525,16 @@ class SavedSearchProvider(BaseResourceProvider):
 
             if not deleted:
                 # Check if we got 404 from all domains - resource might not exist
-                if last_response and last_response.get('status_code') == 404:
+                if last_response and last_response.get("status_code") == 404:
                     logger.warning(
                         f"Saved query {resource_id} not found in any domain - "
                         "may have been already deleted or never existed"
                     )
                     # Don't raise error for 404 - resource is gone (desired state)
                     return {
-                        'id': resource_id,
-                        'deleted_at': datetime.now(timezone.utc).isoformat(),
-                        'note': 'Resource not found (may have been already deleted)'
+                        "id": resource_id,
+                        "deleted_at": datetime.now(timezone.utc).isoformat(),
+                        "note": "Resource not found (may have been already deleted)",
                     }
 
                 raise RuntimeError(
@@ -607,10 +542,7 @@ class SavedSearchProvider(BaseResourceProvider):
                     f"Last error: {last_error}, Last response: {last_response}"
                 )
 
-            return {
-                'id': resource_id,
-                'deleted_at': datetime.now(timezone.utc).isoformat()
-            }
+            return {"id": resource_id, "deleted_at": datetime.now(timezone.utc).isoformat()}
 
         except Exception as e:
             raise RuntimeError(f"Failed to delete saved query: {e}") from e
@@ -632,24 +564,24 @@ class SavedSearchProvider(BaseResourceProvider):
         # Normalize content for consistent hashing
         # Only hash the LogScale schema fields (exclude API parameters like _search_domain)
         normalized_content = {
-            '$schema': template.get('$schema', 'https://schemas.humio.com/query/v0.6.0'),
-            'name': template.get('name', ''),
-            'queryString': template.get('queryString', ''),
+            "$schema": template.get("$schema", "https://schemas.humio.com/query/v0.6.0"),
+            "name": template.get("name", ""),
+            "queryString": template.get("queryString", ""),
             # Always include timeInterval and visualization with defaults
             # This ensures consistent hashing between templates and remote state
-            'timeInterval': template.get('timeInterval', self.DEFAULT_TIME_INTERVAL),
-            'visualization': template.get('visualization', self.DEFAULT_VISUALIZATION),
+            "timeInterval": template.get("timeInterval", self.DEFAULT_TIME_INTERVAL),
+            "visualization": template.get("visualization", self.DEFAULT_VISUALIZATION),
         }
 
         # Add other optional fields if present
-        if 'description' in template:
-            normalized_content['description'] = template['description']
+        if "description" in template:
+            normalized_content["description"] = template["description"]
 
-        if 'interactions' in template:
-            normalized_content['interactions'] = template['interactions']
+        if "interactions" in template:
+            normalized_content["interactions"] = template["interactions"]
 
-        if 'labels' in template:
-            normalized_content['labels'] = template['labels']
+        if "labels" in template:
+            normalized_content["labels"] = template["labels"]
 
         # Calculate hash
         content_str = json.dumps(normalized_content, sort_keys=True)
@@ -679,16 +611,13 @@ class SavedSearchProvider(BaseResourceProvider):
         return ResourceChange(
             action=ResourceAction.CREATE,
             resource_type=self.get_resource_type(),
-            resource_name=template['name'],
+            resource_name=template["name"],
             new_value=template,
-            template_path=template_path
+            template_path=template_path,
         )
 
     def plan_update(
-        self,
-        template: Dict[str, Any],
-        current_state: Dict[str, Any],
-        template_path: str
+        self, template: Dict[str, Any], current_state: Dict[str, Any], template_path: str
     ) -> ResourceChange:
         """Plan an update to an existing saved query"""
         # Calculate content hashes
@@ -699,30 +628,39 @@ class SavedSearchProvider(BaseResourceProvider):
             return ResourceChange(
                 action=ResourceAction.NO_CHANGE,
                 resource_type=self.get_resource_type(),
-                resource_name=template['name'],
-                resource_id=current_state.get('id'),
+                resource_name=template["name"],
+                resource_id=current_state.get("id"),
                 old_value=current_state,
                 new_value=template,
-                template_path=template_path
+                template_path=template_path,
             )
 
         # Detect changes (compare LogScale schema fields)
         changes = {}
-        for key in ['$schema', 'name', 'queryString', 'description', 'timeInterval', 'visualization', 'interactions', 'labels']:
+        for key in [
+            "$schema",
+            "name",
+            "queryString",
+            "description",
+            "timeInterval",
+            "visualization",
+            "interactions",
+            "labels",
+        ]:
             old_val = current_state.get(key)
             new_val = template.get(key)
             if old_val != new_val and (old_val is not None or new_val is not None):
-                changes[key] = {'old': old_val, 'new': new_val}
+                changes[key] = {"old": old_val, "new": new_val}
 
         return ResourceChange(
             action=ResourceAction.UPDATE,
             resource_type=self.get_resource_type(),
-            resource_name=template['name'],
-            resource_id=current_state.get('id'),
+            resource_name=template["name"],
+            resource_id=current_state.get("id"),
             old_value=current_state,
             new_value=template,
             changes=changes,
-            template_path=template_path
+            template_path=template_path,
         )
 
     def plan_delete(self, resource_id: str, resource_name: str) -> ResourceChange:
@@ -731,7 +669,7 @@ class SavedSearchProvider(BaseResourceProvider):
             action=ResourceAction.DELETE,
             resource_type=self.get_resource_type(),
             resource_name=resource_name,
-            resource_id=resource_id
+            resource_id=resource_id,
         )
 
     # Convenience methods matching DetectionProvider naming
@@ -740,12 +678,7 @@ class SavedSearchProvider(BaseResourceProvider):
         """Alias for create_resource (BaseResourceProvider compatibility)"""
         return self.create_resource(None, template)
 
-    def apply_update(
-        self,
-        resource_id: str,
-        template: Dict[str, Any],
-        current_state: Dict[str, Any]
-    ) -> Dict[str, Any]:
+    def apply_update(self, resource_id: str, template: Dict[str, Any], current_state: Dict[str, Any]) -> Dict[str, Any]:
         """Alias for update_resource (BaseResourceProvider compatibility)"""
         return self.update_resource(resource_id, template, current_state)
 
@@ -772,47 +705,47 @@ class SavedSearchProvider(BaseResourceProvider):
         Returns:
             Template dict ready for YAML serialization
         """
-        name = remote_resource.get('name', '')
-        resource_id = self._name_to_resource_id(name) if name else 'unknown'
+        name = remote_resource.get("name", "")
+        resource_id = self._name_to_resource_id(name) if name else "unknown"
 
         template = {
-            '$schema': remote_resource.get('$schema', 'https://schemas.humio.com/query/v0.6.0'),
-            'resource_id': resource_id,
-            'name': name,
+            "$schema": remote_resource.get("$schema", "https://schemas.humio.com/query/v0.6.0"),
+            "resource_id": resource_id,
+            "name": name,
         }
 
         # Description
-        description = remote_resource.get('description', '')
+        description = remote_resource.get("description", "")
         if description:
-            template['description'] = description
+            template["description"] = description
 
         # Query string (the core content)
-        query_string = remote_resource.get('queryString', '')
+        query_string = remote_resource.get("queryString", "")
         if query_string:
-            template['queryString'] = query_string
+            template["queryString"] = query_string
 
         # Search domain (API parameter)
-        search_domain = remote_resource.get('_search_domain', 'all')
-        template['_search_domain'] = search_domain
+        search_domain = remote_resource.get("_search_domain", "all")
+        template["_search_domain"] = search_domain
 
         # Optional fields
-        if 'timeInterval' in remote_resource:
-            ti = remote_resource['timeInterval']
+        if "timeInterval" in remote_resource:
+            ti = remote_resource["timeInterval"]
             # Only include if non-default
             if ti != self.DEFAULT_TIME_INTERVAL:
-                template['timeInterval'] = ti
+                template["timeInterval"] = ti
 
-        if 'visualization' in remote_resource:
-            viz = remote_resource['visualization']
+        if "visualization" in remote_resource:
+            viz = remote_resource["visualization"]
             # Only include if non-default
             if viz != self.DEFAULT_VISUALIZATION:
-                template['visualization'] = viz
+                template["visualization"] = viz
 
-        if 'interactions' in remote_resource:
-            template['interactions'] = remote_resource['interactions']
+        if "interactions" in remote_resource:
+            template["interactions"] = remote_resource["interactions"]
 
-        if 'labels' in remote_resource:
-            template['labels'] = remote_resource['labels']
+        if "labels" in remote_resource:
+            template["labels"] = remote_resource["labels"]
 
         return template
 
@@ -826,9 +759,8 @@ class SavedSearchProvider(BaseResourceProvider):
         Returns:
             Relative path like 'saved_searches/aws_enrich_user_identity.yaml'
         """
-        resource_id = template.get('resource_id', '')
+        resource_id = template.get("resource_id", "")
         if not resource_id:
-            resource_id = self._name_to_resource_id(template.get('name', 'unknown'))
+            resource_id = self._name_to_resource_id(template.get("name", "unknown"))
 
         return f"saved_searches/{resource_id}.yaml"
-

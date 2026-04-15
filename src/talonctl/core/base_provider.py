@@ -16,6 +16,7 @@ import json
 
 class ResourceAction(Enum):
     """Represents the type of change to be made to a resource"""
+
     CREATE = "create"
     UPDATE = "update"
     DELETE = "delete"
@@ -30,6 +31,7 @@ class ResourceChange:
 
     Used during the plan phase to show users what will happen.
     """
+
     action: ResourceAction
     resource_type: str
     resource_name: str
@@ -127,10 +129,7 @@ class BaseResourceProvider(ABC):
 
     @abstractmethod
     def plan_update(
-        self,
-        template: Dict[str, Any],
-        current_state: Dict[str, Any],
-        template_path: str
+        self, template: Dict[str, Any], current_state: Dict[str, Any], template_path: str
     ) -> ResourceChange:
         """
         Plan an update to an existing resource.
@@ -180,12 +179,7 @@ class BaseResourceProvider(ABC):
         pass
 
     @abstractmethod
-    def apply_update(
-        self,
-        resource_id: str,
-        template: Dict[str, Any],
-        current_state: Dict[str, Any]
-    ) -> Dict[str, Any]:
+    def apply_update(self, resource_id: str, template: Dict[str, Any], current_state: Dict[str, Any]) -> Dict[str, Any]:
         """
         Update an existing resource in CrowdStrike.
 
@@ -267,7 +261,7 @@ class BaseResourceProvider(ABC):
         Returns:
             Display name for the resource
         """
-        return template.get('name', 'Unknown')
+        return template.get("name", "Unknown")
 
     def to_template(self, remote_resource: dict) -> dict:
         """
@@ -326,10 +320,11 @@ class BaseResourceProvider(ABC):
             snake_case resource_id string
         """
         import re
+
         # Use null byte as placeholder for ' - ' section separator
-        rid = name.replace(' - ', '\x00')
-        rid = rid.replace(' ', '_')
+        rid = name.replace(" - ", "\x00")
+        rid = rid.replace(" ", "_")
         rid = rid.lower()
-        rid = re.sub(r'[^a-z0-9_\x00]', '', rid)
-        rid = rid.replace('\x00', '___')
-        return rid.strip('_')
+        rid = re.sub(r"[^a-z0-9_\x00]", "", rid)
+        rid = rid.replace("\x00", "___")
+        return rid.strip("_")

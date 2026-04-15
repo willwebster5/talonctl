@@ -11,11 +11,7 @@ from pathlib import Path
 from typing import Dict, List, Optional, Any
 from datetime import datetime, timezone
 
-from talonctl.core.base_provider import (
-    BaseResourceProvider,
-    ResourceAction,
-    ResourceChange
-)
+from talonctl.core.base_provider import BaseResourceProvider, ResourceAction, ResourceChange
 from talonctl.core.state_manager import StateManager, ResourceState
 
 logger = logging.getLogger(__name__)
@@ -31,7 +27,9 @@ class ProviderAdapter:
     3. Provide convenience methods for resource operations
     """
 
-    def __init__(self, falcon_client, state_file_path: Path, auto_save: bool = True, credentials: Optional[Dict[str, str]] = None):
+    def __init__(
+        self, falcon_client, state_file_path: Path, auto_save: bool = True, credentials: Optional[Dict[str, str]] = None
+    ):
         """
         Initialize adapter with API client and state file.
 
@@ -56,11 +54,11 @@ class ProviderAdapter:
             LookupFileProvider,
             RTRScriptProvider,
             RTRPutFileProvider,
-            DashboardProvider
+            DashboardProvider,
         )
 
         # All providers get credentials config for customer_id and other auth needs
-        provider_config = {'credentials': credentials} if credentials else {}
+        provider_config = {"credentials": credentials} if credentials else {}
 
         self.detection_provider = DetectionProvider(falcon_client, config=provider_config)
         self.workflow_provider = WorkflowProvider(falcon_client)
@@ -74,19 +72,17 @@ class ProviderAdapter:
 
         # Provider registry
         self.providers: Dict[str, BaseResourceProvider] = {
-            'detection': self.detection_provider,
-            'workflow': self.workflow_provider,
-            'saved_search': self.saved_search_provider,
-            'lookup_file': self.lookup_file_provider,
-            'rtr_script': self.rtr_script_provider,
-            'rtr_put_file': self.rtr_put_file_provider,
-            'dashboard': self.dashboard_provider
+            "detection": self.detection_provider,
+            "workflow": self.workflow_provider,
+            "saved_search": self.saved_search_provider,
+            "lookup_file": self.lookup_file_provider,
+            "rtr_script": self.rtr_script_provider,
+            "rtr_put_file": self.rtr_put_file_provider,
+            "dashboard": self.dashboard_provider,
         }
 
     def plan_detection_changes(
-        self,
-        templates: Dict[str, Dict[str, Any]],
-        draft_mode: bool = False
+        self, templates: Dict[str, Dict[str, Any]], draft_mode: bool = False
     ) -> Dict[str, List[ResourceChange]]:
         """
         DEPRECATED: Use plan_resource_changes('detection', templates) instead.
@@ -105,8 +101,8 @@ class ProviderAdapter:
         to_delete = []
 
         # Get current deployed rules from state
-        deployed_rules = self.state_manager.get_all_resources('detection')
-        deployed_rule_names = {name.split('.')[1] for name in deployed_rules.keys()}
+        deployed_rules = self.state_manager.get_all_resources("detection")
+        deployed_rule_names = {name.split(".")[1] for name in deployed_rules.keys()}
 
         # Plan creates and updates
         for rule_name, template in templates.items():
@@ -117,7 +113,7 @@ class ProviderAdapter:
                 continue
 
             # Check if rule exists in state
-            resource_state = self.state_manager.get_resource('detection', rule_name)
+            resource_state = self.state_manager.get_resource("detection", rule_name)
 
             if resource_state:
                 # Fetch remote state
@@ -125,23 +121,19 @@ class ProviderAdapter:
 
                 if remote_state:
                     # Plan update
-                    template_path = template.get('_template_path', '')
-                    change = self.detection_provider.plan_update(
-                        template,
-                        remote_state,
-                        template_path
-                    )
+                    template_path = template.get("_template_path", "")
+                    change = self.detection_provider.plan_update(template, remote_state, template_path)
 
                     if change.action == ResourceAction.UPDATE:
                         to_update.append(change)
                 else:
                     # Rule in state but not deployed - recreate
-                    template_path = template.get('_template_path', '')
+                    template_path = template.get("_template_path", "")
                     change = self.detection_provider.plan_create(template, template_path)
                     to_create.append(change)
             else:
                 # New rule
-                template_path = template.get('_template_path', '')
+                template_path = template.get("_template_path", "")
                 change = self.detection_provider.plan_create(template, template_path)
                 to_create.append(change)
 
@@ -149,25 +141,14 @@ class ProviderAdapter:
         template_names = set(templates.keys())
         for rule_id in deployed_rule_names:
             if rule_id not in template_names:
-                resource_state = self.state_manager.get_resource('detection', rule_id)
+                resource_state = self.state_manager.get_resource("detection", rule_id)
                 if resource_state:
-                    change = self.detection_provider.plan_delete(
-                        resource_state.id,
-                        rule_id
-                    )
+                    change = self.detection_provider.plan_delete(resource_state.id, rule_id)
                     to_delete.append(change)
 
-        return {
-            'create': to_create,
-            'update': to_update,
-            'delete': to_delete
-        }
+        return {"create": to_create, "update": to_update, "delete": to_delete}
 
-    def apply_detection_change(
-        self,
-        change: ResourceChange,
-        draft_mode: bool = False
-    ) -> Dict[str, Any]:
+    def apply_detection_change(self, change: ResourceChange, draft_mode: bool = False) -> Dict[str, Any]:
         """
         DEPRECATED: Use apply_resource_change('detection', change, template) instead.
 
@@ -189,20 +170,17 @@ class ProviderAdapter:
             dependencies = self.detection_provider.extract_dependencies(change.new_value)
 
             resource_state = ResourceState(
-                type='detection',
-                id=result['rule_id'],
+                type="detection",
+                id=result["rule_id"],
                 content_hash=content_hash,
-                template_path=change.template_path or '',
-                deployed_at=result.get('created_at', datetime.now(timezone.utc).isoformat()),
-                last_modified=result.get('created_at', datetime.now(timezone.utc).isoformat()),
-                provider_metadata={
-                    'rule_id': result['rule_id'],
-                    'status': 'inactive' if draft_mode else 'active'
-                },
-                dependencies=dependencies
+                template_path=change.template_path or "",
+                deployed_at=result.get("created_at", datetime.now(timezone.utc).isoformat()),
+                last_modified=result.get("created_at", datetime.now(timezone.utc).isoformat()),
+                provider_metadata={"rule_id": result["rule_id"], "status": "inactive" if draft_mode else "active"},
+                dependencies=dependencies,
             )
 
-            self.state_manager.set_resource('detection', change.resource_name, resource_state)
+            self.state_manager.set_resource("detection", change.resource_name, resource_state)
             if self.auto_save:
                 self.state_manager.save()
 
@@ -213,31 +191,24 @@ class ProviderAdapter:
             current_state = self.detection_provider.fetch_remote_state(change.resource_id)
 
             # Apply update
-            result = self.detection_provider.apply_update(
-                change.resource_id,
-                change.new_value,
-                current_state or {}
-            )
+            result = self.detection_provider.apply_update(change.resource_id, change.new_value, current_state or {})
 
             # Update state
             content_hash = self.detection_provider.compute_content_hash(change.new_value)
             dependencies = self.detection_provider.extract_dependencies(change.new_value)
 
             resource_state = ResourceState(
-                type='detection',
+                type="detection",
                 id=change.resource_id,
                 content_hash=content_hash,
-                template_path=change.template_path or '',
-                deployed_at=result.get('deployed_at', ''),
-                last_modified=result.get('updated_at', datetime.now(timezone.utc).isoformat()),
-                provider_metadata={
-                    'rule_id': change.resource_id,
-                    'status': 'inactive' if draft_mode else 'active'
-                },
-                dependencies=dependencies
+                template_path=change.template_path or "",
+                deployed_at=result.get("deployed_at", ""),
+                last_modified=result.get("updated_at", datetime.now(timezone.utc).isoformat()),
+                provider_metadata={"rule_id": change.resource_id, "status": "inactive" if draft_mode else "active"},
+                dependencies=dependencies,
             )
 
-            self.state_manager.set_resource('detection', change.resource_name, resource_state)
+            self.state_manager.set_resource("detection", change.resource_name, resource_state)
             if self.auto_save:
                 self.state_manager.save()
 
@@ -248,7 +219,7 @@ class ProviderAdapter:
             result = self.detection_provider.apply_delete(change.resource_id)
 
             # Remove from state
-            self.state_manager.delete_resource('detection', change.resource_name)
+            self.state_manager.delete_resource("detection", change.resource_name)
             if self.auto_save:
                 self.state_manager.save()
 
@@ -292,10 +263,7 @@ class ProviderAdapter:
     # =========================================================================
 
     def plan_resource_changes(
-        self,
-        resource_type: str,
-        templates: Dict[str, Dict[str, Any]],
-        **kwargs
+        self, resource_type: str, templates: Dict[str, Dict[str, Any]], **kwargs
     ) -> Dict[str, List[ResourceChange]]:
         """
         Generate a plan for resource changes using the provider.
@@ -320,7 +288,7 @@ class ProviderAdapter:
 
         # Get current deployed resources from state
         deployed = self.state_manager.get_all_resources(resource_type)
-        deployed_names = {name.split('.', 1)[1] if '.' in name else name for name in deployed.keys()}
+        deployed_names = {name.split(".", 1)[1] if "." in name else name for name in deployed.keys()}
 
         # Plan creates and updates
         for name, template in templates.items():
@@ -339,19 +307,19 @@ class ProviderAdapter:
 
                 if remote_state:
                     # Plan update
-                    template_path = template.get('_template_path', template.get('template_path', ''))
+                    template_path = template.get("_template_path", template.get("template_path", ""))
                     change = provider.plan_update(template, remote_state, template_path)
 
                     if change.action == ResourceAction.UPDATE:
                         to_update.append(change)
                 else:
                     # Resource in state but not deployed - recreate
-                    template_path = template.get('_template_path', template.get('template_path', ''))
+                    template_path = template.get("_template_path", template.get("template_path", ""))
                     change = provider.plan_create(template, template_path)
                     to_create.append(change)
             else:
                 # New resource
-                template_path = template.get('_template_path', template.get('template_path', ''))
+                template_path = template.get("_template_path", template.get("template_path", ""))
                 change = provider.plan_create(template, template_path)
                 to_create.append(change)
 
@@ -364,18 +332,10 @@ class ProviderAdapter:
                     change = provider.plan_delete(resource_state.id, name)
                     to_delete.append(change)
 
-        return {
-            'create': to_create,
-            'update': to_update,
-            'delete': to_delete
-        }
+        return {"create": to_create, "update": to_update, "delete": to_delete}
 
     def apply_resource_change(
-        self,
-        resource_type: str,
-        change: ResourceChange,
-        template: Dict[str, Any],
-        **kwargs
+        self, resource_type: str, change: ResourceChange, template: Dict[str, Any], **kwargs
     ) -> Dict[str, Any]:
         """
         Apply a single resource change.
@@ -410,11 +370,11 @@ class ProviderAdapter:
                 type=resource_type,
                 id=resource_id,
                 content_hash=content_hash,
-                template_path=change.template_path or '',
-                deployed_at=result.get('created_at', datetime.now(timezone.utc).isoformat()),
-                last_modified=result.get('created_at', datetime.now(timezone.utc).isoformat()),
+                template_path=change.template_path or "",
+                deployed_at=result.get("created_at", datetime.now(timezone.utc).isoformat()),
+                last_modified=result.get("created_at", datetime.now(timezone.utc).isoformat()),
                 provider_metadata=result,
-                dependencies=list(dependencies.keys()) if isinstance(dependencies, dict) else dependencies
+                dependencies=list(dependencies.keys()) if isinstance(dependencies, dict) else dependencies,
             )
 
             self.state_manager.set_resource(resource_type, change.resource_name, resource_state)
@@ -428,11 +388,7 @@ class ProviderAdapter:
             current_state = provider.fetch_remote_state(change.resource_id)
 
             # Apply update
-            result = provider.apply_update(
-                change.resource_id,
-                template,
-                current_state or {}
-            )
+            result = provider.apply_update(change.resource_id, template, current_state or {})
 
             # Extract resource ID (may have changed for some resources like saved_search)
             resource_id = self._extract_resource_id(result, resource_type)
@@ -449,11 +405,11 @@ class ProviderAdapter:
                 type=resource_type,
                 id=resource_id,
                 content_hash=content_hash,
-                template_path=change.template_path or '',
+                template_path=change.template_path or "",
                 deployed_at=deployed_at,
-                last_modified=result.get('updated_at', datetime.now(timezone.utc).isoformat()),
+                last_modified=result.get("updated_at", datetime.now(timezone.utc).isoformat()),
                 provider_metadata=result,
-                dependencies=list(dependencies.keys()) if isinstance(dependencies, dict) else dependencies
+                dependencies=list(dependencies.keys()) if isinstance(dependencies, dict) else dependencies,
             )
 
             self.state_manager.set_resource(resource_type, change.resource_name, resource_state)
@@ -491,15 +447,15 @@ class ProviderAdapter:
             Resource ID string
         """
         # Detection uses rule_id
-        if resource_type == 'detection' and 'rule_id' in result:
-            return result['rule_id']
+        if resource_type == "detection" and "rule_id" in result:
+            return result["rule_id"]
 
         # Lookup files use filename
-        if resource_type == 'lookup_file' and 'filename' in result:
-            return result['filename']
+        if resource_type == "lookup_file" and "filename" in result:
+            return result["filename"]
 
         # Default to 'id' field
-        return result.get('id', '')
+        return result.get("id", "")
 
     # =========================================================================
     # Legacy Resource-Specific Methods (DEPRECATED - use generic methods above)
@@ -508,9 +464,7 @@ class ProviderAdapter:
     # Saved Search Management Methods
 
     def plan_saved_search_changes(
-        self,
-        templates: Dict[str, Dict[str, Any]],
-        search_domain: str = 'falcon'
+        self, templates: Dict[str, Dict[str, Any]], search_domain: str = "falcon"
     ) -> Dict[str, List[ResourceChange]]:
         """
         DEPRECATED: Use plan_resource_changes('saved_search', templates) instead.
@@ -529,14 +483,14 @@ class ProviderAdapter:
         to_delete = []
 
         # Get current deployed saved searches from state
-        deployed_searches = self.state_manager.get_all_resources('saved_search')
-        deployed_search_names = {name.split('.')[1] for name in deployed_searches.keys()}
+        deployed_searches = self.state_manager.get_all_resources("saved_search")
+        deployed_search_names = {name.split(".")[1] for name in deployed_searches.keys()}
 
         # Plan creates and updates
         for search_name, template in templates.items():
             # Ensure search_domain is set
-            if 'search_domain' not in template:
-                template['search_domain'] = search_domain
+            if "search_domain" not in template:
+                template["search_domain"] = search_domain
 
             # Validate template first
             errors = self.saved_search_provider.validate_template(template)
@@ -555,26 +509,18 @@ class ProviderAdapter:
 
                 if current_state:
                     change = self.saved_search_provider.plan_update(
-                        template,
-                        current_state,
-                        template.get('template_path', '')
+                        template, current_state, template.get("template_path", "")
                     )
 
                     if change.action == ResourceAction.UPDATE:
                         to_update.append(change)
                 else:
                     # Resource in state but not found remotely - recreate
-                    change = self.saved_search_provider.plan_create(
-                        template,
-                        template.get('template_path', '')
-                    )
+                    change = self.saved_search_provider.plan_create(template, template.get("template_path", ""))
                     to_create.append(change)
             else:
                 # Plan create
-                change = self.saved_search_provider.plan_create(
-                    template,
-                    template.get('template_path', '')
-                )
+                change = self.saved_search_provider.plan_create(template, template.get("template_path", ""))
                 to_create.append(change)
 
         # Plan deletes for deployed searches not in templates
@@ -584,23 +530,12 @@ class ProviderAdapter:
                 resource_id = f"saved_search.{search_name}"
                 resource_state = deployed_searches[resource_id]
 
-                change = self.saved_search_provider.plan_delete(
-                    resource_state.id,
-                    search_name
-                )
+                change = self.saved_search_provider.plan_delete(resource_state.id, search_name)
                 to_delete.append(change)
 
-        return {
-            'create': to_create,
-            'update': to_update,
-            'delete': to_delete
-        }
+        return {"create": to_create, "update": to_update, "delete": to_delete}
 
-    def apply_saved_search_change(
-        self,
-        change: ResourceChange,
-        template: Dict[str, Any]
-    ) -> Dict[str, Any]:
+    def apply_saved_search_change(self, change: ResourceChange, template: Dict[str, Any]) -> Dict[str, Any]:
         """
         DEPRECATED: Use apply_resource_change('saved_search', change, template) instead.
 
@@ -622,21 +557,21 @@ class ProviderAdapter:
             dependencies = self.saved_search_provider.extract_dependencies(template)
 
             resource_state = ResourceState(
-                type='saved_search',
-                id=result['id'],
+                type="saved_search",
+                id=result["id"],
                 content_hash=content_hash,
-                template_path=change.template_path or '',
-                deployed_at=result.get('created_at', datetime.now(timezone.utc).isoformat()),
-                last_modified=result.get('created_at', datetime.now(timezone.utc).isoformat()),
+                template_path=change.template_path or "",
+                deployed_at=result.get("created_at", datetime.now(timezone.utc).isoformat()),
+                last_modified=result.get("created_at", datetime.now(timezone.utc).isoformat()),
                 provider_metadata={
-                    'id': result['id'],
-                    'name': result['name'],
-                    'search_domain': result['search_domain']
+                    "id": result["id"],
+                    "name": result["name"],
+                    "search_domain": result["search_domain"],
                 },
-                dependencies=list(dependencies.keys()) if dependencies else []
+                dependencies=list(dependencies.keys()) if dependencies else [],
             )
 
-            self.state_manager.set_resource('saved_search', change.resource_name, resource_state)
+            self.state_manager.set_resource("saved_search", change.resource_name, resource_state)
             if self.auto_save:
                 self.state_manager.save()
 
@@ -645,37 +580,33 @@ class ProviderAdapter:
         elif change.action == ResourceAction.UPDATE:
             # Apply update
             current_state = self.saved_search_provider.fetch_remote_state(change.resource_id)
-            result = self.saved_search_provider.apply_update(
-                change.resource_id,
-                template,
-                current_state
-            )
+            result = self.saved_search_provider.apply_update(change.resource_id, template, current_state)
 
             # IMPORTANT: Update returns NEW ID!
-            new_id = result['id']
-            old_id = result.get('old_id', change.resource_id)
+            new_id = result["id"]
+            old_id = result.get("old_id", change.resource_id)
 
             # Update state with new ID
             content_hash = self.saved_search_provider.compute_content_hash(template)
             dependencies = self.saved_search_provider.extract_dependencies(template)
 
             resource_state = ResourceState(
-                type='saved_search',
+                type="saved_search",
                 id=new_id,  # Use new ID!
                 content_hash=content_hash,
-                template_path=change.template_path or '',
-                deployed_at=self.state_manager.get_resource('saved_search', change.resource_name).deployed_at,
-                last_modified=result.get('updated_at', datetime.now(timezone.utc).isoformat()),
+                template_path=change.template_path or "",
+                deployed_at=self.state_manager.get_resource("saved_search", change.resource_name).deployed_at,
+                last_modified=result.get("updated_at", datetime.now(timezone.utc).isoformat()),
                 provider_metadata={
-                    'id': new_id,
-                    'old_id': old_id,  # Track ID change
-                    'name': result['name'],
-                    'search_domain': result['search_domain']
+                    "id": new_id,
+                    "old_id": old_id,  # Track ID change
+                    "name": result["name"],
+                    "search_domain": result["search_domain"],
                 },
-                dependencies=list(dependencies.keys()) if dependencies else []
+                dependencies=list(dependencies.keys()) if dependencies else [],
             )
 
-            self.state_manager.set_resource('saved_search', change.resource_name, resource_state)
+            self.state_manager.set_resource("saved_search", change.resource_name, resource_state)
             if self.auto_save:
                 self.state_manager.save()
 
@@ -687,7 +618,7 @@ class ProviderAdapter:
             result = self.saved_search_provider.apply_delete(change.resource_id)
 
             # Remove from state
-            self.state_manager.delete_resource('saved_search', change.resource_name)
+            self.state_manager.delete_resource("saved_search", change.resource_name)
             if self.auto_save:
                 self.state_manager.save()
 
@@ -698,9 +629,7 @@ class ProviderAdapter:
             return {}
 
     def plan_lookup_file_changes(
-        self,
-        templates: Dict[str, Dict[str, Any]],
-        search_domain: str = 'falcon'
+        self, templates: Dict[str, Dict[str, Any]], search_domain: str = "falcon"
     ) -> Dict[str, List[ResourceChange]]:
         """
         DEPRECATED: Use plan_resource_changes('lookup_file', templates) instead.
@@ -719,14 +648,14 @@ class ProviderAdapter:
         to_delete = []
 
         # Get current deployed lookup files from state
-        deployed_files = self.state_manager.get_all_resources('lookup_file')
-        deployed_file_names = {name.split('.')[1] for name in deployed_files.keys()}
+        deployed_files = self.state_manager.get_all_resources("lookup_file")
+        deployed_file_names = {name.split(".")[1] for name in deployed_files.keys()}
 
         # Plan creates and updates
         for file_name, template in templates.items():
             # Ensure _search_domain is set
-            if '_search_domain' not in template:
-                template['_search_domain'] = search_domain
+            if "_search_domain" not in template:
+                template["_search_domain"] = search_domain
 
             # Validate template first
             errors = self.lookup_file_provider.validate_template(template)
@@ -745,26 +674,18 @@ class ProviderAdapter:
 
                 if current_state:
                     change = self.lookup_file_provider.plan_update(
-                        template,
-                        current_state,
-                        template.get('template_path', '')
+                        template, current_state, template.get("template_path", "")
                     )
 
                     if change.action == ResourceAction.UPDATE:
                         to_update.append(change)
                 else:
                     # Resource in state but not found remotely - recreate
-                    change = self.lookup_file_provider.plan_create(
-                        template,
-                        template.get('template_path', '')
-                    )
+                    change = self.lookup_file_provider.plan_create(template, template.get("template_path", ""))
                     to_create.append(change)
             else:
                 # Plan create
-                change = self.lookup_file_provider.plan_create(
-                    template,
-                    template.get('template_path', '')
-                )
+                change = self.lookup_file_provider.plan_create(template, template.get("template_path", ""))
                 to_create.append(change)
 
         # Plan deletes for deployed files not in templates
@@ -774,23 +695,12 @@ class ProviderAdapter:
                 resource_id = f"lookup_file.{file_name}"
                 resource_state = deployed_files[resource_id]
 
-                change = self.lookup_file_provider.plan_delete(
-                    resource_state.id,
-                    file_name
-                )
+                change = self.lookup_file_provider.plan_delete(resource_state.id, file_name)
                 to_delete.append(change)
 
-        return {
-            'create': to_create,
-            'update': to_update,
-            'delete': to_delete
-        }
+        return {"create": to_create, "update": to_update, "delete": to_delete}
 
-    def apply_lookup_file_change(
-        self,
-        change: ResourceChange,
-        template: Dict[str, Any]
-    ) -> Dict[str, Any]:
+    def apply_lookup_file_change(self, change: ResourceChange, template: Dict[str, Any]) -> Dict[str, Any]:
         """
         DEPRECATED: Use apply_resource_change('lookup_file', change, template) instead.
 
@@ -812,22 +722,22 @@ class ProviderAdapter:
 
             # Add to state
             resource_state = ResourceState(
-                type='lookup_file',
-                id=result['filename'],
+                type="lookup_file",
+                id=result["filename"],
                 content_hash=self.lookup_file_provider.compute_content_hash(template),
-                template_path=template.get('template_path', ''),
-                deployed_at=result.get('created_at', datetime.now(timezone.utc).isoformat()),
-                last_modified=result.get('created_at', datetime.now(timezone.utc).isoformat()),
+                template_path=template.get("template_path", ""),
+                deployed_at=result.get("created_at", datetime.now(timezone.utc).isoformat()),
+                last_modified=result.get("created_at", datetime.now(timezone.utc).isoformat()),
                 provider_metadata={
-                    'filename': result['filename'],
-                    'format': result['format'],
-                    'search_domain': result['search_domain'],
-                    'size_bytes': result.get('size_bytes', 0)
+                    "filename": result["filename"],
+                    "format": result["format"],
+                    "search_domain": result["search_domain"],
+                    "size_bytes": result.get("size_bytes", 0),
                 },
-                dependencies=list(dependencies.keys()) if dependencies else []
+                dependencies=list(dependencies.keys()) if dependencies else [],
             )
 
-            self.state_manager.set_resource('lookup_file', change.resource_name, resource_state)
+            self.state_manager.set_resource("lookup_file", change.resource_name, resource_state)
             if self.auto_save:
                 self.state_manager.save()
 
@@ -838,33 +748,29 @@ class ProviderAdapter:
             current_state = self.lookup_file_provider.fetch_remote_state(change.resource_id)
 
             # Apply update
-            result = self.lookup_file_provider.apply_update(
-                change.resource_id,
-                template,
-                current_state or {}
-            )
+            result = self.lookup_file_provider.apply_update(change.resource_id, template, current_state or {})
 
             # Extract dependencies
             dependencies = self.lookup_file_provider.extract_dependencies(template)
 
             # Update state
             resource_state = ResourceState(
-                type='lookup_file',
-                id=result['filename'],
+                type="lookup_file",
+                id=result["filename"],
                 content_hash=self.lookup_file_provider.compute_content_hash(template),
-                template_path=template.get('template_path', ''),
-                deployed_at=self.state_manager.get_resource('lookup_file', change.resource_name).deployed_at,
-                last_modified=result.get('updated_at', datetime.now(timezone.utc).isoformat()),
+                template_path=template.get("template_path", ""),
+                deployed_at=self.state_manager.get_resource("lookup_file", change.resource_name).deployed_at,
+                last_modified=result.get("updated_at", datetime.now(timezone.utc).isoformat()),
                 provider_metadata={
-                    'filename': result['filename'],
-                    'format': result['format'],
-                    'search_domain': result['search_domain'],
-                    'size_bytes': result.get('size_bytes', 0)
+                    "filename": result["filename"],
+                    "format": result["format"],
+                    "search_domain": result["search_domain"],
+                    "size_bytes": result.get("size_bytes", 0),
                 },
-                dependencies=list(dependencies.keys()) if dependencies else []
+                dependencies=list(dependencies.keys()) if dependencies else [],
             )
 
-            self.state_manager.set_resource('lookup_file', change.resource_name, resource_state)
+            self.state_manager.set_resource("lookup_file", change.resource_name, resource_state)
             if self.auto_save:
                 self.state_manager.save()
 
@@ -875,7 +781,7 @@ class ProviderAdapter:
             result = self.lookup_file_provider.apply_delete(change.resource_id)
 
             # Remove from state
-            self.state_manager.delete_resource('lookup_file', change.resource_name)
+            self.state_manager.delete_resource("lookup_file", change.resource_name)
             if self.auto_save:
                 self.state_manager.save()
 

@@ -6,8 +6,8 @@ from talonctl.commands._common import console
 
 
 @click.command()
-@click.option('--vendors', type=str, help='Vendor filter (comma-separated)')
-@click.option('--max-templates', type=int, default=100, help='Max templates to discover')
+@click.option("--vendors", type=str, help="Vendor filter (comma-separated)")
+@click.option("--max-templates", type=int, default=100, help="Max templates to discover")
 @click.pass_context
 def discover(ctx, vendors, max_templates):
     """Discover new detection templates from the CrowdStrike template library."""

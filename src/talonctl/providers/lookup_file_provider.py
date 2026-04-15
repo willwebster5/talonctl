@@ -11,15 +11,10 @@ import os
 import json
 import hashlib
 import logging
-from pathlib import Path
 from typing import Dict, List, Optional, Any
 from datetime import datetime, timezone
 
-from talonctl.core.base_provider import (
-    BaseResourceProvider,
-    ResourceAction,
-    ResourceChange
-)
+from talonctl.core.base_provider import BaseResourceProvider, ResourceAction, ResourceChange
 
 logger = logging.getLogger(__name__)
 
@@ -41,10 +36,10 @@ class LookupFileProvider(BaseResourceProvider):
     """
 
     # Valid search domain options
-    VALID_SEARCH_DOMAINS = ['all', 'falcon', 'third-party', 'dashboards', 'parsers-repository']
+    VALID_SEARCH_DOMAINS = ["all", "falcon", "third-party", "dashboards", "parsers-repository"]
 
     # Valid file formats
-    VALID_FORMATS = ['csv', 'json']
+    VALID_FORMATS = ["csv", "json"]
 
     # File size limits in bytes
     MAX_FILE_SIZE_CSV = 209.7 * 1024 * 1024  # 209.7 MB
@@ -60,7 +55,7 @@ class LookupFileProvider(BaseResourceProvider):
         """
         self.falcon = falcon_client
         self.config = config or {}
-        self.timeout = self.config.get('timeout', 30)
+        self.timeout = self.config.get("timeout", 30)
 
     def get_resource_type(self) -> str:
         """Return resource type identifier"""
@@ -79,29 +74,23 @@ class LookupFileProvider(BaseResourceProvider):
         errors = []
 
         # Required fields
-        required_fields = ['name', 'format', 'source']
+        required_fields = ["name", "format", "source"]
         for field in required_fields:
             if field not in template:
                 errors.append(f"Missing required field: {field}")
 
         # Validate format
-        file_format = template.get('format', '').lower()
+        file_format = template.get("format", "").lower()
         if file_format and file_format not in self.VALID_FORMATS:
-            errors.append(
-                f"Invalid format: {file_format}. "
-                f"Must be one of {self.VALID_FORMATS}"
-            )
+            errors.append(f"Invalid format: {file_format}. Must be one of {self.VALID_FORMATS}")
 
         # Validate search_domain if present
-        search_domain = template.get('_search_domain')
+        search_domain = template.get("_search_domain")
         if search_domain and search_domain not in self.VALID_SEARCH_DOMAINS:
-            errors.append(
-                f"Invalid _search_domain: {search_domain}. "
-                f"Must be one of {self.VALID_SEARCH_DOMAINS}"
-            )
+            errors.append(f"Invalid _search_domain: {search_domain}. Must be one of {self.VALID_SEARCH_DOMAINS}")
 
         # Validate source file exists
-        source_path = template.get('source')
+        source_path = template.get("source")
         if source_path:
             # Resolve relative to project root or absolute path
             if not os.path.isabs(source_path):
@@ -116,25 +105,21 @@ class LookupFileProvider(BaseResourceProvider):
                 # Check file size
                 file_size = os.path.getsize(abs_path)
 
-                if file_format == 'csv' and file_size > self.MAX_FILE_SIZE_CSV:
+                if file_format == "csv" and file_size > self.MAX_FILE_SIZE_CSV:
                     size_mb = file_size / (1024 * 1024)
-                    errors.append(
-                        f"CSV file exceeds 209.7 MB limit: {size_mb:.2f} MB"
-                    )
-                elif file_format == 'json' and file_size > self.MAX_FILE_SIZE_JSON:
+                    errors.append(f"CSV file exceeds 209.7 MB limit: {size_mb:.2f} MB")
+                elif file_format == "json" and file_size > self.MAX_FILE_SIZE_JSON:
                     size_mb = file_size / (1024 * 1024)
-                    errors.append(
-                        f"JSON file exceeds 104.9 MB limit: {size_mb:.2f} MB"
-                    )
+                    errors.append(f"JSON file exceeds 104.9 MB limit: {size_mb:.2f} MB")
 
         # Validate name is non-empty
-        name = template.get('name', '')
+        name = template.get("name", "")
         if not isinstance(name, str) or not name.strip():
             errors.append("'name' must be a non-empty string")
 
         # Validate optional fields
-        if 'description' in template:
-            if not isinstance(template['description'], str):
+        if "description" in template:
+            if not isinstance(template["description"], str):
                 errors.append("'description' must be a string")
 
         return errors
@@ -162,11 +147,7 @@ class LookupFileProvider(BaseResourceProvider):
             logger.error(f"Failed to fetch lookup file {resource_id}: {e}")
             return None
 
-    def _fetch_lookup_file(
-        self,
-        filename: str,
-        search_domain: str
-    ) -> Optional[Dict[str, Any]]:
+    def _fetch_lookup_file(self, filename: str, search_domain: str) -> Optional[Dict[str, Any]]:
         """
         Fetch a lookup file from a specific search domain
 
@@ -182,11 +163,7 @@ class LookupFileProvider(BaseResourceProvider):
             override = f"GET,{endpoint}"
 
             response = self.falcon.command(
-                override=override,
-                parameters={
-                    'filename': filename,
-                    'search_domain': search_domain
-                }
+                override=override, parameters={"filename": filename, "search_domain": search_domain}
             )
 
             # Check response type - API may return file content directly
@@ -194,43 +171,43 @@ class LookupFileProvider(BaseResourceProvider):
                 # Direct bytes response (file content)
                 content = response
                 return {
-                    'filename': filename,
-                    'search_domain': search_domain,
-                    'content': content,
-                    'content_hash': hashlib.sha256(content).hexdigest(),
-                    'size_bytes': len(content)
+                    "filename": filename,
+                    "search_domain": search_domain,
+                    "content": content,
+                    "content_hash": hashlib.sha256(content).hexdigest(),
+                    "size_bytes": len(content),
                 }
 
             # Check for successful response in dict format
-            if isinstance(response, dict) and response.get('status_code') in (200, 201):
-                body = response.get('body', {})
+            if isinstance(response, dict) and response.get("status_code") in (200, 201):
+                body = response.get("body", {})
 
                 # Response may contain file content in 'resources' or directly
                 if isinstance(body, bytes):
                     # Direct file content in body
                     content = body
                 elif isinstance(body, dict):
-                    resources = body.get('resources', [])
+                    resources = body.get("resources", [])
                     if resources and len(resources) > 0:
                         content = resources[0]
                         if isinstance(content, dict):
-                            content = content.get('content', b'')
+                            content = content.get("content", b"")
                     else:
-                        content = body.get('content', b'')
+                        content = body.get("content", b"")
                 else:
-                    content = b''
+                    content = b""
 
                 # Ensure content is bytes
                 if isinstance(content, str):
-                    content = content.encode('utf-8')
+                    content = content.encode("utf-8")
 
                 if content:
                     return {
-                        'filename': filename,
-                        'search_domain': search_domain,
-                        'content': content,
-                        'content_hash': hashlib.sha256(content).hexdigest(),
-                        'size_bytes': len(content)
+                        "filename": filename,
+                        "search_domain": search_domain,
+                        "content": content,
+                        "content_hash": hashlib.sha256(content).hexdigest(),
+                        "size_bytes": len(content),
                     }
 
             return None
@@ -253,16 +230,13 @@ class LookupFileProvider(BaseResourceProvider):
         return ResourceChange(
             action=ResourceAction.CREATE,
             resource_type=self.get_resource_type(),
-            resource_name=template['name'],
+            resource_name=template["name"],
             new_value=template,
-            template_path=template_path
+            template_path=template_path,
         )
 
     def plan_update(
-        self,
-        template: Dict[str, Any],
-        current_state: Dict[str, Any],
-        template_path: str
+        self, template: Dict[str, Any], current_state: Dict[str, Any], template_path: str
     ) -> ResourceChange:
         """
         Plan update of an existing lookup file
@@ -277,25 +251,25 @@ class LookupFileProvider(BaseResourceProvider):
         """
         # Compute hashes to detect changes
         new_hash = self.compute_content_hash(template)
-        old_hash = current_state.get('content_hash', '')
+        old_hash = current_state.get("content_hash", "")
 
         if new_hash != old_hash:
             return ResourceChange(
                 action=ResourceAction.UPDATE,
                 resource_type=self.get_resource_type(),
-                resource_name=template['name'],
-                resource_id=current_state.get('filename'),
+                resource_name=template["name"],
+                resource_id=current_state.get("filename"),
                 old_value=current_state,
                 new_value=template,
-                template_path=template_path
+                template_path=template_path,
             )
         else:
             return ResourceChange(
                 action=ResourceAction.NO_CHANGE,
                 resource_type=self.get_resource_type(),
-                resource_name=template['name'],
-                resource_id=current_state.get('filename'),
-                template_path=template_path
+                resource_name=template["name"],
+                resource_id=current_state.get("filename"),
+                template_path=template_path,
             )
 
     def plan_delete(self, resource_id: str, resource_name: str) -> ResourceChange:
@@ -313,7 +287,7 @@ class LookupFileProvider(BaseResourceProvider):
             action=ResourceAction.DELETE,
             resource_type=self.get_resource_type(),
             resource_name=resource_name,
-            resource_id=resource_id
+            resource_id=resource_id,
         )
 
     def apply_create(self, template: Dict[str, Any]) -> Dict[str, Any]:
@@ -331,64 +305,48 @@ class LookupFileProvider(BaseResourceProvider):
         """
         try:
             # Read file content
-            source_path = template['source']
+            source_path = template["source"]
             if not os.path.isabs(source_path):
                 source_path = os.path.abspath(source_path)
 
-            with open(source_path, 'rb') as f:
+            with open(source_path, "rb") as f:
                 file_content = f.read()
 
             # Determine content type
-            file_format = template['format'].lower()
-            content_type = 'text/csv' if file_format == 'csv' else 'application/json'
+            file_format = template["format"].lower()
+            content_type = "text/csv" if file_format == "csv" else "application/json"
 
             # Get search domain
-            search_domain = template.get('_search_domain', 'falcon')
-            filename = template['name']
+            search_domain = template.get("_search_domain", "falcon")
+            filename = template["name"]
 
             # Prepare multipart file upload
-            files = [
-                ('file', (filename, file_content, content_type))
-            ]
+            files = [("file", (filename, file_content, content_type))]
 
             # API parameters as formData
-            data = {
-                'search_domain': search_domain,
-                'filename': filename
-            }
+            data = {"search_domain": search_domain, "filename": filename}
 
             endpoint = "/ngsiem-content/entities/lookupfiles/v1"
             override = f"POST,{endpoint}"
 
-            response = self.falcon.command(
-                override=override,
-                files=files,
-                data=data
-            )
+            response = self.falcon.command(override=override, files=files, data=data)
 
-            if response.get('status_code') not in (200, 201):
-                raise RuntimeError(
-                    f"Failed to create lookup file '{filename}': {response}"
-                )
+            if response.get("status_code") not in (200, 201):
+                raise RuntimeError(f"Failed to create lookup file '{filename}': {response}")
 
             return {
-                'id': filename,
-                'filename': filename,
-                'search_domain': search_domain,
-                'format': file_format,
-                'size_bytes': len(file_content),
-                'created_at': datetime.now(timezone.utc).isoformat()
+                "id": filename,
+                "filename": filename,
+                "search_domain": search_domain,
+                "format": file_format,
+                "size_bytes": len(file_content),
+                "created_at": datetime.now(timezone.utc).isoformat(),
             }
 
         except Exception as e:
             raise RuntimeError(f"Failed to create lookup file: {e}") from e
 
-    def apply_update(
-        self,
-        resource_id: str,
-        template: Dict[str, Any],
-        current_state: Dict[str, Any]
-    ) -> Dict[str, Any]:
+    def apply_update(self, resource_id: str, template: Dict[str, Any], current_state: Dict[str, Any]) -> Dict[str, Any]:
         """
         Update an existing lookup file in NGSIEM
 
@@ -405,53 +363,42 @@ class LookupFileProvider(BaseResourceProvider):
         """
         try:
             # Read file content
-            source_path = template['source']
+            source_path = template["source"]
             if not os.path.isabs(source_path):
                 source_path = os.path.abspath(source_path)
 
-            with open(source_path, 'rb') as f:
+            with open(source_path, "rb") as f:
                 file_content = f.read()
 
             # Determine content type
-            file_format = template['format'].lower()
-            content_type = 'text/csv' if file_format == 'csv' else 'application/json'
+            file_format = template["format"].lower()
+            content_type = "text/csv" if file_format == "csv" else "application/json"
 
             # Get search domain (prefer from current state if not in template)
-            search_domain = template.get('_search_domain') or current_state.get('search_domain', 'falcon')
-            filename = template['name']
+            search_domain = template.get("_search_domain") or current_state.get("search_domain", "falcon")
+            filename = template["name"]
 
             # Prepare multipart file upload
-            files = [
-                ('file', (filename, file_content, content_type))
-            ]
+            files = [("file", (filename, file_content, content_type))]
 
             # API parameters as formData
-            data = {
-                'search_domain': search_domain,
-                'filename': filename
-            }
+            data = {"search_domain": search_domain, "filename": filename}
 
             endpoint = "/ngsiem-content/entities/lookupfiles/v1"
             override = f"PATCH,{endpoint}"
 
-            response = self.falcon.command(
-                override=override,
-                files=files,
-                data=data
-            )
+            response = self.falcon.command(override=override, files=files, data=data)
 
-            if response.get('status_code') not in (200, 201):
-                raise RuntimeError(
-                    f"Failed to update lookup file '{filename}': {response}"
-                )
+            if response.get("status_code") not in (200, 201):
+                raise RuntimeError(f"Failed to update lookup file '{filename}': {response}")
 
             return {
-                'id': filename,
-                'filename': filename,
-                'search_domain': search_domain,
-                'format': file_format,
-                'size_bytes': len(file_content),
-                'updated_at': datetime.now(timezone.utc).isoformat()
+                "id": filename,
+                "filename": filename,
+                "search_domain": search_domain,
+                "format": file_format,
+                "size_bytes": len(file_content),
+                "updated_at": datetime.now(timezone.utc).isoformat(),
             }
 
         except Exception as e:
@@ -481,14 +428,10 @@ class LookupFileProvider(BaseResourceProvider):
                     override = f"DELETE,{endpoint}"
 
                     response = self.falcon.command(
-                        override=override,
-                        parameters={
-                            'filename': resource_id,
-                            'search_domain': search_domain
-                        }
+                        override=override, parameters={"filename": resource_id, "search_domain": search_domain}
                     )
 
-                    if response.get('status_code') in (200, 204):
+                    if response.get("status_code") in (200, 204):
                         deleted = True
                         logger.info(f"Deleted lookup file {resource_id} from {search_domain}")
                         break
@@ -499,11 +442,10 @@ class LookupFileProvider(BaseResourceProvider):
 
             if not deleted:
                 raise RuntimeError(
-                    f"Failed to delete lookup file {resource_id} from any domain. "
-                    f"Last error: {last_error}"
+                    f"Failed to delete lookup file {resource_id} from any domain. Last error: {last_error}"
                 )
 
-            return {'id': resource_id}
+            return {"id": resource_id}
 
         except Exception as e:
             raise RuntimeError(f"Failed to delete lookup file: {e}") from e
@@ -521,26 +463,26 @@ class LookupFileProvider(BaseResourceProvider):
             SHA256 hash as hex string
         """
         # Read file content
-        source_path = template['source']
+        source_path = template["source"]
         if not os.path.isabs(source_path):
             source_path = os.path.abspath(source_path)
 
         try:
-            with open(source_path, 'rb') as f:
+            with open(source_path, "rb") as f:
                 file_content = f.read()
         except Exception as e:
             logger.warning(f"Failed to read file for hashing: {e}")
-            file_content = b''
+            file_content = b""
 
         # Hash file content
         content_hash = hashlib.sha256(file_content).hexdigest()
 
         # Include metadata in hash
         metadata = {
-            'name': template.get('name', ''),
-            'format': template.get('format', ''),
-            'description': template.get('description', ''),
-            'content_hash': content_hash
+            "name": template.get("name", ""),
+            "format": template.get("format", ""),
+            "description": template.get("description", ""),
+            "content_hash": content_hash,
         }
 
         metadata_str = json.dumps(metadata, sort_keys=True)
@@ -560,10 +502,7 @@ class LookupFileProvider(BaseResourceProvider):
         """
         return {}
 
-    def _fetch_all_remote_lookup_files(
-        self,
-        search_domain: str = 'all'
-    ) -> Dict[str, Dict[str, Any]]:
+    def _fetch_all_remote_lookup_files(self, search_domain: str = "all") -> Dict[str, Dict[str, Any]]:
         """
         Fetch all lookup files from a search domain.
 
@@ -586,23 +525,17 @@ class LookupFileProvider(BaseResourceProvider):
 
             while True:
                 response = self.falcon.command(
-                    override=override,
-                    parameters={
-                        'search_domain': search_domain,
-                        'limit': limit,
-                        'offset': offset
-                    }
+                    override=override, parameters={"search_domain": search_domain, "limit": limit, "offset": offset}
                 )
 
-                if response.get('status_code') != 200:
+                if response.get("status_code") != 200:
                     logger.warning(
-                        f"Failed to list lookup files (offset {offset}): "
-                        f"status {response.get('status_code')}"
+                        f"Failed to list lookup files (offset {offset}): status {response.get('status_code')}"
                     )
                     break
 
-                body = response.get('body', {})
-                resources = body.get('resources', [])
+                body = response.get("body", {})
+                resources = body.get("resources", [])
 
                 if not resources:
                     break
@@ -611,9 +544,9 @@ class LookupFileProvider(BaseResourceProvider):
                     try:
                         # Store basic metadata (content is not fetched for listing)
                         lookup_files[filename] = {
-                            'filename': filename,
-                            'name': filename,
-                            'search_domain': search_domain,
+                            "filename": filename,
+                            "name": filename,
+                            "search_domain": search_domain,
                         }
                         logger.debug(f"Discovered lookup file: {filename}")
                     except Exception as e:
@@ -621,9 +554,9 @@ class LookupFileProvider(BaseResourceProvider):
                         continue
 
                 # Check pagination
-                meta = body.get('meta', {})
-                pagination = meta.get('pagination', {})
-                total = pagination.get('total', 0)
+                meta = body.get("meta", {})
+                pagination = meta.get("pagination", {})
+                total = pagination.get("total", 0)
 
                 offset += limit
 
@@ -650,25 +583,25 @@ class LookupFileProvider(BaseResourceProvider):
         Returns:
             Template dict ready for YAML serialization
         """
-        filename = remote_resource.get('filename', remote_resource.get('name', ''))
-        resource_id = self._name_to_resource_id(filename) if filename else 'unknown'
+        filename = remote_resource.get("filename", remote_resource.get("name", ""))
+        resource_id = self._name_to_resource_id(filename) if filename else "unknown"
 
         # Determine format from filename extension
-        file_format = 'csv'
-        if filename.endswith('.json'):
-            file_format = 'json'
+        file_format = "csv"
+        if filename.endswith(".json"):
+            file_format = "json"
 
         template = {
-            'resource_id': resource_id,
-            'name': filename,
-            'format': file_format,
-            'source': f"data/{filename}",  # Placeholder — user must provide actual file
-            '_search_domain': remote_resource.get('search_domain', 'all'),
+            "resource_id": resource_id,
+            "name": filename,
+            "format": file_format,
+            "source": f"data/{filename}",  # Placeholder — user must provide actual file
+            "_search_domain": remote_resource.get("search_domain", "all"),
         }
 
-        description = remote_resource.get('description', '')
+        description = remote_resource.get("description", "")
         if description:
-            template['description'] = description
+            template["description"] = description
 
         return template
 
@@ -682,9 +615,9 @@ class LookupFileProvider(BaseResourceProvider):
         Returns:
             Relative path like 'lookup_files/trusted_ips.yaml'
         """
-        resource_id = template.get('resource_id', '')
+        resource_id = template.get("resource_id", "")
         if not resource_id:
-            resource_id = self._name_to_resource_id(template.get('name', 'unknown'))
+            resource_id = self._name_to_resource_id(template.get("name", "unknown"))
 
         return f"lookup_files/{resource_id}.yaml"
 
@@ -694,10 +627,7 @@ class LookupFileProvider(BaseResourceProvider):
         return self.apply_create(template)
 
     def update_resource(
-        self,
-        resource_id: str,
-        template: Dict[str, Any],
-        current_state: Dict[str, Any]
+        self, resource_id: str, template: Dict[str, Any], current_state: Dict[str, Any]
     ) -> Dict[str, Any]:
         """Alias for apply_update"""
         return self.apply_update(resource_id, template, current_state)

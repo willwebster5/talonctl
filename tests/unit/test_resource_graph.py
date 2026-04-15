@@ -3,9 +3,8 @@ Unit tests for ResourceGraph dependency management
 """
 
 import pytest
-from pathlib import Path
 
-from talonctl.core.resource_graph import ResourceGraph, DependencyCycle
+from talonctl.core.resource_graph import ResourceGraph
 
 
 class TestResourceGraph:

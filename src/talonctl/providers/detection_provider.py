@@ -6,18 +6,12 @@ CrowdStrike NGSIEM detection rules as Infrastructure as Code resources.
 """
 
 import json
-import yaml
 import hashlib
 import logging
-from pathlib import Path
 from typing import Dict, List, Optional, Any, Tuple
 from datetime import datetime, timezone
 
-from talonctl.core.base_provider import (
-    BaseResourceProvider,
-    ResourceAction,
-    ResourceChange
-)
+from talonctl.core.base_provider import BaseResourceProvider, ResourceAction, ResourceChange
 from talonctl.core.deployment_strategies import DeploymentStrategyFactory
 from talonctl.utils.mitre_processor import MitreProcessor
 
@@ -46,13 +40,13 @@ class DetectionProvider(BaseResourceProvider):
         """
         self.falcon = falcon_client
         self.config = config or {}
-        self.timeout = self.config.get('timeout', 30)
+        self.timeout = self.config.get("timeout", 30)
         self._remote_rules_cache: Optional[Dict[str, Dict[str, Any]]] = None
         self._remote_rules_raw_cache: Optional[Dict[str, Dict[str, Any]]] = None
 
         # Extract customer_id from credentials if available
-        creds = self.config.get('credentials', {})
-        self.customer_id = creds.get('customer_id') if creds else None
+        creds = self.config.get("credentials", {})
+        self.customer_id = creds.get("customer_id") if creds else None
 
     def get_resource_type(self) -> str:
         """Return resource type identifier"""
@@ -75,49 +69,56 @@ class DetectionProvider(BaseResourceProvider):
         errors = []
 
         # Required fields
-        required_fields = ['name', 'description', 'severity', 'search']
+        required_fields = ["name", "description", "severity", "search"]
         for field in required_fields:
             if field not in template:
                 errors.append(f"Missing required field: {field}")
 
         # Validate severity
-        severity = template.get('severity')
+        severity = template.get("severity")
         valid_severities = [10, 30, 50, 70, 90]
         if severity and severity not in valid_severities:
             errors.append(f"Invalid severity: {severity}. Must be one of {valid_severities}")
 
         # Validate search section (supports both legacy and new formats)
-        search = template.get('search', {})
+        search = template.get("search", {})
         if not isinstance(search, dict):
             errors.append("'search' must be a dictionary")
         else:
             # Check for query OR filter (legacy format uses 'filter')
-            has_query = 'query' in search or 'filter' in search
+            has_query = "query" in search or "filter" in search
             if not has_query:
                 errors.append("Missing 'query' or 'filter' in search section")
 
             # Validate search fields (accept both legacy and new format fields)
             valid_search_fields = [
                 # New format fields
-                'query', 'query_id', 'use_ingest_time',
-                'search_window', 'search_window_unit',
-                'group_by', 'having',
+                "query",
+                "query_id",
+                "use_ingest_time",
+                "search_window",
+                "search_window_unit",
+                "group_by",
+                "having",
                 # Legacy format fields
-                'filter', 'lookback', 'trigger_mode', 'outcome',
+                "filter",
+                "lookback",
+                "trigger_mode",
+                "outcome",
                 # Behavioral/correlate rule fields
-                'execution_mode'
+                "execution_mode",
             ]
             invalid_fields = [k for k in search.keys() if k not in valid_search_fields]
             if invalid_fields:
                 errors.append(f"Invalid search fields: {', '.join(invalid_fields)}")
 
         # Validate status if present
-        status = template.get('status', 'active')
-        if status not in ['active', 'inactive']:
+        status = template.get("status", "active")
+        if status not in ["active", "inactive"]:
             errors.append(f"Invalid status: {status}. Must be 'active' or 'inactive'")
 
         # Validate MITRE ATT&CK (supports string format, dict format, and legacy top-level fields)
-        mitre = template.get('mitre_attack')
+        mitre = template.get("mitre_attack")
         if mitre:
             if not isinstance(mitre, list):
                 errors.append("'mitre_attack' must be a list")
@@ -127,8 +128,15 @@ class DetectionProvider(BaseResourceProvider):
                         # String format: "Tactic (TAxxxx):Technique (Txxxx)" - valid
                         pass
                     elif isinstance(entry, dict):
-                        if 'tactic' not in entry and 'technique' not in entry and 'tactic_id' not in entry and 'technique_id' not in entry:
-                            errors.append(f"mitre_attack[{idx}] must have 'tactic', 'technique', 'tactic_id', or 'technique_id'")
+                        if (
+                            "tactic" not in entry
+                            and "technique" not in entry
+                            and "tactic_id" not in entry
+                            and "technique_id" not in entry
+                        ):
+                            errors.append(
+                                f"mitre_attack[{idx}] must have 'tactic', 'technique', 'tactic_id', or 'technique_id'"
+                            )
                     else:
                         errors.append(f"mitre_attack[{idx}] must be a string or dictionary")
 
@@ -136,7 +144,7 @@ class DetectionProvider(BaseResourceProvider):
         # No validation needed - these are optional
 
         # Validate ADS metadata if present (optional block, strict when present)
-        ads = template.get('ads')
+        ads = template.get("ads")
         if ads is not None:
             if not isinstance(ads, dict):
                 errors.append("'ads' must be a dictionary")
@@ -181,14 +189,11 @@ class DetectionProvider(BaseResourceProvider):
 
             # Search for rule by rule_id
             for rule_name, rule_data in (self._remote_rules_cache or {}).items():
-                if rule_data.get('rule_id') == resource_id:
+                if rule_data.get("rule_id") == resource_id:
                     return rule_data
 
             # If not found in cache, try direct fetch
-            response = self.falcon.command(
-                "entities_rules_get_v1",
-                ids=[resource_id]
-            )
+            response = self.falcon.command("entities_rules_get_v1", ids=[resource_id])
 
             if response["status_code"] == 200 and response["body"]["resources"]:
                 rule = response["body"]["resources"][0]
@@ -215,12 +220,7 @@ class DetectionProvider(BaseResourceProvider):
 
             # Pagination loop to fetch ALL rules (handles 2000+ rules)
             while True:
-                response = self.falcon.command(
-                    "combined_rules_get_v2",
-                    limit=limit,
-                    offset=offset,
-                    sort="name.asc"
-                )
+                response = self.falcon.command("combined_rules_get_v2", limit=limit, offset=offset, sort="name.asc")
 
                 if response["status_code"] != 200:
                     logger.error(f"Failed to query rules at offset {offset}: {response}")
@@ -232,7 +232,7 @@ class DetectionProvider(BaseResourceProvider):
 
                 # Index by name for easy lookup
                 for rule in rules:
-                    rule_name = rule.get('name', '')
+                    rule_name = rule.get("name", "")
                     if rule_name:
                         all_rules_raw[rule_name] = rule
                         all_rules[rule_name] = self._normalize_rule(rule)
@@ -284,42 +284,42 @@ class DetectionProvider(BaseResourceProvider):
 
         # Extract search config
         search_config = {}
-        if 'query' in rule:
-            search_config['query'] = rule['query']
-        if 'query_id' in rule:
-            search_config['query_id'] = rule['query_id']
-        if 'use_ingest_time' in rule:
-            search_config['use_ingest_time'] = rule['use_ingest_time']
-        if 'search_window' in rule:
-            search_config['search_window'] = rule['search_window']
-        if 'search_window_unit' in rule:
-            search_config['search_window_unit'] = rule['search_window_unit']
-        if 'group_by' in rule:
-            search_config['group_by'] = rule['group_by']
-        if 'having' in rule:
-            search_config['having'] = rule['having']
+        if "query" in rule:
+            search_config["query"] = rule["query"]
+        if "query_id" in rule:
+            search_config["query_id"] = rule["query_id"]
+        if "use_ingest_time" in rule:
+            search_config["use_ingest_time"] = rule["use_ingest_time"]
+        if "search_window" in rule:
+            search_config["search_window"] = rule["search_window"]
+        if "search_window_unit" in rule:
+            search_config["search_window_unit"] = rule["search_window_unit"]
+        if "group_by" in rule:
+            search_config["group_by"] = rule["group_by"]
+        if "having" in rule:
+            search_config["having"] = rule["having"]
 
         # CRITICAL: Always use rule_id (permanent identifier), never version_id
         # rule_id is permanent and doesn't change across rule updates
         # id/version_id changes with each update and causes "not found" errors
-        rule_id = rule.get('rule_id') or rule.get('id')
+        rule_id = rule.get("rule_id") or rule.get("id")
 
         normalized = {
-            'name': rule.get('name', ''),
-            'description': rule.get('description', ''),
-            'severity': rule.get('severity', 10),
-            'status': rule.get('status', 'active'),
-            'search': search_config,
-            'rule_id': rule_id  # PERMANENT identifier
+            "name": rule.get("name", ""),
+            "description": rule.get("description", ""),
+            "severity": rule.get("severity", 10),
+            "status": rule.get("status", "active"),
+            "search": search_config,
+            "rule_id": rule_id,  # PERMANENT identifier
         }
 
         # Add rule type if present (e.g., 'behavioral' for correlate rules)
-        if 'type' in rule:
-            normalized['type'] = rule['type']
+        if "type" in rule:
+            normalized["type"] = rule["type"]
 
         # Add MITRE ATT&CK if present
-        if 'mitre_attack' in rule:
-            normalized['mitre_attack'] = rule['mitre_attack']
+        if "mitre_attack" in rule:
+            normalized["mitre_attack"] = rule["mitre_attack"]
 
         # DEBUG: Log normalized output
         logger.debug(f"[DEBUG] Normalized status: '{normalized['status']}'")
@@ -341,19 +341,16 @@ class DetectionProvider(BaseResourceProvider):
         return ResourceChange(
             action=ResourceAction.CREATE,
             resource_type=self.get_resource_type(),
-            resource_name=template['name'],
+            resource_name=template["name"],
             resource_id=None,
             old_value=None,
             new_value=template,
             changes=None,
-            template_path=template_path
+            template_path=template_path,
         )
 
     def plan_update(
-        self,
-        template: Dict[str, Any],
-        current_state: Dict[str, Any],
-        template_path: str
+        self, template: Dict[str, Any], current_state: Dict[str, Any], template_path: str
     ) -> ResourceChange:
         """
         Plan update of an existing detection rule
@@ -374,12 +371,12 @@ class DetectionProvider(BaseResourceProvider):
             return ResourceChange(
                 action=ResourceAction.NO_CHANGE,
                 resource_type=self.get_resource_type(),
-                resource_name=template['name'],
-                resource_id=current_state.get('rule_id'),
+                resource_name=template["name"],
+                resource_id=current_state.get("rule_id"),
                 old_value=current_state,
                 new_value=template,
                 changes=None,
-                template_path=template_path
+                template_path=template_path,
             )
 
         # Detect specific field changes
@@ -388,49 +385,45 @@ class DetectionProvider(BaseResourceProvider):
         return ResourceChange(
             action=ResourceAction.UPDATE,
             resource_type=self.get_resource_type(),
-            resource_name=template['name'],
-            resource_id=current_state.get('rule_id'),
+            resource_name=template["name"],
+            resource_id=current_state.get("rule_id"),
             old_value=current_state,
             new_value=template,
             changes=changes,
-            template_path=template_path
+            template_path=template_path,
         )
 
-    def _detect_field_changes(
-        self,
-        new: Dict[str, Any],
-        old: Dict[str, Any]
-    ) -> Dict[str, Any]:
+    def _detect_field_changes(self, new: Dict[str, Any], old: Dict[str, Any]) -> Dict[str, Any]:
         """Detect specific field changes between templates"""
         changes = {}
 
         # Check simple fields
-        simple_fields = ['name', 'description', 'severity', 'status', 'type']
+        simple_fields = ["name", "description", "severity", "status", "type"]
         for field in simple_fields:
             new_val = new.get(field)
             old_val = old.get(field)
             if new_val != old_val:
-                changes[field] = {'old': old_val, 'new': new_val}
+                changes[field] = {"old": old_val, "new": new_val}
 
         # Check search config
-        new_search = new.get('search', {})
-        old_search = old.get('search', {})
+        new_search = new.get("search", {})
+        old_search = old.get("search", {})
         search_changes = {}
 
         for key in set(new_search.keys()) | set(old_search.keys()):
             new_val = new_search.get(key)
             old_val = old_search.get(key)
             if new_val != old_val:
-                search_changes[key] = {'old': old_val, 'new': new_val}
+                search_changes[key] = {"old": old_val, "new": new_val}
 
         if search_changes:
-            changes['search'] = search_changes
+            changes["search"] = search_changes
 
         # Check MITRE ATT&CK
-        new_mitre = new.get('mitre_attack')
-        old_mitre = old.get('mitre_attack')
+        new_mitre = new.get("mitre_attack")
+        old_mitre = old.get("mitre_attack")
         if new_mitre != old_mitre:
-            changes['mitre_attack'] = {'old': old_mitre, 'new': new_mitre}
+            changes["mitre_attack"] = {"old": old_mitre, "new": new_mitre}
 
         return changes
 
@@ -449,7 +442,7 @@ class DetectionProvider(BaseResourceProvider):
             # Look in provider_metadata for the actual API rule type.
             # current_state['type'] is the resource category ('detection'),
             # NOT the rule type ('behavioral'/'correlation').
-            old_val = current_state.get('provider_metadata', {}).get(field)
+            old_val = current_state.get("provider_metadata", {}).get(field)
             # Only trigger replacement when both values are explicitly set and differ.
             # If the template doesn't set 'type', or provider_metadata is missing, skip.
             if new_val and old_val and new_val != old_val:
@@ -478,7 +471,7 @@ class DetectionProvider(BaseResourceProvider):
             old_value=current_state,
             new_value=None,
             changes=None,
-            template_path=None
+            template_path=None,
         )
 
     def apply_create(self, template: Dict[str, Any]) -> Dict[str, Any]:
@@ -498,9 +491,7 @@ class DetectionProvider(BaseResourceProvider):
         response = self.falcon.command("entities_rules_post_v1", body=payload)
 
         if response["status_code"] not in (200, 201):
-            raise RuntimeError(
-                f"Failed to create rule '{template['name']}': {response}"
-            )
+            raise RuntimeError(f"Failed to create rule '{template['name']}': {response}")
 
         rule_info = response["body"]["resources"][0]
 
@@ -511,18 +502,13 @@ class DetectionProvider(BaseResourceProvider):
         logger.debug(f"[DEBUG] Create response rule_id: {rule_info.get('rule_id')}, id: {rule_info.get('id')}")
 
         return {
-            'rule_id': rule_id,  # PERMANENT identifier
-            'name': template['name'],
-            'created_at': datetime.now(timezone.utc).isoformat(),
-            'response': rule_info
+            "rule_id": rule_id,  # PERMANENT identifier
+            "name": template["name"],
+            "created_at": datetime.now(timezone.utc).isoformat(),
+            "response": rule_info,
         }
 
-    def _wait_for_rule_status(
-        self,
-        resource_id: str,
-        expected_status: str,
-        max_wait: int = 30
-    ) -> bool:
+    def _wait_for_rule_status(self, resource_id: str, expected_status: str, max_wait: int = 30) -> bool:
         """
         Poll for rule status change with exponential backoff
 
@@ -551,7 +537,7 @@ class DetectionProvider(BaseResourceProvider):
             # Fetch current rule state
             rule = self.fetch_remote_state(resource_id)
             if rule:
-                current_status = rule.get('status', '').lower()
+                current_status = rule.get("status", "").lower()
                 if current_status == expected_normalized:
                     logger.debug(f"Rule {resource_id} reached status '{expected_status}' after {total_waited}s")
                     return True
@@ -567,22 +553,15 @@ class DetectionProvider(BaseResourceProvider):
         # Final check after all retries
         rule = self.fetch_remote_state(resource_id)
         if rule:
-            current_status = rule.get('status', '').lower()
+            current_status = rule.get("status", "").lower()
             if current_status == expected_normalized:
                 logger.debug(f"Rule {resource_id} reached status '{expected_status}' after {total_waited}s")
                 return True
 
-        logger.warning(
-            f"Rule {resource_id} did not reach status '{expected_status}' within {max_wait}s timeout"
-        )
+        logger.warning(f"Rule {resource_id} did not reach status '{expected_status}' within {max_wait}s timeout")
         return False
 
-    def apply_update(
-        self,
-        resource_id: str,
-        template: Dict[str, Any],
-        current_state: Dict[str, Any]
-    ) -> Dict[str, Any]:
+    def apply_update(self, resource_id: str, template: Dict[str, Any], current_state: Dict[str, Any]) -> Dict[str, Any]:
         """
         Update a detection rule in CrowdStrike.
 
@@ -606,7 +585,7 @@ class DetectionProvider(BaseResourceProvider):
 
         # Handle "not found" with fallback name lookup
         if not current_rule:
-            rule_name = template.get('name')
+            rule_name = template.get("name")
             logger.warning(f"Rule ID {resource_id} not found in CrowdStrike, attempting lookup by name: {rule_name}")
 
             # Try to find by name in remote cache
@@ -616,7 +595,7 @@ class DetectionProvider(BaseResourceProvider):
             # Search cache by name
             if self._remote_rules_cache and rule_name in self._remote_rules_cache:
                 current_rule = self._remote_rules_cache[rule_name]
-                new_id = current_rule.get('rule_id')
+                new_id = current_rule.get("rule_id")
                 logger.info(f"Found rule '{rule_name}' with different ID: {new_id} (state had: {resource_id})")
                 logger.info(f"Updating with new ID {new_id}. Note: State file should be updated after deployment.")
                 # Use the new ID for this update
@@ -629,7 +608,7 @@ class DetectionProvider(BaseResourceProvider):
                 )
 
         # Get current status
-        current_status = current_rule.get('status', '')
+        current_status = current_rule.get("status", "")
 
         # DEBUG: Log update context
         logger.debug(f"[DEBUG] Updating rule: {template['name']}")
@@ -641,7 +620,7 @@ class DetectionProvider(BaseResourceProvider):
             template=template,
             current_status=current_status,
             falcon_command=self.falcon.command,
-            wait_for_status=self._wait_for_rule_status
+            wait_for_status=self._wait_for_rule_status,
         )
 
         logger.info(f"Updating rule '{template['name']}' using: {strategy.get_name()}")
@@ -653,10 +632,10 @@ class DetectionProvider(BaseResourceProvider):
         rule_info = response["body"]["resources"][0]
 
         return {
-            'rule_id': resource_id,
-            'name': template['name'],
-            'updated_at': datetime.now(timezone.utc).isoformat(),
-            'response': rule_info
+            "rule_id": resource_id,
+            "name": template["name"],
+            "updated_at": datetime.now(timezone.utc).isoformat(),
+            "response": rule_info,
         }
 
     def apply_delete(self, resource_id: str) -> Dict[str, Any]:
@@ -669,24 +648,16 @@ class DetectionProvider(BaseResourceProvider):
         Returns:
             Deletion metadata
         """
-        response = self.falcon.command(
-            "entities_rules_delete_v1",
-            ids=[resource_id]
-        )
+        response = self.falcon.command("entities_rules_delete_v1", ids=[resource_id])
 
         if response["status_code"] not in (200, 204):
-            raise RuntimeError(
-                f"Failed to delete rule ID {resource_id}: {response}"
-            )
+            raise RuntimeError(f"Failed to delete rule ID {resource_id}: {response}")
 
-        return {
-            'rule_id': resource_id,
-            'deleted_at': datetime.now(timezone.utc).isoformat()
-        }
+        return {"rule_id": resource_id, "deleted_at": datetime.now(timezone.utc).isoformat()}
 
     # Immutable fields that require delete+recreate if changed.
     # The CrowdStrike API rejects PATCH operations that change these fields.
-    IMMUTABLE_FIELDS = {'type'}
+    IMMUTABLE_FIELDS = {"type"}
 
     def _enforce_behavioral_constraints(self, payload: Dict[str, Any]) -> Dict[str, Any]:
         """
@@ -698,19 +669,19 @@ class DetectionProvider(BaseResourceProvider):
         These are auto-enforced to prevent silent miscreation where the API
         downgrades a behavioral rule to correlation due to invalid field values.
         """
-        if payload.get('type') != 'behavioral':
+        if payload.get("type") != "behavioral":
             return payload
 
-        search = payload.get('search', {})
-        if search.get('trigger_mode') not in ('', None):
+        search = payload.get("search", {})
+        if search.get("trigger_mode") not in ("", None):
             logger.warning(
                 f"Behavioral rule '{payload.get('name', '?')}' has trigger_mode="
                 f"'{search['trigger_mode']}', forcing to '' (required by API)"
             )
-            search['trigger_mode'] = ''
-        if not search.get('use_ingest_time'):
-            search['use_ingest_time'] = True
-        payload['search'] = search
+            search["trigger_mode"] = ""
+        if not search.get("use_ingest_time"):
+            search["use_ingest_time"] = True
+        payload["search"] = search
         return payload
 
     def _prepare_rule_payload(self, template: Dict[str, Any]) -> Dict[str, Any]:
@@ -721,28 +692,28 @@ class DetectionProvider(BaseResourceProvider):
         The CrowdStrike API accepts the search config as-is, so we pass it through.
         """
         payload = {
-            'name': template['name'],
-            'description': template.get('description', ''),
-            'severity': template.get('severity', 50),
-            'status': template.get('status', 'active')
+            "name": template["name"],
+            "description": template.get("description", ""),
+            "severity": template.get("severity", 50),
+            "status": template.get("status", "active"),
         }
 
         # Add customer_id if available (required for multi-tenant environments)
         if self.customer_id:
-            payload['customer_id'] = self.customer_id
+            payload["customer_id"] = self.customer_id
 
         # Add rule type if specified (e.g., 'behavioral' for correlate() rules)
-        if 'type' in template:
-            payload['type'] = template['type']
+        if "type" in template:
+            payload["type"] = template["type"]
 
         # Add template_id for lineage tracking (preserves origin in CrowdStrike UI)
-        if 'template_id' in template:
-            payload['template_id'] = template['template_id']
+        if "template_id" in template:
+            payload["template_id"] = template["template_id"]
 
         # Add search configuration - pass through as-is
         # The API accepts both legacy format (filter, lookback, trigger_mode, outcome)
         # and new format (query, search_window, search_window_unit)
-        payload['search'] = template.get('search', {})
+        payload["search"] = template.get("search", {})
 
         # Add MITRE ATT&CK fields if present
         # Extract ID codes from full names like "Exfiltration (TA0010)" -> "TA0010"
@@ -752,8 +723,8 @@ class DetectionProvider(BaseResourceProvider):
             payload.update(mitre_fields)
 
         # Add operation settings if present
-        if 'operation' in template:
-            payload['operation'] = template['operation']
+        if "operation" in template:
+            payload["operation"] = template["operation"]
 
         return self._enforce_behavioral_constraints(payload)
 
@@ -770,18 +741,18 @@ class DetectionProvider(BaseResourceProvider):
         This method creates a payload suitable for entities_rules_patch_v1 endpoint.
         """
         payload = {
-            'description': template.get('description', ''),
-            'severity': template.get('severity', 50),
-            'status': template.get('status', 'active')
+            "description": template.get("description", ""),
+            "severity": template.get("severity", 50),
+            "status": template.get("status", "active"),
         }
 
         # Add rule type if specified (e.g., 'behavioral' for correlate() rules)
-        if 'type' in template:
-            payload['type'] = template['type']
+        if "type" in template:
+            payload["type"] = template["type"]
 
         # Add search configuration - pass through as-is
         # The API accepts all search fields including use_ingest_time for PATCH
-        payload['search'] = template.get('search', {})
+        payload["search"] = template.get("search", {})
 
         # Add MITRE ATT&CK fields if present
         # Extract ID codes from full names like "Exfiltration (TA0010)" -> "TA0010"
@@ -791,28 +762,43 @@ class DetectionProvider(BaseResourceProvider):
             payload.update(mitre_fields)
 
         # Add operation settings if present
-        if 'operation' in template:
-            payload['operation'] = template['operation']
+        if "operation" in template:
+            payload["operation"] = template["operation"]
 
         return self._enforce_behavioral_constraints(payload)
 
     # Fields that define detection behavior - used for hashing and drift comparison.
     # These are the fields we control via IaC templates.
-    CONTENT_FIELDS = ('name', 'description', 'severity', 'status', 'type')
-    SEARCH_FIELDS = ('filter', 'lookback', 'outcome', 'trigger_mode', 'use_ingest_time', 'execution_mode')
+    CONTENT_FIELDS = ("name", "description", "severity", "status", "type")
+    SEARCH_FIELDS = ("filter", "lookback", "outcome", "trigger_mode", "use_ingest_time", "execution_mode")
 
     # ADS (Alerting and Detection Strategy) metadata fields.
     # Optional block on detection templates — strict validation when present.
     ADS_ALLOWED_FIELDS = {
-        'goal', 'mitre_attack', 'strategy_abstract', 'technical_context',
-        'blind_spots', 'false_positives', 'validation', 'priority_rationale',
-        'response', 'ads_created', 'ads_updated', 'ads_author',
+        "goal",
+        "mitre_attack",
+        "strategy_abstract",
+        "technical_context",
+        "blind_spots",
+        "false_positives",
+        "validation",
+        "priority_rationale",
+        "response",
+        "ads_created",
+        "ads_updated",
+        "ads_author",
     }
-    ADS_REQUIRED_FIELDS = {'goal'}
-    ADS_LIST_FIELDS = {'mitre_attack', 'blind_spots', 'false_positives', 'validation'}
+    ADS_REQUIRED_FIELDS = {"goal"}
+    ADS_LIST_FIELDS = {"mitre_attack", "blind_spots", "false_positives", "validation"}
     ADS_STRING_FIELDS = {
-        'goal', 'strategy_abstract', 'technical_context', 'priority_rationale',
-        'response', 'ads_created', 'ads_updated', 'ads_author',
+        "goal",
+        "strategy_abstract",
+        "technical_context",
+        "priority_rationale",
+        "response",
+        "ads_created",
+        "ads_updated",
+        "ads_author",
     }
 
     def compute_content_hash(self, template: Dict[str, Any]) -> str:
@@ -825,44 +811,42 @@ class DetectionProvider(BaseResourceProvider):
         """
         # Extract only the fields we care about
         normalized_content = {
-            'name': template.get('name', ''),
-            'description': (template.get('description', '') or '').strip(),
-            'severity': template.get('severity', 10),
-            'status': template.get('status', 'active')
+            "name": template.get("name", ""),
+            "description": (template.get("description", "") or "").strip(),
+            "severity": template.get("severity", 10),
+            "status": template.get("status", "active"),
         }
 
         # Include rule type if specified (behavioral rules)
-        if template.get('type'):
-            normalized_content['type'] = template['type']
+        if template.get("type"):
+            normalized_content["type"] = template["type"]
 
         # Normalize search config - extract only IaC-managed fields
-        raw_search = template.get('search', {}) or {}
+        raw_search = template.get("search", {}) or {}
         search_config = {}
         for field in self.SEARCH_FIELDS:
             if field in raw_search:
                 val = raw_search[field]
                 # Normalize filter whitespace
-                if field == 'filter' and isinstance(val, str):
+                if field == "filter" and isinstance(val, str):
                     val = val.strip()
                 search_config[field] = val
         # Remove use_ingest_time if it's false (default)
-        if search_config.get('use_ingest_time') is False:
-            search_config.pop('use_ingest_time', None)
+        if search_config.get("use_ingest_time") is False:
+            search_config.pop("use_ingest_time", None)
 
-        normalized_content['search'] = search_config
+        normalized_content["search"] = search_config
 
         # Include operation schedule if present (IaC-managed)
-        operation = template.get('operation', {}) or {}
-        if 'schedule' in operation:
-            normalized_content['operation'] = {'schedule': operation['schedule']}
+        operation = template.get("operation", {}) or {}
+        if "schedule" in operation:
+            normalized_content["operation"] = {"schedule": operation["schedule"]}
 
         # Normalize MITRE ATT&CK to canonical form.
         # Templates use string format: ["Tactic (TAxxxx):Technique (Txxxx)"]
         # API returns dict format: [{"tactic_id": "TAxxxx", "technique_id": "Txxxx"}]
         # We normalize both to sorted list of "tactic_id:technique_id" strings.
-        normalized_content['mitre_attack'] = self._normalize_mitre_for_hash(
-            template.get('mitre_attack') or []
-        )
+        normalized_content["mitre_attack"] = self._normalize_mitre_for_hash(template.get("mitre_attack") or [])
 
         # Calculate hash
         content_str = json.dumps(normalized_content, sort_keys=True)
@@ -882,10 +866,10 @@ class DetectionProvider(BaseResourceProvider):
         for entry in mitre_attack:
             if isinstance(entry, str):
                 # String format: "Tactic (TAxxxx):Technique (Txxxx)" or "TAxxxx:Txxxx"
-                tactic_id = ''
-                technique_id = ''
-                if ':' in entry:
-                    tactic_part, technique_part = entry.split(':', 1)
+                tactic_id = ""
+                technique_id = ""
+                if ":" in entry:
+                    tactic_part, technique_part = entry.split(":", 1)
                     tactic_id = MitreProcessor.extract_id(tactic_part.strip())
                     technique_id = MitreProcessor.extract_id(technique_part.strip())
                 else:
@@ -893,12 +877,8 @@ class DetectionProvider(BaseResourceProvider):
                 canonical.append(f"{tactic_id}:{technique_id}")
             elif isinstance(entry, dict):
                 # Dict format from API: {"tactic_id": "TAxxxx", "technique_id": "Txxxx"}
-                tactic_id = MitreProcessor.extract_id(
-                    str(entry.get('tactic_id', entry.get('tactic', '')))
-                )
-                technique_id = MitreProcessor.extract_id(
-                    str(entry.get('technique_id', entry.get('technique', '')))
-                )
+                tactic_id = MitreProcessor.extract_id(str(entry.get("tactic_id", entry.get("tactic", ""))))
+                technique_id = MitreProcessor.extract_id(str(entry.get("technique_id", entry.get("technique", ""))))
                 canonical.append(f"{tactic_id}:{technique_id}")
         return sorted(canonical)
 
@@ -918,16 +898,16 @@ class DetectionProvider(BaseResourceProvider):
         dependencies = []
 
         # Check for saved search reference
-        search = template.get('search', {})
-        if 'query_id' in search:
-            query_id = search['query_id']
+        search = template.get("search", {})
+        if "query_id" in search:
+            query_id = search["query_id"]
             # Convert query_id to resource ID
             # Format: "saved_search.{sanitized_name}"
             dependencies.append(f"saved_search.{query_id}")
 
         # Parse FQL query for readFile() and in() references
         # Support both 'query' (new format) and 'filter' (legacy format)
-        query = search.get('query') or search.get('filter', '')
+        query = search.get("query") or search.get("filter", "")
         if query:
             # Look for readFile() calls
             # Example: readFile(fileName="aws_service_accounts")
@@ -949,7 +929,7 @@ class DetectionProvider(BaseResourceProvider):
             # Match $function_name() calls - saved search dependencies
             # Example: $aws_service_account_detector() or $trusted_network_detector()
             # These are LogScale saved searches called as functions in the query
-            function_call_pattern = r'\$([a-z_][a-z0-9_]*)\s*\(\)'
+            function_call_pattern = r"\$([a-z_][a-z0-9_]*)\s*\(\)"
             for match in re.finditer(function_call_pattern, query, re.IGNORECASE):
                 function_name = match.group(1)
                 dependencies.append(f"saved_search.{function_name}")
@@ -977,10 +957,7 @@ class DetectionProvider(BaseResourceProvider):
         try:
             # Fetch all inactive rules from CrowdStrike
             response = self.falcon.command(
-                "combined_rules_get_v2",
-                filter='status:"inactive"',
-                limit=1000,
-                sort="name.asc"
+                "combined_rules_get_v2", filter='status:"inactive"', limit=1000, sort="name.asc"
             )
 
             if response["status_code"] != 200:
@@ -999,7 +976,7 @@ class DetectionProvider(BaseResourceProvider):
         rules_to_publish = []
         if resource_ids:
             # Extract names from resource IDs (format: detection.rule_name)
-            target_names = [rid.split('.', 1)[1] if '.' in rid else rid for rid in resource_ids]
+            target_names = [rid.split(".", 1)[1] if "." in rid else rid for rid in resource_ids]
             for rule in all_inactive:
                 if rule["name"] in target_names:
                     rules_to_publish.append(rule)
@@ -1026,15 +1003,9 @@ class DetectionProvider(BaseResourceProvider):
                 logger.info(f"Activating rule: {rule_name}")
 
                 # Update rule status to active
-                update_payload = {
-                    "id": rule_id,
-                    "status": "active"
-                }
+                update_payload = {"id": rule_id, "status": "active"}
 
-                response = self.falcon.command(
-                    "entities_rules_patch_v1",
-                    body=[update_payload]
-                )
+                response = self.falcon.command("entities_rules_patch_v1", body=[update_payload])
 
                 if response["status_code"] == 200:
                     logger.info(f"Successfully activated: {rule_name}")
@@ -1065,55 +1036,55 @@ class DetectionProvider(BaseResourceProvider):
         Returns:
             Template dict ready for YAML serialization
         """
-        name = remote_resource.get('name', '')
+        name = remote_resource.get("name", "")
         resource_id = self._name_to_resource_id(name)
 
         template = {
-            'resource_id': resource_id,
-            'name': name,
-            'description': (remote_resource.get('description', '') or '').strip(),
-            'severity': remote_resource.get('severity', 10),
-            'status': remote_resource.get('status', 'active'),
+            "resource_id": resource_id,
+            "name": name,
+            "description": (remote_resource.get("description", "") or "").strip(),
+            "severity": remote_resource.get("severity", 10),
+            "status": remote_resource.get("status", "active"),
         }
 
         # Map MITRE ATT&CK if present
-        mitre = remote_resource.get('mitre_attack')
+        mitre = remote_resource.get("mitre_attack")
         if mitre:
-            template['mitre_attack'] = mitre
+            template["mitre_attack"] = mitre
 
         # Map rule type if present (e.g., 'behavioral')
-        rule_type = remote_resource.get('type')
+        rule_type = remote_resource.get("type")
         if rule_type:
-            template['type'] = rule_type
+            template["type"] = rule_type
 
         # Map search config: normalized format -> template format
         # Normalized: search.query, search.search_window, search.use_ingest_time, etc.
         # Template:   search.filter, search.lookback, search.trigger_mode, search.outcome, etc.
-        norm_search = remote_resource.get('search', {})
+        norm_search = remote_resource.get("search", {})
         search = {}
 
         # query -> filter
-        query = norm_search.get('query') or norm_search.get('filter', '')
+        query = norm_search.get("query") or norm_search.get("filter", "")
         if query:
-            search['filter'] = query
+            search["filter"] = query
 
         # search_window -> lookback
-        lookback = norm_search.get('search_window') or norm_search.get('lookback')
+        lookback = norm_search.get("search_window") or norm_search.get("lookback")
         if lookback:
-            search['lookback'] = lookback
+            search["lookback"] = lookback
 
         # Pass through fields that have the same name in both formats
-        for field in ('trigger_mode', 'outcome', 'use_ingest_time', 'execution_mode'):
+        for field in ("trigger_mode", "outcome", "use_ingest_time", "execution_mode"):
             if field in norm_search:
                 search[field] = norm_search[field]
 
         if search:
-            template['search'] = search
+            template["search"] = search
 
         # Map operation if present
-        operation = remote_resource.get('operation')
+        operation = remote_resource.get("operation")
         if operation and isinstance(operation, dict):
-            template['operation'] = operation
+            template["operation"] = operation
 
         return template
 
@@ -1130,16 +1101,16 @@ class DetectionProvider(BaseResourceProvider):
         Returns:
             Relative path string like 'detections/aws/aws___cloudtrail___console_root_login.yaml'
         """
-        resource_id = template.get('resource_id', '')
+        resource_id = template.get("resource_id", "")
         if not resource_id:
-            resource_id = self._name_to_resource_id(template.get('name', 'unknown'))
+            resource_id = self._name_to_resource_id(template.get("name", "unknown"))
 
         # Extract platform from resource_id using triple-underscore convention
         # e.g., 'aws___cloudtrail___console_root_login' -> platform = 'aws'
-        parts = resource_id.split('___')
+        parts = resource_id.split("___")
         if len(parts) >= 2:
             platform = parts[0]
         else:
-            platform = 'uncategorized'
+            platform = "uncategorized"
 
         return f"detections/{platform}/{resource_id}.yaml"

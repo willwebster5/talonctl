@@ -27,10 +27,7 @@ class ProviderRegistry:
         self._provider_configs: Dict[str, Dict[str, Any]] = {}
 
     def register(
-        self,
-        resource_type: str,
-        provider_class: Type[BaseResourceProvider],
-        config: Optional[Dict[str, Any]] = None
+        self, resource_type: str, provider_class: Type[BaseResourceProvider], config: Optional[Dict[str, Any]] = None
     ) -> None:
         """
         Register a provider for a resource type.
@@ -45,10 +42,7 @@ class ProviderRegistry:
             TypeError: If provider_class doesn't inherit from BaseResourceProvider
         """
         if not issubclass(provider_class, BaseResourceProvider):
-            raise TypeError(
-                f"Provider class must inherit from BaseResourceProvider, "
-                f"got {provider_class.__name__}"
-            )
+            raise TypeError(f"Provider class must inherit from BaseResourceProvider, got {provider_class.__name__}")
 
         if resource_type in self._providers:
             logger.warning(
@@ -59,9 +53,7 @@ class ProviderRegistry:
         self._providers[resource_type] = provider_class
         self._provider_configs[resource_type] = config or {}
 
-        logger.debug(
-            f"Registered provider {provider_class.__name__} for resource type '{resource_type}'"
-        )
+        logger.debug(f"Registered provider {provider_class.__name__} for resource type '{resource_type}'")
 
     def unregister(self, resource_type: str) -> bool:
         """
@@ -93,10 +85,7 @@ class ProviderRegistry:
         return self._providers.get(resource_type)
 
     def create_provider(
-        self,
-        resource_type: str,
-        falcon_client: Any,
-        config: Optional[Dict[str, Any]] = None
+        self, resource_type: str, falcon_client: Any, config: Optional[Dict[str, Any]] = None
     ) -> Optional[BaseResourceProvider]:
         """
         Create a provider instance for a resource type.
@@ -162,7 +151,7 @@ class ProviderRegistry:
 
     def __repr__(self) -> str:
         """String representation"""
-        types = ', '.join(self._providers.keys()) if self._providers else 'none'
+        types = ", ".join(self._providers.keys()) if self._providers else "none"
         return f"ProviderRegistry(providers=[{types}])"
 
 
@@ -184,9 +173,7 @@ def get_global_registry() -> ProviderRegistry:
 
 
 def register_provider(
-    resource_type: str,
-    provider_class: Type[BaseResourceProvider],
-    config: Optional[Dict[str, Any]] = None
+    resource_type: str, provider_class: Type[BaseResourceProvider], config: Optional[Dict[str, Any]] = None
 ) -> None:
     """
     Register a provider with the global registry.

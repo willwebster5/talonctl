@@ -9,7 +9,7 @@ import logging
 import yaml
 from pathlib import Path
 from typing import Dict, List, Optional, Any, Set
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timezone
 
@@ -24,6 +24,7 @@ from talonctl.core.base_provider import ResourceAction, ResourceChange
 # Try to import NGSIEMClient for query validation
 try:
     from talonctl.utils.ngsiem_client import NGSIEMClient
+
     NGSIEM_CLIENT_AVAILABLE = True
 except ImportError:
     NGSIEM_CLIENT_AVAILABLE = False
@@ -34,6 +35,7 @@ logger = logging.getLogger(__name__)
 @dataclass
 class QueryValidationResult:
     """Result of FQL query validation"""
+
     resource_id: str
     resource_name: str
     is_valid: bool
@@ -44,6 +46,7 @@ class QueryValidationResult:
 @dataclass
 class DeploymentPlan:
     """Complete deployment plan with changes and execution order"""
+
     changes: List[ResourceChange]
     waves: List[List[str]]  # Deployment waves (resource IDs)
     statistics: Dict[str, int]
@@ -54,6 +57,7 @@ class DeploymentPlan:
 @dataclass
 class DeploymentResult:
     """Result of a deployment operation"""
+
     success: bool
     deployed: List[str]  # Successfully deployed resource IDs
     failed: List[tuple]  # (resource_id, error_message)
@@ -83,7 +87,7 @@ class DeploymentOrchestrator:
         remote_state_enabled: bool = False,
         remote_state_search_domain: str = "falcon",
         remote_state_filename: str = "unified_deployment_state.json",
-        credentials: Optional[Dict[str, str]] = None
+        credentials: Optional[Dict[str, str]] = None,
     ):
         """
         Initialize orchestrator
@@ -104,7 +108,7 @@ class DeploymentOrchestrator:
             falcon_client=falcon_client,
             remote_state_enabled=remote_state_enabled,
             remote_state_search_domain=remote_state_search_domain,
-            remote_state_filename=remote_state_filename
+            remote_state_filename=remote_state_filename,
         )
         self.provider_adapter = ProviderAdapter(falcon_client, state_file_path, credentials=credentials)
         self.template_discovery = TemplateDiscovery(resources_dir, project_root)
@@ -116,7 +120,7 @@ class DeploymentOrchestrator:
         tags: Optional[List[str]] = None,
         names: Optional[List[str]] = None,
         skip_query_validation: bool = False,
-        validation_workers: int = 20
+        validation_workers: int = 20,
     ) -> DeploymentPlan:
         """
         Generate deployment plan
@@ -132,11 +136,7 @@ class DeploymentOrchestrator:
         logger.info("Generating deployment plan...")
 
         # Discover templates
-        discovered = self.template_discovery.discover_all(
-            resource_types=resource_types,
-            tags=tags,
-            names=names
-        )
+        discovered = self.template_discovery.discover_all(resource_types=resource_types, tags=tags, names=names)
 
         # Load current state
         state = self.state_manager.export_to_dict()
@@ -164,7 +164,7 @@ class DeploymentOrchestrator:
         # Calculate statistics
         statistics = self._calculate_statistics(changes)
 
-        replace_msg = f", {statistics['replace']} to replace" if statistics.get('replace') else ""
+        replace_msg = f", {statistics['replace']} to replace" if statistics.get("replace") else ""
         logger.info(
             f"Plan complete: {statistics['create']} to create, "
             f"{statistics['update']} to update{replace_msg}, {statistics['delete']} to delete"
@@ -172,11 +172,9 @@ class DeploymentOrchestrator:
 
         # Validate detection queries if requested
         query_validation_results = None
-        if not skip_query_validation and 'detection' in discovered:
+        if not skip_query_validation and "detection" in discovered:
             query_validation_results = self._validate_detection_queries(
-                discovered['detection'],
-                changes,
-                validation_workers
+                discovered["detection"], changes, validation_workers
             )
 
         return DeploymentPlan(
@@ -184,13 +182,10 @@ class DeploymentOrchestrator:
             waves=waves,
             statistics=statistics,
             graph=graph,
-            query_validation_results=query_validation_results
+            query_validation_results=query_validation_results,
         )
 
-    def _build_dependency_graph(
-        self,
-        discovered: Dict[str, List[DiscoveredTemplate]]
-    ) -> ResourceGraph:
+    def _build_dependency_graph(self, discovered: Dict[str, List[DiscoveredTemplate]]) -> ResourceGraph:
         """
         Build dependency graph from discovered templates
 
@@ -223,11 +218,7 @@ class DeploymentOrchestrator:
 
         return graph
 
-    def _plan_resource(
-        self,
-        template: DiscoveredTemplate,
-        state: Dict[str, Any]
-    ) -> Optional[ResourceChange]:
+    def _plan_resource(self, template: DiscoveredTemplate, state: Dict[str, Any]) -> Optional[ResourceChange]:
         """
         Plan changes for a single resource
 
@@ -248,7 +239,7 @@ class DeploymentOrchestrator:
         # Get current state for this resource
         # Support migration from name-based keys to resource_id-based keys
         # Try resource_id first (new), then fall back to display_name (legacy)
-        resources_state = state.get('resources', {}).get(resource_type, {})
+        resources_state = state.get("resources", {}).get(resource_type, {})
         current_state = resources_state.get(template.name)
 
         # Migration fallback: if not found by resource_id, try display_name
@@ -257,9 +248,7 @@ class DeploymentOrchestrator:
         if not current_state and template.display_name and template.display_name != template.name:
             current_state = resources_state.get(template.display_name)
             if current_state:
-                logger.debug(
-                    f"Found state for '{template.name}' using legacy key '{template.display_name}'"
-                )
+                logger.debug(f"Found state for '{template.name}' using legacy key '{template.display_name}'")
 
         # Validate template
         errors = provider.validate_template(template.template_data)
@@ -272,38 +261,31 @@ class DeploymentOrchestrator:
         # Determine action
         if not current_state:
             # Resource doesn't exist - create
-            action = 'create'
+            action = "create"
             changes_dict = None
             old_state = None
         else:
             # Resource exists - check if update needed
             template_hash = provider.compute_content_hash(template.template_data)
-            state_hash = current_state.get('content_hash', '')
+            state_hash = current_state.get("content_hash", "")
 
             if template_hash != state_hash:
                 # Check if any immutable fields changed (requires delete+recreate)
                 replace_reason = None
-                if hasattr(provider, 'requires_replacement'):
-                    replace_reason = provider.requires_replacement(
-                        template.template_data, current_state
-                    )
+                if hasattr(provider, "requires_replacement"):
+                    replace_reason = provider.requires_replacement(template.template_data, current_state)
 
                 if replace_reason:
-                    action = 'replace'
-                    logger.info(
-                        f"Resource {template.resource_id} requires replacement: {replace_reason}"
-                    )
+                    action = "replace"
+                    logger.info(f"Resource {template.resource_id} requires replacement: {replace_reason}")
                 else:
-                    action = 'update'
+                    action = "update"
 
                 # Compute detailed changes
-                changes_dict = self._compute_changes(
-                    template.template_data,
-                    current_state
-                )
+                changes_dict = self._compute_changes(template.template_data, current_state)
                 old_state = current_state
             else:
-                action = 'no-change'
+                action = "no-change"
                 changes_dict = None
                 old_state = current_state
 
@@ -315,14 +297,10 @@ class DeploymentOrchestrator:
             old_value=old_state,
             new_value=template.template_data,
             changes=changes_dict,
-            template_path=str(template.file_path)
+            template_path=str(template.file_path),
         )
 
-    def _compute_changes(
-        self,
-        new_template: Dict[str, Any],
-        old_state: Dict[str, Any]
-    ) -> Dict[str, Any]:
+    def _compute_changes(self, new_template: Dict[str, Any], old_state: Dict[str, Any]) -> Dict[str, Any]:
         """
         Compute detailed changes between template and state
 
@@ -338,7 +316,7 @@ class DeploymentOrchestrator:
         # Only compare fields if old_state contains them (i.e., from remote state fetch)
         # Otherwise, rely on content_hash for change detection
         # Local state only stores metadata (content_hash, id, etc.), not actual resource fields
-        compare_fields = ['name', 'description', 'severity', 'enabled', 'version']
+        compare_fields = ["name", "description", "severity", "enabled", "version"]
 
         # Check if old_state has any of the comparison fields
         has_resource_fields = any(field in old_state for field in compare_fields)
@@ -350,19 +328,13 @@ class DeploymentOrchestrator:
                 old_val = old_state.get(field)
 
                 if new_val != old_val:
-                    changes[field] = {
-                        'old': old_val,
-                        'new': new_val
-                    }
+                    changes[field] = {"old": old_val, "new": new_val}
         # Otherwise, skip field comparison - content_hash handles change detection
 
         return changes
 
     def _validate_detection_queries(
-        self,
-        templates: List[DiscoveredTemplate],
-        changes: List[ResourceChange],
-        max_workers: int = 20
+        self, templates: List[DiscoveredTemplate], changes: List[ResourceChange], max_workers: int = 20
     ) -> List[QueryValidationResult]:
         """
         Validate NGSIEM queries in detection templates
@@ -384,10 +356,7 @@ class DeploymentOrchestrator:
         try:
             # Collect queries from templates that will be deployed
             # Only validate queries for create/update changes
-            change_resource_ids = {
-                c.resource_id for c in changes
-                if c.action in ['create', 'update']
-            }
+            change_resource_ids = {c.resource_id for c in changes if c.action in ["create", "update"]}
 
             queries_to_validate = []
             for template in templates:
@@ -396,21 +365,23 @@ class DeploymentOrchestrator:
                     continue
 
                 # Extract query from search config (supports both 'query' and 'filter')
-                search_config = template.template_data.get('search', {})
-                query = search_config.get('query') or search_config.get('filter')
+                search_config = template.template_data.get("search", {})
+                query = search_config.get("query") or search_config.get("filter")
 
                 if query:
                     # Clean query for display
-                    query_snippet = query.strip().replace('\n', ' ')[:100]
+                    query_snippet = query.strip().replace("\n", " ")[:100]
                     if len(query_snippet) == 100:
                         query_snippet += "..."
 
-                    queries_to_validate.append({
-                        'resource_id': template.resource_id,
-                        'resource_name': template.name,
-                        'query': query,
-                        'query_snippet': query_snippet
-                    })
+                    queries_to_validate.append(
+                        {
+                            "resource_id": template.resource_id,
+                            "resource_name": template.name,
+                            "query": query,
+                            "query_snippet": query_snippet,
+                        }
+                    )
 
             total_queries = len(queries_to_validate)
             if total_queries == 0:
@@ -424,21 +395,21 @@ class DeploymentOrchestrator:
             # Validate queries in parallel
             def validate_single(query_info):
                 try:
-                    result = ngsiem_client.test_query_syntax(query_info['query'])
+                    result = ngsiem_client.test_query_syntax(query_info["query"])
                     return QueryValidationResult(
-                        resource_id=query_info['resource_id'],
-                        resource_name=query_info['resource_name'],
-                        is_valid=result['valid'],
-                        error_message=None if result['valid'] else result.get('message'),
-                        query_snippet=query_info['query_snippet']
+                        resource_id=query_info["resource_id"],
+                        resource_name=query_info["resource_name"],
+                        is_valid=result["valid"],
+                        error_message=None if result["valid"] else result.get("message"),
+                        query_snippet=query_info["query_snippet"],
                     )
                 except Exception as e:
                     return QueryValidationResult(
-                        resource_id=query_info['resource_id'],
-                        resource_name=query_info['resource_name'],
+                        resource_id=query_info["resource_id"],
+                        resource_name=query_info["resource_name"],
                         is_valid=False,
                         error_message=f"Validation error: {str(e)}",
-                        query_snippet=query_info['query_snippet']
+                        query_snippet=query_info["query_snippet"],
                     )
 
             with ThreadPoolExecutor(max_workers=max_workers) as executor:
@@ -470,13 +441,7 @@ class DeploymentOrchestrator:
         Returns:
             Statistics dictionary
         """
-        stats = {
-            'create': 0,
-            'update': 0,
-            'replace': 0,
-            'delete': 0,
-            'no-change': 0
-        }
+        stats = {"create": 0, "update": 0, "replace": 0, "delete": 0, "no-change": 0}
 
         for change in changes:
             # Convert enum to string value for dictionary key
@@ -486,11 +451,7 @@ class DeploymentOrchestrator:
         return stats
 
     def apply(
-        self,
-        plan: DeploymentPlan,
-        parallel: int = 10,
-        auto_approve: bool = False,
-        enable_rollback: bool = False
+        self, plan: DeploymentPlan, parallel: int = 10, auto_approve: bool = False, enable_rollback: bool = False
     ) -> DeploymentResult:
         """
         Execute deployment plan
@@ -511,13 +472,7 @@ class DeploymentOrchestrator:
 
         if not changes_to_apply:
             logger.info("No changes to apply")
-            return DeploymentResult(
-                success=True,
-                deployed=[],
-                failed=[],
-                skipped=[],
-                duration=0.0
-            )
+            return DeploymentResult(success=True, deployed=[], failed=[], skipped=[], duration=0.0)
 
         logger.info(f"Applying {len(changes_to_apply)} changes in {len(plan.waves)} waves...")
 
@@ -535,10 +490,7 @@ class DeploymentOrchestrator:
             logger.info(f"Deploying wave {wave_idx}/{len(plan.waves)} ({len(wave)} resources)...")
 
             # Get changes for this wave, excluding already skipped resources
-            wave_changes = [
-                c for c in changes_to_apply
-                if c.resource_id in wave and c.resource_id not in skipped_set
-            ]
+            wave_changes = [c for c in changes_to_apply if c.resource_id in wave and c.resource_id not in skipped_set]
 
             if not wave_changes:
                 continue
@@ -547,17 +499,17 @@ class DeploymentOrchestrator:
             wave_result = self._deploy_wave(wave_changes, parallel)
 
             # Add wave results to overall results
-            deployed.extend(wave_result['deployed'])
-            failed.extend(wave_result['failed'])
+            deployed.extend(wave_result["deployed"])
+            failed.extend(wave_result["failed"])
 
             # Track deployed changes for potential rollback
-            for resource_id in wave_result['deployed']:
+            for resource_id in wave_result["deployed"]:
                 change = next((c for c in wave_changes if c.resource_id == resource_id), None)
                 if change:
                     deployed_changes.append(change)
 
             # If wave failed and rollback is enabled, rollback ALL deployed resources
-            if wave_result['failed'] and enable_rollback:
+            if wave_result["failed"] and enable_rollback:
                 if deployed:
                     logger.warning(
                         f"Wave {wave_idx} had {len(wave_result['failed'])} failures. "
@@ -565,21 +517,17 @@ class DeploymentOrchestrator:
                     )
 
                     # Rollback all deployed resources (from all waves)
-                    rollback_result = self._rollback_wave(
-                        deployed,
-                        deployed_changes,
-                        parallel
-                    )
+                    rollback_result = self._rollback_wave(deployed, deployed_changes, parallel)
 
-                    rolled_back.extend(rollback_result['rolled_back'])
+                    rolled_back.extend(rollback_result["rolled_back"])
 
                     # Remove rolled back resources from deployed list
-                    for resource_id in rollback_result['rolled_back']:
+                    for resource_id in rollback_result["rolled_back"]:
                         if resource_id in deployed:
                             deployed.remove(resource_id)
 
                     # Log rollback failures
-                    if rollback_result['failed_rollback']:
+                    if rollback_result["failed_rollback"]:
                         logger.error(
                             f"Failed to rollback {len(rollback_result['failed_rollback'])} resources. "
                             f"Manual cleanup may be required."
@@ -592,7 +540,7 @@ class DeploymentOrchestrator:
                 )
 
                 # Skip dependent resources
-                failed_ids = {res_id for res_id, _ in wave_result['failed']}
+                failed_ids = {res_id for res_id, _ in wave_result["failed"]}
                 newly_skipped = self._get_dependent_resources(failed_ids, plan.graph)
                 skipped.extend(newly_skipped)
                 skipped_set.update(newly_skipped)
@@ -608,8 +556,8 @@ class DeploymentOrchestrator:
                 break
 
             # If any resource in wave failed but rollback is disabled, skip dependents
-            if wave_result['failed'] and not enable_rollback:
-                failed_ids = {res_id for res_id, _ in wave_result['failed']}
+            if wave_result["failed"] and not enable_rollback:
+                failed_ids = {res_id for res_id, _ in wave_result["failed"]}
                 newly_skipped = self._get_dependent_resources(failed_ids, plan.graph)
                 skipped.extend(newly_skipped)
                 skipped_set.update(newly_skipped)
@@ -617,35 +565,20 @@ class DeploymentOrchestrator:
             # Save state after each wave completes (batch save optimization)
             # This reduces I/O overhead compared to saving after each resource,
             # while minimizing data loss risk compared to saving only at the end
-            if wave_result['deployed']:
-                wave_results = wave_result.get('results', {})
-                self.state_synchronizer.update_after_deployment(
-                    wave_result['deployed'], changes_to_apply, wave_results
-                )
+            if wave_result["deployed"]:
+                wave_results = wave_result.get("results", {})
+                self.state_synchronizer.update_after_deployment(wave_result["deployed"], changes_to_apply, wave_results)
                 logger.debug(f"State saved after wave {wave_idx} ({len(wave_result['deployed'])} resources)")
 
         duration = (datetime.now(timezone.utc) - start_time).total_seconds()
 
         success = len(failed) == 0
 
-        logger.info(
-            f"Deployment complete: {len(deployed)} deployed, "
-            f"{len(failed)} failed, {len(skipped)} skipped"
-        )
+        logger.info(f"Deployment complete: {len(deployed)} deployed, {len(failed)} failed, {len(skipped)} skipped")
 
-        return DeploymentResult(
-            success=success,
-            deployed=deployed,
-            failed=failed,
-            skipped=skipped,
-            duration=duration
-        )
+        return DeploymentResult(success=success, deployed=deployed, failed=failed, skipped=skipped, duration=duration)
 
-    def _deploy_wave(
-        self,
-        changes: List[ResourceChange],
-        parallel: int
-    ) -> Dict[str, List]:
+    def _deploy_wave(self, changes: List[ResourceChange], parallel: int) -> Dict[str, List]:
         """
         Deploy a wave of resources in parallel
 
@@ -662,10 +595,7 @@ class DeploymentOrchestrator:
 
         with ThreadPoolExecutor(max_workers=parallel) as executor:
             # Submit all tasks
-            future_to_change = {
-                executor.submit(self._deploy_resource, change): change
-                for change in changes
-            }
+            future_to_change = {executor.submit(self._deploy_resource, change): change for change in changes}
 
             # Collect results as they complete
             for future in as_completed(future_to_change):
@@ -683,18 +613,9 @@ class DeploymentOrchestrator:
                     failed.append((change.resource_id, str(e)))
                     logger.error(f"✗ Error deploying {change.resource_id}: {e}")
 
-        return {
-            'deployed': deployed,
-            'failed': failed,
-            'results': results
-        }
+        return {"deployed": deployed, "failed": failed, "results": results}
 
-    def _rollback_wave(
-        self,
-        deployed_ids: List[str],
-        changes: List[ResourceChange],
-        parallel: int
-    ) -> Dict[str, List]:
+    def _rollback_wave(self, deployed_ids: List[str], changes: List[ResourceChange], parallel: int) -> Dict[str, List]:
         """
         Rollback successfully deployed resources from a failed wave
 
@@ -741,10 +662,7 @@ class DeploymentOrchestrator:
                     failed_rollback.append((resource_id, str(e)))
                     logger.error(f"✗ Error rolling back {resource_id}: {e}")
 
-        return {
-            'rolled_back': rolled_back,
-            'failed_rollback': failed_rollback
-        }
+        return {"rolled_back": rolled_back, "failed_rollback": failed_rollback}
 
     def _rollback_resource(self, change: ResourceChange) -> bool:
         """
@@ -768,7 +686,7 @@ class DeploymentOrchestrator:
                 logger.info(f"Rolling back create: deleting {change.resource_id}")
                 # Provider needs to implement a way to find resource by name
                 # For now, we'll log a warning and skip
-                logger.warning(f"Rollback of create not fully implemented - manual cleanup may be needed")
+                logger.warning("Rollback of create not fully implemented - manual cleanup may be needed")
                 return True
 
             elif change.action == ResourceAction.UPDATE:
@@ -777,7 +695,7 @@ class DeploymentOrchestrator:
                     logger.warning(f"No old state to restore for {change.resource_id}")
                     return False
 
-                resource_id = change.old_value.get('id')
+                resource_id = change.old_value.get("id")
                 logger.info(f"Rolling back update: restoring {change.resource_id} to previous state")
 
                 # Reconstruct old template from old_value
@@ -825,13 +743,13 @@ class DeploymentOrchestrator:
             elif change.action == ResourceAction.UPDATE:
                 # CRITICAL: For detections, use rule_id from provider_metadata (permanent)
                 resource_id = None
-                if change.old_value and 'provider_metadata' in change.old_value:
-                    resource_id = change.old_value['provider_metadata'].get('rule_id')
+                if change.old_value and "provider_metadata" in change.old_value:
+                    resource_id = change.old_value["provider_metadata"].get("rule_id")
                     logger.debug(f"Using rule_id from provider_metadata for update: {resource_id}")
 
                 # Fallback to 'id' field
                 if not resource_id and change.old_value:
-                    resource_id = change.old_value.get('id')
+                    resource_id = change.old_value.get("id")
                     logger.debug(f"Using id from old_value for update: {resource_id}")
 
                 if not resource_id:
@@ -843,10 +761,10 @@ class DeploymentOrchestrator:
             elif change.action == ResourceAction.REPLACE:
                 # Delete + recreate (immutable field changed, e.g., type)
                 resource_id = None
-                if change.old_value and 'provider_metadata' in change.old_value:
-                    resource_id = change.old_value['provider_metadata'].get('rule_id')
+                if change.old_value and "provider_metadata" in change.old_value:
+                    resource_id = change.old_value["provider_metadata"].get("rule_id")
                 if not resource_id and change.old_value:
-                    resource_id = change.old_value.get('id')
+                    resource_id = change.old_value.get("id")
 
                 if not resource_id:
                     raise ValueError(f"No resource ID found for replacement of {change.resource_id}")
@@ -855,6 +773,7 @@ class DeploymentOrchestrator:
                 provider.apply_delete(resource_id)
 
                 import time
+
                 time.sleep(2)  # Allow API to process deletion before recreate
 
                 logger.info(f"Replacing {change.resource_id}: recreating")
@@ -864,13 +783,13 @@ class DeploymentOrchestrator:
             elif change.action == ResourceAction.DELETE:
                 # CRITICAL: For detections, use rule_id from provider_metadata (permanent)
                 resource_id = None
-                if change.old_value and 'provider_metadata' in change.old_value:
-                    resource_id = change.old_value['provider_metadata'].get('rule_id')
+                if change.old_value and "provider_metadata" in change.old_value:
+                    resource_id = change.old_value["provider_metadata"].get("rule_id")
                     logger.debug(f"Using rule_id from provider_metadata for delete: {resource_id}")
 
                 # Fallback to 'id' field
                 if not resource_id and change.old_value:
-                    resource_id = change.old_value.get('id')
+                    resource_id = change.old_value.get("id")
                     logger.debug(f"Using id from old_value for delete: {resource_id}")
 
                 if not resource_id:
@@ -885,11 +804,7 @@ class DeploymentOrchestrator:
             logger.error(f"Error applying {change.action} for {change.resource_id}: {e}")
             raise
 
-    def _get_dependent_resources(
-        self,
-        failed_ids: Set[str],
-        graph: ResourceGraph
-    ) -> List[str]:
+    def _get_dependent_resources(self, failed_ids: Set[str], graph: ResourceGraph) -> List[str]:
         """
         Get all resources that depend on failed resources
 
@@ -913,7 +828,7 @@ class DeploymentOrchestrator:
         self,
         resource_types: Optional[List[str]] = None,
         tags: Optional[List[str]] = None,
-        names: Optional[List[str]] = None
+        names: Optional[List[str]] = None,
     ) -> Dict[str, List[str]]:
         """
         Validate all templates without deploying
@@ -928,11 +843,7 @@ class DeploymentOrchestrator:
         """
         logger.info("Validating templates...")
 
-        discovered = self.template_discovery.discover_all(
-            resource_types=resource_types,
-            tags=tags,
-            names=names
-        )
+        discovered = self.template_discovery.discover_all(resource_types=resource_types, tags=tags, names=names)
 
         results = {}
 
@@ -956,7 +867,7 @@ class DeploymentOrchestrator:
         self,
         resource_types: Optional[List[str]] = None,
         tags: Optional[List[str]] = None,
-        names: Optional[List[str]] = None
+        names: Optional[List[str]] = None,
     ) -> Dict[str, int]:
         """
         Sync state with currently deployed resources in CrowdStrike
@@ -975,20 +886,16 @@ class DeploymentOrchestrator:
         logger.info("Syncing state with CrowdStrike...")
 
         # Discover templates to match against
-        discovered = self.template_discovery.discover_all(
-            resource_types=resource_types,
-            tags=tags,
-            names=names
-        )
+        discovered = self.template_discovery.discover_all(resource_types=resource_types, tags=tags, names=names)
 
         stats = {
-            'total_fetched': 0,
-            'matched_templates': 0,
-            'unmatched': 0,
-            'unmatched_names': [],
-            'updated': 0,
-            'stale_removed': 0,
-            'stale_names': []
+            "total_fetched": 0,
+            "matched_templates": 0,
+            "unmatched": 0,
+            "unmatched_names": [],
+            "updated": 0,
+            "stale_removed": 0,
+            "stale_names": [],
         }
 
         # Process each resource type (only those with templates or explicitly requested)
@@ -1007,13 +914,13 @@ class DeploymentOrchestrator:
 
             # Fetch all deployed resources of this type from CrowdStrike
             deployed = self._fetch_all_deployed(provider, resource_type)
-            stats['total_fetched'] += len(deployed)
+            stats["total_fetched"] += len(deployed)
 
             # Build remote lookups: by rule_id and by name
             remote_by_rule_id = {}
             remote_by_name = {}
             for remote_name, remote_data in deployed.items():
-                rid = remote_data.get('rule_id', '')
+                rid = remote_data.get("rule_id", "")
                 if rid:
                     remote_by_rule_id[rid] = remote_data
                 remote_by_name[remote_name] = remote_data
@@ -1039,7 +946,7 @@ class DeploymentOrchestrator:
                 # Strategy 1: Match via rule_id from existing state entry
                 if state_entry:
                     pm = state_entry.provider_metadata if isinstance(state_entry.provider_metadata, dict) else {}
-                    state_rule_id = pm.get('rule_id', '') or state_entry.id
+                    state_rule_id = pm.get("rule_id", "") or state_entry.id
                     if state_rule_id and state_rule_id in remote_by_rule_id:
                         remote_state = remote_by_rule_id[state_rule_id]
                         match_method = f"rule_id={state_rule_id}"
@@ -1051,8 +958,8 @@ class DeploymentOrchestrator:
                         match_method = f"display_name='{display_name}'"
 
                 if remote_state:
-                    stats['matched_templates'] += 1
-                    rid = remote_state.get('rule_id', '')
+                    stats["matched_templates"] += 1
+                    rid = remote_state.get("rule_id", "")
                     if rid:
                         matched_remote_rule_ids.add(rid)
 
@@ -1071,29 +978,27 @@ class DeploymentOrchestrator:
                     # Create ResourceState object
                     resource_state = ResourceState(
                         type=resource_type,
-                        id=remote_state.get('id', remote_state.get('rule_id', '')),
+                        id=remote_state.get("id", remote_state.get("rule_id", "")),
                         content_hash=content_hash,
                         template_path=template_path,
                         deployed_at=datetime.now(timezone.utc).isoformat(),
                         last_modified=datetime.now(timezone.utc).isoformat(),
                         provider_metadata=remote_state,
                         dependencies=[],
-                        display_name=display_name
+                        display_name=display_name,
                     )
 
                     # Write state using resource_id as the key
                     state_key = resource_id
                     self.state_manager.set_resource(
-                        resource_type=resource_type,
-                        resource_name=state_key,
-                        resource_state=resource_state
+                        resource_type=resource_type, resource_name=state_key, resource_state=resource_state
                     )
-                    stats['updated'] += 1
+                    stats["updated"] += 1
 
                     # Clean up old display_name key if migrating to resource_id key
                     if state_key != display_name:
                         old_state = self.state_manager.export_to_dict()
-                        old_resources = old_state.get('resources', {}).get(resource_type, {})
+                        old_resources = old_state.get("resources", {}).get(resource_type, {})
                         if display_name in old_resources:
                             del old_resources[display_name]
                             logger.info(f"Migrated state key: '{display_name}' -> '{state_key}'")
@@ -1104,18 +1009,18 @@ class DeploymentOrchestrator:
 
             # Count unmatched remote resources (deployed but no template)
             for remote_name, remote_data in deployed.items():
-                rid = remote_data.get('rule_id', '')
+                rid = remote_data.get("rule_id", "")
                 if rid and rid not in matched_remote_rule_ids:
-                    stats['unmatched'] += 1
-                    stats['unmatched_names'].append(remote_name)
+                    stats["unmatched"] += 1
+                    stats["unmatched_names"].append(remote_name)
                 elif not rid and remote_name not in {t.display_name for t in templates}:
-                    stats['unmatched'] += 1
-                    stats['unmatched_names'].append(remote_name)
+                    stats["unmatched"] += 1
+                    stats["unmatched_names"].append(remote_name)
 
             # Verify state entries - remove stale ones (no template AND no remote)
             verify_stats = self._verify_state_entries(resource_type, deployed, templates)
-            stats['stale_removed'] += verify_stats['stale_removed']
-            stats['stale_names'].extend(verify_stats['stale_names'])
+            stats["stale_removed"] += verify_stats["stale_removed"]
+            stats["stale_names"].extend(verify_stats["stale_names"])
 
         # Save updated state
         self.state_manager.save()
@@ -1131,7 +1036,7 @@ class DeploymentOrchestrator:
         self,
         resource_types: Optional[List[str]] = None,
         tags: Optional[List[str]] = None,
-        names: Optional[List[str]] = None
+        names: Optional[List[str]] = None,
     ) -> DriftReport:
         """
         Detect drift between IaC templates, local state, and remote CrowdStrike resources.
@@ -1150,19 +1055,12 @@ class DeploymentOrchestrator:
             falcon_client=self.falcon,
             state_manager=self.state_manager,
             provider_adapter=self.provider_adapter,
-            template_discovery=self.template_discovery
+            template_discovery=self.template_discovery,
         )
-        return detector.detect(
-            resource_types=resource_types,
-            tags=tags,
-            names=names
-        )
+        return detector.detect(resource_types=resource_types, tags=tags, names=names)
 
     def import_resources(
-        self,
-        resource_types: Optional[List[str]] = None,
-        names: Optional[List[str]] = None,
-        plan_only: bool = False
+        self, resource_types: Optional[List[str]] = None, names: Optional[List[str]] = None, plan_only: bool = False
     ) -> Dict[str, Any]:
         """
         Import existing CrowdStrike resources as YAML template files.
@@ -1190,12 +1088,12 @@ class DeploymentOrchestrator:
         import fnmatch
 
         stats = {
-            'total_fetched': 0,
-            'imported': 0,
-            'skipped_existing': 0,
-            'skipped_unsupported': 0,
-            'errors': [],
-            'imported_files': [],
+            "total_fetched": 0,
+            "imported": 0,
+            "skipped_existing": 0,
+            "skipped_unsupported": 0,
+            "errors": [],
+            "imported_files": [],
         }
 
         # Determine which resource types to import
@@ -1204,7 +1102,10 @@ class DeploymentOrchestrator:
             # Check if provider supports import (has to_template that isn't the base NotImplementedError)
             try:
                 # Test if the method raises NotImplementedError
-                if hasattr(provider, 'to_template') and provider.__class__.to_template is not provider.__class__.__mro__[-2].to_template:
+                if (
+                    hasattr(provider, "to_template")
+                    and provider.__class__.to_template is not provider.__class__.__mro__[-2].to_template
+                ):
                     importable_types.append(rt)
             except (AttributeError, IndexError):
                 # Safer check: try calling with empty dict and catch NotImplementedError
@@ -1214,7 +1115,7 @@ class DeploymentOrchestrator:
         importable_types = []
         for rt, provider in self.provider_adapter.providers.items():
             try:
-                provider.to_template({'name': '__test__'})
+                provider.to_template({"name": "__test__"})
                 importable_types.append(rt)
             except NotImplementedError:
                 continue
@@ -1227,7 +1128,7 @@ class DeploymentOrchestrator:
             unsupported = [t for t in resource_types if t not in importable_types]
             for t in unsupported:
                 logger.warning(f"Resource type '{t}' does not support import")
-                stats['skipped_unsupported'] += 1
+                stats["skipped_unsupported"] += 1
         else:
             types_to_import = importable_types
 
@@ -1238,7 +1139,6 @@ class DeploymentOrchestrator:
         logger.info(f"Importing resource types: {', '.join(types_to_import)}")
 
         # Resolve project root for writing files
-        project_root = self.template_discovery.project_root
         resources_dir = self.template_discovery.resources_dir
 
         for resource_type in types_to_import:
@@ -1248,7 +1148,7 @@ class DeploymentOrchestrator:
 
             # Fetch all remote resources using the same pattern as _fetch_all_deployed
             remote_resources = self._fetch_all_deployed(provider, resource_type)
-            stats['total_fetched'] += len(remote_resources)
+            stats["total_fetched"] += len(remote_resources)
 
             if not remote_resources:
                 logger.info(f"No remote {resource_type} resources found")
@@ -1261,7 +1161,9 @@ class DeploymentOrchestrator:
                 if names:
                     matched = False
                     for pattern in names:
-                        if fnmatch.fnmatch(remote_name, pattern) or fnmatch.fnmatch(remote_name.lower(), pattern.lower()):
+                        if fnmatch.fnmatch(remote_name, pattern) or fnmatch.fnmatch(
+                            remote_name.lower(), pattern.lower()
+                        ):
                             matched = True
                             break
                     if not matched:
@@ -1278,48 +1180,42 @@ class DeploymentOrchestrator:
                     # Skip if file already exists
                     if full_path.exists():
                         logger.debug(f"Skipping existing: {relative_path}")
-                        stats['skipped_existing'] += 1
+                        stats["skipped_existing"] += 1
                         continue
 
                     if plan_only:
                         logger.info(f"[plan] Would import: {relative_path}")
-                        stats['imported'] += 1
-                        stats['imported_files'].append(str(relative_path))
+                        stats["imported"] += 1
+                        stats["imported_files"].append(str(relative_path))
                         continue
 
                     # Create directory if needed
                     full_path.parent.mkdir(parents=True, exist_ok=True)
 
                     # Write YAML file
-                    with open(full_path, 'w') as f:
-                        yaml.dump(
-                            template, f,
-                            default_flow_style=False,
-                            allow_unicode=True,
-                            sort_keys=False,
-                            width=120
-                        )
+                    with open(full_path, "w") as f:
+                        yaml.dump(template, f, default_flow_style=False, allow_unicode=True, sort_keys=False, width=120)
 
                     logger.info(f"Imported: {relative_path}")
-                    stats['imported'] += 1
-                    stats['imported_files'].append(str(relative_path))
+                    stats["imported"] += 1
+                    stats["imported_files"].append(str(relative_path))
 
                     # Register in state
-                    resource_id_key = template.get('resource_id', self._name_to_resource_id(remote_name))
-                    display_name = template.get('name', remote_name)
+                    resource_id_key = template.get("resource_id", self._name_to_resource_id(remote_name))
+                    display_name = template.get("name", remote_name)
                     content_hash = provider.compute_content_hash(template)
 
                     resource_state = ResourceState(
                         type=resource_type,
-                        id=remote_data.get('rule_id', remote_data.get('id', remote_name)),
+                        id=remote_data.get("rule_id", remote_data.get("id", remote_name)),
                         content_hash=content_hash,
                         template_path=str(relative_path),
                         deployed_at=datetime.now(timezone.utc).isoformat(),
                         last_modified=datetime.now(timezone.utc).isoformat(),
                         provider_metadata={
-                            'imported': True,
-                            'rule_id': remote_data.get('rule_id', ''),
-                            'id': remote_data.get('id', ''),
+                            "imported": True,
+                            "rule_id": remote_data.get("rule_id", ""),
+                            "id": remote_data.get("id", ""),
                         },
                         dependencies=[],
                         display_name=display_name,
@@ -1328,14 +1224,14 @@ class DeploymentOrchestrator:
                     self.state_manager.set_resource(resource_type, resource_id_key, resource_state)
 
                 except NotImplementedError:
-                    stats['skipped_unsupported'] += 1
+                    stats["skipped_unsupported"] += 1
                 except Exception as e:
                     error_msg = f"Failed to import {resource_type}.{remote_name}: {e}"
                     logger.error(error_msg)
-                    stats['errors'].append(error_msg)
+                    stats["errors"].append(error_msg)
 
         # Save state after import
-        if not plan_only and stats['imported'] > 0:
+        if not plan_only and stats["imported"] > 0:
             self.state_manager.save()
             logger.info(f"State saved with {stats['imported']} imported resources")
 
@@ -1345,13 +1241,11 @@ class DeploymentOrchestrator:
     def _name_to_resource_id(name: str) -> str:
         """Convert display name to snake_case resource_id (delegated to BaseResourceProvider)."""
         from talonctl.core.base_provider import BaseResourceProvider
+
         return BaseResourceProvider._name_to_resource_id(name)
 
     def _verify_state_entries(
-        self,
-        resource_type: str,
-        deployed: Dict[str, Dict[str, Any]],
-        templates: List[Any]
+        self, resource_type: str, deployed: Dict[str, Dict[str, Any]], templates: List[Any]
     ) -> Dict[str, Any]:
         """
         Verify state entries against remote resources and remove stale ones.
@@ -1368,26 +1262,23 @@ class DeploymentOrchestrator:
         Returns:
             Dict with verification stats: {verified, stale_removed, stale_names}
         """
-        stats = {'verified': 0, 'stale_removed': 0, 'stale_names': []}
+        stats = {"verified": 0, "stale_removed": 0, "stale_names": []}
 
         # Get all state entries for this type
         state_entries = self.state_manager.get_all_resources(resource_type)
         template_names = {t.name for t in templates}
-        template_display_names = {
-            t.display_name for t in templates
-            if t.display_name and t.display_name != t.name
-        }
+        template_display_names = {t.display_name for t in templates if t.display_name and t.display_name != t.name}
 
         # Build remote lookup by rule_id for robust matching
         remote_rule_ids = set()
         for remote_data in deployed.values():
-            rid = remote_data.get('rule_id', '')
+            rid = remote_data.get("rule_id", "")
             if rid:
                 remote_rule_ids.add(rid)
 
         for full_id, state_entry in state_entries.items():
             # Extract resource name from "type.name"
-            name = full_id.split('.', 1)[1] if '.' in full_id else full_id
+            name = full_id.split(".", 1)[1] if "." in full_id else full_id
 
             # Check if template exists for this state entry
             has_template = name in template_names
@@ -1395,13 +1286,13 @@ class DeploymentOrchestrator:
                 has_template = state_entry.display_name in template_display_names
 
             if has_template:
-                stats['verified'] += 1
+                stats["verified"] += 1
                 continue
 
             # No template - check if resource still exists remotely
             # Check by rule_id first (most reliable)
             pm = state_entry.provider_metadata if isinstance(state_entry.provider_metadata, dict) else {}
-            state_rule_id = pm.get('rule_id', '') or state_entry.id
+            state_rule_id = pm.get("rule_id", "") or state_entry.id
             has_remote = state_rule_id in remote_rule_ids if state_rule_id else False
 
             # Fall back to name matching
@@ -1411,23 +1302,19 @@ class DeploymentOrchestrator:
                 has_remote = state_entry.display_name in deployed
 
             if has_remote:
-                stats['verified'] += 1
+                stats["verified"] += 1
                 continue
 
             # Stale: no template AND no remote resource -> remove
             display = state_entry.display_name or name
             logger.info(f"Removing stale state entry: {resource_type}.{name} ({display})")
             self.state_manager.delete_resource(resource_type, name)
-            stats['stale_removed'] += 1
-            stats['stale_names'].append(display)
+            stats["stale_removed"] += 1
+            stats["stale_names"].append(display)
 
         return stats
 
-    def _fetch_all_deployed(
-        self,
-        provider: Any,
-        resource_type: str
-    ) -> Dict[str, Dict[str, Any]]:
+    def _fetch_all_deployed(self, provider: Any, resource_type: str) -> Dict[str, Dict[str, Any]]:
         """
         Fetch all deployed resources of a given type from CrowdStrike
 
@@ -1441,56 +1328,56 @@ class DeploymentOrchestrator:
         deployed = {}
 
         try:
-            if resource_type == 'detection':
+            if resource_type == "detection":
                 # Use provider's paginated fetch method
-                if hasattr(provider, '_fetch_all_remote_rules'):
+                if hasattr(provider, "_fetch_all_remote_rules"):
                     deployed = provider._fetch_all_remote_rules()
                     logger.info(f"Fetched {len(deployed)} detection rules from CrowdStrike")
                 else:
                     logger.warning("Detection provider missing _fetch_all_remote_rules method")
 
-            elif resource_type == 'workflow':
+            elif resource_type == "workflow":
                 # Fetch all workflows via provider method
-                if hasattr(provider, '_fetch_all_remote_workflows'):
+                if hasattr(provider, "_fetch_all_remote_workflows"):
                     deployed = provider._fetch_all_remote_workflows()
                     logger.info(f"Fetched {len(deployed)} workflows from CrowdStrike")
                 else:
                     logger.warning("Workflow provider missing _fetch_all_remote_workflows method")
 
-            elif resource_type == 'rtr_script':
+            elif resource_type == "rtr_script":
                 # Fetch all RTR scripts via provider method
-                if hasattr(provider, '_fetch_all_remote_scripts'):
+                if hasattr(provider, "_fetch_all_remote_scripts"):
                     deployed = provider._fetch_all_remote_scripts()
                     logger.info(f"Fetched {len(deployed)} RTR scripts from CrowdStrike")
                 else:
                     logger.warning("RTR script provider missing _fetch_all_remote_scripts method")
 
-            elif resource_type == 'rtr_put_file':
+            elif resource_type == "rtr_put_file":
                 # Fetch all RTR put files via provider method
-                if hasattr(provider, '_fetch_all_remote_put_files'):
+                if hasattr(provider, "_fetch_all_remote_put_files"):
                     deployed = provider._fetch_all_remote_put_files()
                     logger.info(f"Fetched {len(deployed)} RTR put files from CrowdStrike")
                 else:
                     logger.warning("RTR put file provider missing _fetch_all_remote_put_files method")
 
-            elif resource_type == 'saved_search':
+            elif resource_type == "saved_search":
                 # Fetch all saved searches via provider method
-                if hasattr(provider, '_fetch_all_remote_searches'):
+                if hasattr(provider, "_fetch_all_remote_searches"):
                     deployed = provider._fetch_all_remote_searches()
                     logger.info(f"Fetched {len(deployed)} saved searches from CrowdStrike")
                 else:
                     logger.warning("Saved search provider missing _fetch_all_remote_searches method")
 
-            elif resource_type == 'lookup_file':
+            elif resource_type == "lookup_file":
                 # Fetch all lookup files via provider method
-                if hasattr(provider, '_fetch_all_remote_lookup_files'):
+                if hasattr(provider, "_fetch_all_remote_lookup_files"):
                     deployed = provider._fetch_all_remote_lookup_files()
                     logger.info(f"Fetched {len(deployed)} lookup files from CrowdStrike")
                 else:
                     logger.warning("Lookup file provider missing _fetch_all_remote_lookup_files method")
 
-            elif resource_type == 'dashboard':
-                if hasattr(provider, '_fetch_all_remote_dashboards'):
+            elif resource_type == "dashboard":
+                if hasattr(provider, "_fetch_all_remote_dashboards"):
                     deployed = provider._fetch_all_remote_dashboards()
                     logger.info(f"Fetched {len(deployed)} dashboards from CrowdStrike")
                 else:

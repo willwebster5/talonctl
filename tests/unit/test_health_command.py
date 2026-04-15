@@ -1,8 +1,6 @@
 """Unit tests for talonctl health command."""
 
 import json
-import pytest
-from pathlib import Path
 from unittest.mock import patch, MagicMock
 from click.testing import CliRunner
 

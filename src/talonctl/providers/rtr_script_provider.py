@@ -9,7 +9,6 @@ and investigation automation.
 """
 
 import json
-import yaml
 import hashlib
 import logging
 from pathlib import Path
@@ -19,11 +18,7 @@ from datetime import datetime, timezone
 # Import FalconPy service class for RTR Admin
 from falconpy import RealTimeResponseAdmin
 
-from talonctl.core.base_provider import (
-    BaseResourceProvider,
-    ResourceAction,
-    ResourceChange
-)
+from talonctl.core.base_provider import BaseResourceProvider, ResourceAction, ResourceChange
 
 logger = logging.getLogger(__name__)
 
@@ -49,10 +44,10 @@ class RTRScriptProvider(BaseResourceProvider):
     """
 
     # Valid platform options
-    VALID_PLATFORMS = ['windows', 'mac', 'linux']
+    VALID_PLATFORMS = ["windows", "mac", "linux"]
 
     # Valid permission types
-    VALID_PERMISSION_TYPES = ['private', 'group', 'public']
+    VALID_PERMISSION_TYPES = ["private", "group", "public"]
 
     def __init__(self, falcon_client: Any, config: Optional[Dict[str, Any]] = None):
         """
@@ -64,7 +59,7 @@ class RTRScriptProvider(BaseResourceProvider):
         """
         self.falcon = falcon_client
         self.config = config or {}
-        self.timeout = self.config.get('timeout', 30)
+        self.timeout = self.config.get("timeout", 30)
         self._remote_scripts_cache: Optional[Dict[str, Dict[str, Any]]] = None
 
         # Create RealTimeResponseAdmin service class instance for RTR operations
@@ -74,29 +69,25 @@ class RTRScriptProvider(BaseResourceProvider):
 
         try:
             # Try to get credentials from config first (passed from orchestrator)
-            creds = self.config.get('credentials')
+            creds = self.config.get("credentials")
 
             if creds:
-                client_id = creds.get('falcon_client_id')
-                client_secret = creds.get('falcon_client_secret')
-                base_url = creds.get('base_url', 'US1')
+                client_id = creds.get("falcon_client_id")
+                client_secret = creds.get("falcon_client_secret")
+                base_url = creds.get("base_url", "US1")
             else:
                 # Fallback: try to extract from falcon_client's auth object
-                auth_object = getattr(falcon_client, 'auth_object', None)
+                auth_object = getattr(falcon_client, "auth_object", None)
                 if auth_object:
-                    client_id = auth_object.creds.get('client_id')
-                    client_secret = auth_object.creds.get('client_secret')
-                    base_url = getattr(falcon_client, 'base_url', 'US1')
+                    client_id = auth_object.creds.get("client_id")
+                    client_secret = auth_object.creds.get("client_secret")
+                    base_url = getattr(falcon_client, "base_url", "US1")
                 else:
                     # No credentials available - this is OK for validation mode
                     logger.info("RTR Script Provider: No credentials available (validation mode)")
                     return
 
-            self.rtr_admin = RealTimeResponseAdmin(
-                client_id=client_id,
-                client_secret=client_secret,
-                base_url=base_url
-            )
+            self.rtr_admin = RealTimeResponseAdmin(client_id=client_id, client_secret=client_secret, base_url=base_url)
             logger.info("RTR Script Provider: Using RealTimeResponseAdmin service class")
 
         except Exception as e:
@@ -120,23 +111,23 @@ class RTRScriptProvider(BaseResourceProvider):
         errors = []
 
         # Required fields
-        required_fields = ['name', 'description', 'platform']
+        required_fields = ["name", "description", "platform"]
         for field in required_fields:
             if field not in template:
                 errors.append(f"Missing required field: {field}")
 
         # Validate name is non-empty string
-        name = template.get('name', '')
+        name = template.get("name", "")
         if not isinstance(name, str) or not name.strip():
             errors.append("'name' must be a non-empty string")
 
         # Validate description
-        description = template.get('description', '')
+        description = template.get("description", "")
         if not isinstance(description, str) or not description.strip():
             errors.append("'description' must be a non-empty string")
 
         # Validate platform (can be string or list)
-        platform = template.get('platform')
+        platform = template.get("platform")
         if platform:
             # Convert to list if string
             platforms = [platform] if isinstance(platform, str) else platform
@@ -146,22 +137,16 @@ class RTRScriptProvider(BaseResourceProvider):
             else:
                 for p in platforms:
                     if p not in self.VALID_PLATFORMS:
-                        errors.append(
-                            f"Invalid platform: {p}. "
-                            f"Must be one of {self.VALID_PLATFORMS}"
-                        )
+                        errors.append(f"Invalid platform: {p}. Must be one of {self.VALID_PLATFORMS}")
 
         # Validate permission_type if provided
-        permission_type = template.get('permission_type', 'group')
+        permission_type = template.get("permission_type", "group")
         if permission_type not in self.VALID_PERMISSION_TYPES:
-            errors.append(
-                f"Invalid permission_type: {permission_type}. "
-                f"Must be one of {self.VALID_PERMISSION_TYPES}"
-            )
+            errors.append(f"Invalid permission_type: {permission_type}. Must be one of {self.VALID_PERMISSION_TYPES}")
 
         # Validate content (must have either 'content' or 'file_path')
-        content = template.get('content')
-        file_path = template.get('file_path')
+        content = template.get("content")
+        file_path = template.get("file_path")
 
         if not content and not file_path:
             errors.append("Must provide either 'content' or 'file_path'")
@@ -173,8 +158,8 @@ class RTRScriptProvider(BaseResourceProvider):
             errors.append("'file_path' must be a string")
 
         # Validate comments_for_audit_log if provided
-        if 'comments_for_audit_log' in template:
-            if not isinstance(template['comments_for_audit_log'], str):
+        if "comments_for_audit_log" in template:
+            if not isinstance(template["comments_for_audit_log"], str):
                 errors.append("'comments_for_audit_log' must be a string")
 
         return errors
@@ -197,9 +182,9 @@ class RTRScriptProvider(BaseResourceProvider):
             # Use service class method (PEP8 syntax)
             response = self.rtr_admin.get_scripts_v2(ids=resource_id)
 
-            if response.get('status_code') == 200:
-                body = response.get('body', {})
-                resources = body.get('resources', [])
+            if response.get("status_code") == 200:
+                body = response.get("body", {})
+                resources = body.get("resources", [])
 
                 if resources and len(resources) > 0:
                     script_data = resources[0]
@@ -230,12 +215,12 @@ class RTRScriptProvider(BaseResourceProvider):
             # First, get list of script IDs using service class
             response = self.rtr_admin.list_scripts()
 
-            if response.get('status_code') != 200:
+            if response.get("status_code") != 200:
                 logger.warning(f"Failed to list RTR scripts: status {response.get('status_code')}")
                 return {}
 
-            body = response.get('body', {})
-            script_ids = body.get('resources', [])
+            body = response.get("body", {})
+            script_ids = body.get("resources", [])
 
             if not script_ids:
                 logger.info("No RTR scripts found")
@@ -245,12 +230,12 @@ class RTRScriptProvider(BaseResourceProvider):
             scripts = {}
             response = self.rtr_admin.get_scripts_v2(ids=script_ids)
 
-            if response.get('status_code') == 200:
-                body = response.get('body', {})
-                resources = body.get('resources', [])
+            if response.get("status_code") == 200:
+                body = response.get("body", {})
+                resources = body.get("resources", [])
 
                 for script_data in resources:
-                    script_name = script_data.get('name')
+                    script_name = script_data.get("name")
                     if script_name:
                         scripts[script_name] = script_data
                         logger.debug(f"Discovered RTR script: {script_name} (ID: {script_data.get('id')})")
@@ -262,11 +247,7 @@ class RTRScriptProvider(BaseResourceProvider):
             logger.error(f"Failed to fetch RTR scripts: {e}")
             return {}
 
-    def create_resource(
-        self,
-        resource_id: Optional[str],
-        template: Dict[str, Any]
-    ) -> Dict[str, Any]:
+    def create_resource(self, resource_id: Optional[str], template: Dict[str, Any]) -> Dict[str, Any]:
         """
         Create a new RTR script
 
@@ -285,17 +266,17 @@ class RTRScriptProvider(BaseResourceProvider):
 
         try:
             # Extract script content
-            content = template.get('content')
-            file_path = template.get('file_path')
+            content = template.get("content")
+            file_path = template.get("file_path")
 
             # If file_path provided, load content from file
             if file_path and not content:
                 # Resolve path relative to template location
-                template_path = Path(template.get('_template_path', '.'))
+                template_path = Path(template.get("_template_path", "."))
                 template_dir = template_path.parent
                 full_path = template_dir / file_path
 
-                logger.debug(f"Resolving script file path:")
+                logger.debug("Resolving script file path:")
                 logger.debug(f"  Template path: {template_path}")
                 logger.debug(f"  Template dir: {template_dir}")
                 logger.debug(f"  File path (from template): {file_path}")
@@ -312,7 +293,7 @@ class RTRScriptProvider(BaseResourceProvider):
                         f"Ensure file_path in template is correct relative to template location."
                     )
 
-                with open(full_path, 'r', encoding='utf-8') as f:
+                with open(full_path, "r", encoding="utf-8") as f:
                     content = f.read()
 
                 logger.info(f"Loaded script content from {full_path} ({len(content)} bytes)")
@@ -327,65 +308,58 @@ class RTRScriptProvider(BaseResourceProvider):
                 raise RuntimeError(f"Script content too large ({len(content)} bytes, max 5MB)")
 
             # Normalize platform to list
-            platform = template.get('platform', ['windows'])
+            platform = template.get("platform", ["windows"])
             if isinstance(platform, str):
                 platform = [platform]
 
             # Prepare multipart/form-data for file upload
             script_filename = f"{template['name']}.ps1"  # Default extension
-            if 'linux' in platform or 'mac' in platform:
+            if "linux" in platform or "mac" in platform:
                 script_filename = f"{template['name']}.sh"
 
-            files = [
-                ('file', (script_filename, content.encode('utf-8'), 'application/octet-stream'))
-            ]
+            files = [("file", (script_filename, content.encode("utf-8"), "application/octet-stream"))]
 
             # Call create_scripts using service class (proven to work!)
             response = self.rtr_admin.create_scripts(
-                description=template['description'],
-                name=template['name'],
-                permission_type=template.get('permission_type', 'group'),
+                description=template["description"],
+                name=template["name"],
+                permission_type=template.get("permission_type", "group"),
                 platform=platform,
-                comments_for_audit_log=template.get('comments_for_audit_log', f"Created via IaC: {template['name']}"),
-                files=files
+                comments_for_audit_log=template.get("comments_for_audit_log", f"Created via IaC: {template['name']}"),
+                files=files,
             )
 
             logger.debug(f"Create RTR script response status: {response.get('status_code')}")
             logger.debug(f"Create response body: {json.dumps(response.get('body', {}), indent=2)[:500]}")
 
-            if response.get('status_code') not in (200, 201):
-                raise RuntimeError(
-                    f"Failed to create RTR script '{template['name']}': {response}"
-                )
+            if response.get("status_code") not in (200, 201):
+                raise RuntimeError(f"Failed to create RTR script '{template['name']}': {response}")
 
             # Extract ID from response
-            body = response.get('body', {})
-            resources = body.get('resources', [])
+            body = response.get("body", {})
+            resources = body.get("resources", [])
 
             if resources and len(resources) > 0:
                 script_id = resources[0]
             else:
-                script_id = body.get('id', 'unknown')
+                script_id = body.get("id", "unknown")
 
             logger.info(f"Created RTR script: {template['name']} (ID: {script_id})")
 
             return {
-                'id': script_id,
-                'name': template['name'],
-                'platform': platform,
-                'permission_type': template.get('permission_type', 'group'),
-                'created_at': datetime.now(timezone.utc).isoformat(),
-                'response': body
+                "id": script_id,
+                "name": template["name"],
+                "platform": platform,
+                "permission_type": template.get("permission_type", "group"),
+                "created_at": datetime.now(timezone.utc).isoformat(),
+                "response": body,
             }
 
         except Exception as e:
             raise RuntimeError(f"Failed to create RTR script: {e}") from e
 
     def update_resource(
-        self,
-        resource_id: str,
-        template: Dict[str, Any],
-        current_state: Dict[str, Any]
+        self, resource_id: str, template: Dict[str, Any], current_state: Dict[str, Any]
     ) -> Dict[str, Any]:
         """
         Update an existing RTR script
@@ -406,17 +380,17 @@ class RTRScriptProvider(BaseResourceProvider):
 
         try:
             # Extract script content
-            content = template.get('content')
-            file_path = template.get('file_path')
+            content = template.get("content")
+            file_path = template.get("file_path")
 
             # If file_path provided, load content from file
             if file_path and not content:
                 # Resolve path relative to template location
-                template_path = Path(template.get('_template_path', '.'))
+                template_path = Path(template.get("_template_path", "."))
                 template_dir = template_path.parent
                 full_path = template_dir / file_path
 
-                logger.debug(f"Resolving script file path for update:")
+                logger.debug("Resolving script file path for update:")
                 logger.debug(f"  Template path: {template_path}")
                 logger.debug(f"  Full resolved path: {full_path}")
 
@@ -428,7 +402,7 @@ class RTRScriptProvider(BaseResourceProvider):
                         f"Ensure file_path in template is correct relative to template location."
                     )
 
-                with open(full_path, 'r', encoding='utf-8') as f:
+                with open(full_path, "r", encoding="utf-8") as f:
                     content = f.read()
 
                 logger.info(f"Loaded script content from {full_path} ({len(content)} bytes)")
@@ -437,47 +411,43 @@ class RTRScriptProvider(BaseResourceProvider):
                 raise RuntimeError("No script content available (content is empty)")
 
             # Normalize platform to list
-            platform = template.get('platform', ['windows'])
+            platform = template.get("platform", ["windows"])
             if isinstance(platform, str):
                 platform = [platform]
 
             # Prepare multipart/form-data for file upload
             script_filename = f"{template['name']}.ps1"
-            if 'linux' in platform or 'mac' in platform:
+            if "linux" in platform or "mac" in platform:
                 script_filename = f"{template['name']}.sh"
 
-            files = [
-                ('file', (script_filename, content.encode('utf-8'), 'application/octet-stream'))
-            ]
+            files = [("file", (script_filename, content.encode("utf-8"), "application/octet-stream"))]
 
             # Call update_scripts using service class (PATCH replaces the script)
             response = self.rtr_admin.update_scripts(
                 id=resource_id,
-                description=template['description'],
-                name=template['name'],
-                permission_type=template.get('permission_type', 'group'),
+                description=template["description"],
+                name=template["name"],
+                permission_type=template.get("permission_type", "group"),
                 platform=platform,
-                comments_for_audit_log=template.get('comments_for_audit_log', f"Updated via IaC: {template['name']}"),
-                files=files
+                comments_for_audit_log=template.get("comments_for_audit_log", f"Updated via IaC: {template['name']}"),
+                files=files,
             )
 
             logger.debug(f"Update RTR script response status: {response.get('status_code')}")
             logger.debug(f"Update response body: {json.dumps(response.get('body', {}), indent=2)[:500]}")
 
-            if response.get('status_code') not in (200, 201):
-                raise RuntimeError(
-                    f"Failed to update RTR script '{template['name']}' (ID: {resource_id}): {response}"
-                )
+            if response.get("status_code") not in (200, 201):
+                raise RuntimeError(f"Failed to update RTR script '{template['name']}' (ID: {resource_id}): {response}")
 
             logger.info(f"Updated RTR script: {template['name']} (ID: {resource_id})")
 
             return {
-                'id': resource_id,
-                'name': template['name'],
-                'platform': platform,
-                'permission_type': template.get('permission_type', 'group'),
-                'updated_at': datetime.now(timezone.utc).isoformat(),
-                'response': response.get('body', {})
+                "id": resource_id,
+                "name": template["name"],
+                "platform": platform,
+                "permission_type": template.get("permission_type", "group"),
+                "updated_at": datetime.now(timezone.utc).isoformat(),
+                "response": response.get("body", {}),
             }
 
         except Exception as e:
@@ -503,20 +473,17 @@ class RTRScriptProvider(BaseResourceProvider):
             # Call delete_scripts using service class
             response = self.rtr_admin.delete_scripts(ids=resource_id)
 
-            status_code = response.get('status_code')
+            status_code = response.get("status_code")
 
             if status_code == 200:
                 logger.info(f"Deleted RTR script: {resource_id}")
-                return {
-                    'id': resource_id,
-                    'deleted_at': datetime.now(timezone.utc).isoformat()
-                }
+                return {"id": resource_id, "deleted_at": datetime.now(timezone.utc).isoformat()}
             elif status_code == 404:
                 logger.warning(f"RTR script {resource_id} not found - may have been already deleted")
                 return {
-                    'id': resource_id,
-                    'deleted_at': datetime.now(timezone.utc).isoformat(),
-                    'note': 'Resource not found (may have been already deleted)'
+                    "id": resource_id,
+                    "deleted_at": datetime.now(timezone.utc).isoformat(),
+                    "note": "Resource not found (may have been already deleted)",
                 }
             else:
                 raise RuntimeError(
@@ -539,32 +506,32 @@ class RTRScriptProvider(BaseResourceProvider):
             SHA256 hash as hex string
         """
         # Load content if file_path is used
-        content = template.get('content', '')
-        file_path = template.get('file_path')
+        content = template.get("content", "")
+        file_path = template.get("file_path")
 
         if file_path and not content:
             try:
-                template_dir = Path(template.get('_template_path', '.')).parent
+                template_dir = Path(template.get("_template_path", ".")).parent
                 full_path = template_dir / file_path
                 if full_path.exists():
-                    with open(full_path, 'r', encoding='utf-8') as f:
+                    with open(full_path, "r", encoding="utf-8") as f:
                         content = f.read()
             except Exception as e:
                 logger.warning(f"Failed to read script file for hashing: {e}")
 
         # Normalize platform to sorted list
-        platform = template.get('platform', ['windows'])
+        platform = template.get("platform", ["windows"])
         if isinstance(platform, str):
             platform = [platform]
         platform = sorted(platform)
 
         # Normalize content for consistent hashing
         normalized_content = {
-            'name': template.get('name', ''),
-            'description': template.get('description', ''),
-            'platform': platform,
-            'permission_type': template.get('permission_type', 'group'),
-            'content': content.strip()
+            "name": template.get("name", ""),
+            "description": template.get("description", ""),
+            "platform": platform,
+            "permission_type": template.get("permission_type", "group"),
+            "content": content.strip(),
         }
 
         # Calculate hash
@@ -592,16 +559,13 @@ class RTRScriptProvider(BaseResourceProvider):
         return ResourceChange(
             action=ResourceAction.CREATE,
             resource_type=self.get_resource_type(),
-            resource_name=template['name'],
+            resource_name=template["name"],
             new_value=template,
-            template_path=template_path
+            template_path=template_path,
         )
 
     def plan_update(
-        self,
-        template: Dict[str, Any],
-        current_state: Dict[str, Any],
-        template_path: str
+        self, template: Dict[str, Any], current_state: Dict[str, Any], template_path: str
     ) -> ResourceChange:
         """Plan an update to an existing RTR script"""
         # Calculate content hashes
@@ -612,21 +576,21 @@ class RTRScriptProvider(BaseResourceProvider):
             return ResourceChange(
                 action=ResourceAction.NO_CHANGE,
                 resource_type=self.get_resource_type(),
-                resource_name=template['name'],
-                resource_id=current_state.get('id'),
+                resource_name=template["name"],
+                resource_id=current_state.get("id"),
                 old_value=current_state,
                 new_value=template,
-                template_path=template_path
+                template_path=template_path,
             )
 
         # Detect changes
         changes = {}
-        for key in ['name', 'description', 'platform', 'permission_type', 'content']:
+        for key in ["name", "description", "platform", "permission_type", "content"]:
             old_val = current_state.get(key)
             new_val = template.get(key)
 
             # Normalize platform for comparison
-            if key == 'platform':
+            if key == "platform":
                 if isinstance(old_val, str):
                     old_val = [old_val]
                 if isinstance(new_val, str):
@@ -635,17 +599,17 @@ class RTRScriptProvider(BaseResourceProvider):
                 new_val = sorted(new_val or [])
 
             if old_val != new_val and (old_val is not None or new_val is not None):
-                changes[key] = {'old': old_val, 'new': new_val}
+                changes[key] = {"old": old_val, "new": new_val}
 
         return ResourceChange(
             action=ResourceAction.UPDATE,
             resource_type=self.get_resource_type(),
-            resource_name=template['name'],
-            resource_id=current_state.get('id'),
+            resource_name=template["name"],
+            resource_id=current_state.get("id"),
             old_value=current_state,
             new_value=template,
             changes=changes,
-            template_path=template_path
+            template_path=template_path,
         )
 
     def plan_delete(self, resource_id: str, resource_name: str) -> ResourceChange:
@@ -654,7 +618,7 @@ class RTRScriptProvider(BaseResourceProvider):
             action=ResourceAction.DELETE,
             resource_type=self.get_resource_type(),
             resource_name=resource_name,
-            resource_id=resource_id
+            resource_id=resource_id,
         )
 
     # Convenience methods matching BaseResourceProvider naming
@@ -663,12 +627,7 @@ class RTRScriptProvider(BaseResourceProvider):
         """Alias for create_resource (BaseResourceProvider compatibility)"""
         return self.create_resource(None, template)
 
-    def apply_update(
-        self,
-        resource_id: str,
-        template: Dict[str, Any],
-        current_state: Dict[str, Any]
-    ) -> Dict[str, Any]:
+    def apply_update(self, resource_id: str, template: Dict[str, Any], current_state: Dict[str, Any]) -> Dict[str, Any]:
         """Alias for update_resource (BaseResourceProvider compatibility)"""
         return self.update_resource(resource_id, template, current_state)
 
@@ -689,26 +648,26 @@ class RTRScriptProvider(BaseResourceProvider):
         Returns:
             Template dict ready for YAML serialization
         """
-        name = remote_resource.get('name', '')
-        resource_id = self._name_to_resource_id(name) if name else 'unknown'
+        name = remote_resource.get("name", "")
+        resource_id = self._name_to_resource_id(name) if name else "unknown"
 
         # Normalize platform to list
-        platform = remote_resource.get('platform', [])
+        platform = remote_resource.get("platform", [])
         if isinstance(platform, str):
             platform = [platform]
 
         template = {
-            'resource_id': resource_id,
-            'name': name,
-            'description': remote_resource.get('description', ''),
-            'platform': platform,
-            'permission_type': remote_resource.get('permission_type', 'group'),
+            "resource_id": resource_id,
+            "name": name,
+            "description": remote_resource.get("description", ""),
+            "platform": platform,
+            "permission_type": remote_resource.get("permission_type", "group"),
         }
 
         # Include script content if available
-        content = remote_resource.get('content', '')
+        content = remote_resource.get("content", "")
         if content:
-            template['content'] = content
+            template["content"] = content
 
         return template
 
@@ -722,8 +681,8 @@ class RTRScriptProvider(BaseResourceProvider):
         Returns:
             Relative path like 'rtr_scripts/my_investigation_script.yaml'
         """
-        resource_id = template.get('resource_id', '')
+        resource_id = template.get("resource_id", "")
         if not resource_id:
-            resource_id = self._name_to_resource_id(template.get('name', 'unknown'))
+            resource_id = self._name_to_resource_id(template.get("name", "unknown"))
 
         return f"rtr_scripts/{resource_id}.yaml"

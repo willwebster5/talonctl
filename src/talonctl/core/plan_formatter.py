@@ -14,8 +14,6 @@ from dataclasses import dataclass
 from rich.console import Console
 from rich.table import Table
 from rich.panel import Panel
-from rich.syntax import Syntax
-from rich import print as rprint
 
 # Import ResourceChange and ResourceAction from the canonical definition in base_provider
 from .base_provider import ResourceChange, ResourceAction
@@ -26,6 +24,7 @@ logger = logging.getLogger(__name__)
 @dataclass
 class QueryValidationResult:
     """Result of FQL query validation"""
+
     resource_id: str
     resource_name: str
     is_valid: bool
@@ -36,6 +35,7 @@ class QueryValidationResult:
 @dataclass
 class DeploymentPlan:
     """Represents a complete deployment plan"""
+
     changes: List[ResourceChange]
     waves: List[List[str]]  # Deployment waves (lists of resource IDs)
     statistics: Dict[str, int]
@@ -50,21 +50,9 @@ class PlanFormatter:
     """
 
     # Action symbols and colors
-    ACTION_SYMBOLS = {
-        'create': '+',
-        'update': '~',
-        'replace': '!',
-        'delete': '-',
-        'no-change': '='
-    }
+    ACTION_SYMBOLS = {"create": "+", "update": "~", "replace": "!", "delete": "-", "no-change": "="}
 
-    ACTION_COLORS = {
-        'create': 'green',
-        'update': 'yellow',
-        'replace': 'magenta',
-        'delete': 'red',
-        'no-change': 'dim'
-    }
+    ACTION_COLORS = {"create": "green", "update": "yellow", "replace": "magenta", "delete": "red", "no-change": "dim"}
 
     def __init__(self, console: Optional[Console] = None, verbose: bool = False):
         """
@@ -89,7 +77,7 @@ class PlanFormatter:
             Formatted label string
         """
         # Extract just the resource name from the full ID (e.g., "aws_service_accounts" from "saved_search.aws_service_accounts")
-        resource_name = resource_id.split('.', 1)[1] if '.' in resource_id else resource_id
+        resource_name = resource_id.split(".", 1)[1] if "." in resource_id else resource_id
 
         # If display_name is different from resource_name, show both
         if display_name and display_name != resource_name:
@@ -109,10 +97,7 @@ class PlanFormatter:
             self.format_query_validation(plan.query_validation_results)
 
         self.console.print()
-        self.console.print(Panel.fit(
-            "[bold]Deployment Plan[/bold]",
-            border_style="blue"
-        ))
+        self.console.print(Panel.fit("[bold]Deployment Plan[/bold]", border_style="blue"))
         self.console.print()
 
         # Group changes by action
@@ -155,7 +140,7 @@ class PlanFormatter:
         color = self.ACTION_COLORS[change.action.value]
 
         # Show resource_id and display name if different
-        display_name = change.new_value.get('name') if change.new_value else None
+        display_name = change.new_value.get("name") if change.new_value else None
         resource_label = self._format_resource_label(change.resource_id, display_name)
 
         self.console.print(f"[{color}]{symbol}[/{color}] {resource_label}")
@@ -174,7 +159,7 @@ class PlanFormatter:
         color = self.ACTION_COLORS[change.action.value]
 
         # Show resource_id and display name if different
-        display_name = change.new_value.get('name') if change.new_value else None
+        display_name = change.new_value.get("name") if change.new_value else None
         resource_label = self._format_resource_label(change.resource_id, display_name)
 
         self.console.print(f"[{color}]{symbol}[/{color}] {resource_label}")
@@ -184,8 +169,8 @@ class PlanFormatter:
         # Show changes
         if change.changes:
             for key, diff in change.changes.items():
-                old_val = diff.get('old')
-                new_val = diff.get('new')
+                old_val = diff.get("old")
+                new_val = diff.get("new")
 
                 self.console.print(f"  [dim]{key}:[/dim]")
                 self.console.print(f"    [red]- {self._format_value(old_val)}[/red]")
@@ -198,7 +183,7 @@ class PlanFormatter:
         symbol = self.ACTION_SYMBOLS[change.action.value]
         color = self.ACTION_COLORS[change.action.value]
 
-        display_name = change.new_value.get('name') if change.new_value else None
+        display_name = change.new_value.get("name") if change.new_value else None
         resource_label = self._format_resource_label(change.resource_id, display_name)
 
         self.console.print(f"[{color}]{symbol}[/{color}] {resource_label}")
@@ -207,10 +192,8 @@ class PlanFormatter:
         # Show what changed
         if change.changes:
             for field, vals in change.changes.items():
-                if isinstance(vals, dict) and 'old' in vals and 'new' in vals:
-                    self.console.print(
-                        f"  [dim]{field}:[/dim] {vals['old']} → {vals['new']}"
-                    )
+                if isinstance(vals, dict) and "old" in vals and "new" in vals:
+                    self.console.print(f"  [dim]{field}:[/dim] {vals['old']} → {vals['new']}")
 
         self.console.print()
 
@@ -220,7 +203,7 @@ class PlanFormatter:
         color = self.ACTION_COLORS[change.action.value]
 
         # Show resource_id and display name if different
-        display_name = change.old_value.get('name') if change.old_value else None
+        display_name = change.old_value.get("name") if change.old_value else None
         resource_label = self._format_resource_label(change.resource_id, display_name)
 
         self.console.print(f"[{color}]{symbol}[/{color}] {resource_label}")
@@ -233,7 +216,7 @@ class PlanFormatter:
         color = self.ACTION_COLORS[change.action.value]
 
         # Show resource_id and display name if different
-        display_name = change.new_value.get('name') if change.new_value else None
+        display_name = change.new_value.get("name") if change.new_value else None
         resource_label = self._format_resource_label(change.resource_id, display_name)
 
         self.console.print(f"[{color}]{symbol} {resource_label}[/{color}]")
@@ -248,24 +231,24 @@ class PlanFormatter:
         """
         # Define important attributes per resource type
         important_attrs = {
-            'detection': ['severity', 'description', 'enabled'],
-            'workflow': ['enabled', 'trigger'],
-            'saved_search': ['repository', 'query'],
-            'lookup_file': ['format', 'source', '_search_domain']
+            "detection": ["severity", "description", "enabled"],
+            "workflow": ["enabled", "trigger"],
+            "saved_search": ["repository", "query"],
+            "lookup_file": ["format", "source", "_search_domain"],
         }
 
-        attrs_to_show = important_attrs.get(resource_type, ['name', 'description'])
+        attrs_to_show = important_attrs.get(resource_type, ["name", "description"])
 
         for attr in attrs_to_show:
             if attr in data:
                 value = data[attr]
                 # Special formatting for certain attributes
-                if attr == 'query' and isinstance(value, str):
+                if attr == "query" and isinstance(value, str):
                     # Show first 2 lines of query
-                    lines = value.strip().split('\n')
-                    preview = '\n    '.join(lines[:2])
+                    lines = value.strip().split("\n")
+                    preview = "\n    ".join(lines[:2])
                     if len(lines) > 2:
-                        preview += '\n    ...'
+                        preview += "\n    ..."
                     self.console.print(f"  [dim]{attr}:[/dim]")
                     self.console.print(f"    {preview}")
                 else:
@@ -311,8 +294,7 @@ class PlanFormatter:
 
         if not self.verbose:
             self.console.print(
-                f"[bold]Deployment Order:[/bold] "
-                f"[dim]{total_resources} resources across {len(waves)} wave(s)[/dim]"
+                f"[bold]Deployment Order:[/bold] [dim]{total_resources} resources across {len(waves)} wave(s)[/dim]"
             )
             self.console.print()
             return
@@ -336,11 +318,11 @@ class PlanFormatter:
         Args:
             statistics: Statistics dictionary
         """
-        creates = statistics.get('create', 0)
-        updates = statistics.get('update', 0)
-        replaces = statistics.get('replace', 0)
-        deletes = statistics.get('delete', 0)
-        no_changes = statistics.get('no-change', 0)
+        creates = statistics.get("create", 0)
+        updates = statistics.get("update", 0)
+        replaces = statistics.get("replace", 0)
+        deletes = statistics.get("delete", 0)
+        no_changes = statistics.get("no-change", 0)
 
         total_changes = creates + updates + replaces + deletes
 
@@ -358,10 +340,7 @@ class PlanFormatter:
 
         summary = ", ".join(summary_parts) if summary_parts else "[dim]No changes[/dim]"
 
-        self.console.print(Panel.fit(
-            f"[bold]Plan Summary:[/bold] {summary}",
-            border_style="blue"
-        ))
+        self.console.print(Panel.fit(f"[bold]Plan Summary:[/bold] {summary}", border_style="blue"))
         self.console.print()
 
         # Show warning if there are changes
@@ -382,10 +361,7 @@ class PlanFormatter:
         invalid_templates = sum(1 for errors in results.values() if errors)
 
         self.console.print()
-        self.console.print(Panel.fit(
-            "[bold]Template Validation Results[/bold]",
-            border_style="blue"
-        ))
+        self.console.print(Panel.fit("[bold]Template Validation Results[/bold]", border_style="blue"))
         self.console.print()
 
         # Show errors (always shown)
@@ -406,9 +382,7 @@ class PlanFormatter:
         if invalid_templates == 0:
             self.console.print(f"\n[green]✓ All {total_templates} templates are valid[/green]\n")
         else:
-            self.console.print(
-                f"\n[red]✗ {invalid_templates} of {total_templates} templates have errors[/red]\n"
-            )
+            self.console.print(f"\n[red]✗ {invalid_templates} of {total_templates} templates have errors[/red]\n")
 
     def format_query_validation(self, results: List[QueryValidationResult]) -> None:
         """
@@ -425,10 +399,7 @@ class PlanFormatter:
         valid = total - invalid
 
         self.console.print()
-        self.console.print(Panel.fit(
-            "[bold]FQL Query Validation[/bold]",
-            border_style="blue"
-        ))
+        self.console.print(Panel.fit("[bold]FQL Query Validation[/bold]", border_style="blue"))
         self.console.print()
 
         # Show invalid queries first
@@ -449,12 +420,8 @@ class PlanFormatter:
         if invalid == 0:
             self.console.print(f"[green]✓ All {total} detection queries are valid[/green]\n")
         else:
-            self.console.print(
-                f"[red]✗ {invalid} of {total} detection queries have errors[/red]\n"
-            )
-            self.console.print(
-                "[yellow]⚠[/yellow]  Deployment will be blocked until all queries are valid.\n"
-            )
+            self.console.print(f"[red]✗ {invalid} of {total} detection queries have errors[/red]\n")
+            self.console.print("[yellow]⚠[/yellow]  Deployment will be blocked until all queries are valid.\n")
 
     def format_drift_report(self, report: Any) -> None:
         """
@@ -470,21 +437,13 @@ class PlanFormatter:
             report: DriftReport instance
         """
         self.console.print()
-        self.console.print(Panel.fit(
-            "[bold]Drift Detection Results[/bold]",
-            border_style="blue"
-        ))
+        self.console.print(Panel.fit("[bold]Drift Detection Results[/bold]", border_style="blue"))
         self.console.print()
 
         if not report.has_drift:
-            self.console.print(
-                f"[green]✓ No drift detected. "
-                f"{report.in_sync_count} resource(s) in sync.[/green]\n"
-            )
+            self.console.print(f"[green]✓ No drift detected. {report.in_sync_count} resource(s) in sync.[/green]\n")
             if report.skipped_types:
-                self.console.print(
-                    f"[dim]Skipped (no bulk fetch): {', '.join(report.skipped_types)}[/dim]\n"
-                )
+                self.console.print(f"[dim]Skipped (no bulk fetch): {', '.join(report.skipped_types)}[/dim]\n")
             return
 
         # Config drift section
@@ -494,37 +453,29 @@ class PlanFormatter:
                 f"[dim]({len(report.config_drift)} resource(s) modified outside IaC)[/dim]\n"
             )
             for item in report.config_drift:
-                self.console.print(
-                    f"  [yellow]~[/yellow] [bold]{item.resource_type}.{item.resource_id}[/bold]"
-                )
+                self.console.print(f"  [yellow]~[/yellow] [bold]{item.resource_type}.{item.resource_id}[/bold]")
                 if item.display_name != item.resource_id:
                     self.console.print(f"    [dim]name: {item.display_name}[/dim]")
 
                 if item.field_diffs:
                     for field_name, diff in item.field_diffs.items():
                         # Check for sub-field diffs (e.g., search sub-fields)
-                        sub_diffs = diff.get('_sub_diffs') if isinstance(diff, dict) else None
+                        sub_diffs = diff.get("_sub_diffs") if isinstance(diff, dict) else None
                         if sub_diffs:
                             for sub_name, sub_diff in sub_diffs.items():
                                 self.console.print(f"    [dim]{field_name}.{sub_name}:[/dim]")
                                 self.console.print(
-                                    f"      [green]template:[/green] "
-                                    f"{self._format_value(sub_diff.get('template'))}"
+                                    f"      [green]template:[/green] {self._format_value(sub_diff.get('template'))}"
                                 )
                                 self.console.print(
-                                    f"      [red]remote:  [/red] "
-                                    f"{self._format_value(sub_diff.get('remote'))}"
+                                    f"      [red]remote:  [/red] {self._format_value(sub_diff.get('remote'))}"
                                 )
                         else:
                             self.console.print(f"    [dim]{field_name}:[/dim]")
                             self.console.print(
-                                f"      [green]template:[/green] "
-                                f"{self._format_value(diff.get('template'))}"
+                                f"      [green]template:[/green] {self._format_value(diff.get('template'))}"
                             )
-                            self.console.print(
-                                f"      [red]remote:  [/red] "
-                                f"{self._format_value(diff.get('remote'))}"
-                            )
+                            self.console.print(f"      [red]remote:  [/red] {self._format_value(diff.get('remote'))}")
                 else:
                     self.console.print("    [dim]hash mismatch (field-level diff unavailable)[/dim]")
 
@@ -539,9 +490,7 @@ class PlanFormatter:
             for item in report.missing:
                 display = item.display_name if item.display_name != item.resource_id else ""
                 suffix = f" [dim]({display})[/dim]" if display else ""
-                self.console.print(
-                    f"  [red]-[/red] [bold]{item.resource_type}.{item.resource_id}[/bold]{suffix}"
-                )
+                self.console.print(f"  [red]-[/red] [bold]{item.resource_type}.{item.resource_id}[/bold]{suffix}")
             self.console.print()
 
         # Orphaned section
@@ -551,9 +500,7 @@ class PlanFormatter:
                 f"[dim]({len(report.orphaned)} resource(s) deployed but no IaC template)[/dim]\n"
             )
             for item in report.orphaned:
-                self.console.print(
-                    f"  [cyan]?[/cyan] [bold]{item.resource_type}.{item.resource_id}[/bold]"
-                )
+                self.console.print(f"  [cyan]?[/cyan] [bold]{item.resource_type}.{item.resource_id}[/bold]")
             self.console.print()
 
         # Stale state section
@@ -572,9 +519,7 @@ class PlanFormatter:
 
         # Skipped types
         if report.skipped_types:
-            self.console.print(
-                f"[dim]Skipped (no bulk fetch): {', '.join(report.skipped_types)}[/dim]\n"
-            )
+            self.console.print(f"[dim]Skipped (no bulk fetch): {', '.join(report.skipped_types)}[/dim]\n")
 
         # Errors
         if report.errors:
@@ -591,34 +536,26 @@ class PlanFormatter:
         summary_lines.append(f"[magenta]![/magenta] Stale state:   {len(report.stale_state)}")
         summary_lines.append(f"[green]=[/green] In sync:       {report.in_sync_count}")
 
-        self.console.print(Panel.fit(
-            "\n".join(summary_lines),
-            title="[bold]Summary[/bold]",
-            border_style="blue"
-        ))
+        self.console.print(Panel.fit("\n".join(summary_lines), title="[bold]Summary[/bold]", border_style="blue"))
         self.console.print()
 
         # Actionable tips
         if report.config_drift:
-            self.console.print(
-                "[dim]Tip: Run [bold]apply[/bold] to push template state to CrowdStrike[/dim]"
-            )
+            self.console.print("[dim]Tip: Run [bold]apply[/bold] to push template state to CrowdStrike[/dim]")
         if report.missing:
             self.console.print(
                 "[dim]Tip: Run [bold]apply[/bold] to recreate missing resources, "
                 "or [bold]sync[/bold] to clean up stale state[/dim]"
             )
         if report.stale_state:
-            self.console.print(
-                "[dim]Tip: Run [bold]sync[/bold] to remove stale state entries[/dim]"
-            )
+            self.console.print("[dim]Tip: Run [bold]sync[/bold] to remove stale state entries[/dim]")
         if report.config_drift or report.missing or report.stale_state:
             self.console.print()
 
     # Keep old method name as alias for backward compatibility
     def format_drift_results(self, drift: Dict[str, Any]) -> None:
         """Legacy drift format - delegates to format_drift_report if given a DriftReport."""
-        if hasattr(drift, 'has_drift'):
+        if hasattr(drift, "has_drift"):
             self.format_drift_report(drift)
         else:
             # Fallback for old-style dict format
@@ -643,10 +580,10 @@ class PlanFormatter:
 
             for resource in resources:
                 table.add_row(
-                    resource.get('name', 'N/A'),
-                    resource.get('id', 'N/A'),
-                    resource.get('status', 'deployed'),
-                    resource.get('last_modified', 'N/A')[:19]  # Trim timestamp
+                    resource.get("name", "N/A"),
+                    resource.get("id", "N/A"),
+                    resource.get("status", "deployed"),
+                    resource.get("last_modified", "N/A")[:19],  # Trim timestamp
                 )
 
             self.console.print(table)

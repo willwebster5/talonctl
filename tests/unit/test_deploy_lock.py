@@ -7,9 +7,7 @@ import os
 import json
 import tempfile
 import threading
-import time
 from pathlib import Path
-from unittest.mock import patch
 
 from talonctl.core.deploy_lock import deployment_lock, DeploymentLockError
 
@@ -27,7 +25,7 @@ class TestDeploymentLock:
         """Lock is acquired, metadata written, then released cleanly"""
         with deployment_lock(lock_dir) as lock_path:
             assert lock_path.exists()
-            with open(lock_path, 'r') as f:
+            with open(lock_path, "r") as f:
                 content = f.read()
             metadata = json.loads(content)
             assert metadata["pid"] == os.getpid()

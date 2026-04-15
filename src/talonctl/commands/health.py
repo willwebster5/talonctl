@@ -18,6 +18,7 @@ logger = logging.getLogger(__name__)
 
 class DetectionHealthStatus(str, Enum):
     """Health classification for a detection."""
+
     HEALTHY = "healthy"
     ZERO_HITS = "zero_hits"
     BROKEN_DEPS = "broken_dependencies"
@@ -141,10 +142,10 @@ class DetectionHealthReport:
             f"Detection Health Report ({self.generated_at[:10]}, last {self.period_days} days)",
             "=" * 60,
             f"Total deployed:      {s['total_detections']}",
-            f"  Healthy (1+ hits): {s['healthy']:>4}  ({100*s['healthy']//total}%)",
-            f"  Zero hits:         {s['zero_hits']:>4}  ({100*s['zero_hits']//total}%)",
-            f"  Broken deps:       {s['broken_dependencies']:>4}  ({100*s['broken_dependencies']//total}%)",
-            f"  Disabled:          {s['disabled']:>4}  ({100*s['disabled']//total}%)",
+            f"  Healthy (1+ hits): {s['healthy']:>4}  ({100 * s['healthy'] // total}%)",
+            f"  Zero hits:         {s['zero_hits']:>4}  ({100 * s['zero_hits'] // total}%)",
+            f"  Broken deps:       {s['broken_dependencies']:>4}  ({100 * s['broken_dependencies'] // total}%)",
+            f"  Disabled:          {s['disabled']:>4}  ({100 * s['disabled'] // total}%)",
             "",
             "Zero-hit detections by platform:",
         ]
@@ -197,14 +198,16 @@ class DetectionHealthChecker:
 
             platform = classify_platform(str(det.file_path))
 
-            inventory.append({
-                "resource_id": det.name,
-                "name": det.display_name or det.name,
-                "platform": platform,
-                "enabled": enabled,
-                "severity": severity,
-                "dependencies_valid": deps_valid,
-            })
+            inventory.append(
+                {
+                    "resource_id": det.name,
+                    "name": det.display_name or det.name,
+                    "platform": platform,
+                    "enabled": enabled,
+                    "severity": severity,
+                    "dependencies_valid": deps_valid,
+                }
+            )
 
         return inventory
 
@@ -222,8 +225,8 @@ class DetectionHealthChecker:
         if self._ngsiem_query_fn:
             cql = (
                 '#repo=xdr_indicatorsrepo Ngsiem.event.type="ngsiem-rule-trigger-event"'
-                '| groupBy(rule.name, function=[count(), min(@timestamp), max(@timestamp)])'
-                '| sort(_count, order=desc)'
+                "| groupBy(rule.name, function=[count(), min(@timestamp), max(@timestamp)])"
+                "| sort(_count, order=desc)"
             )
             try:
                 result = self._ngsiem_query_fn(query=cql, time_range=f"{period_days}d")

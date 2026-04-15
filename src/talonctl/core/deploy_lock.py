@@ -20,15 +20,12 @@ logger = logging.getLogger(__name__)
 
 class DeploymentLockError(Exception):
     """Raised when a deployment lock cannot be acquired"""
+
     pass
 
 
 @contextmanager
-def deployment_lock(
-    lock_dir: Path,
-    timeout: int = 5,
-    lock_filename: str = "deploy.lock"
-):
+def deployment_lock(lock_dir: Path, timeout: int = 5, lock_filename: str = "deploy.lock"):
     """
     Acquire an advisory file lock for deployment operations.
 
@@ -77,11 +74,9 @@ def deployment_lock(
 
         os.ftruncate(fd, 0)
         os.lseek(fd, 0, os.SEEK_SET)
-        metadata = json.dumps({
-            "pid": os.getpid(),
-            "acquired_at": datetime.now(timezone.utc).isoformat(),
-            "command": "apply"
-        })
+        metadata = json.dumps(
+            {"pid": os.getpid(), "acquired_at": datetime.now(timezone.utc).isoformat(), "command": "apply"}
+        )
         os.write(fd, metadata.encode())
         os.fsync(fd)
 

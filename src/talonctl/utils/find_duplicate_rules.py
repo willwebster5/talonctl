@@ -11,9 +11,7 @@ Excludes rules tracked in our state files (legitimate IaC-managed rules).
 import csv
 import json
 import os
-import sys
 from collections import defaultdict
-from datetime import datetime
 from pathlib import Path
 
 from falconpy import APIHarnessV2
@@ -37,16 +35,16 @@ def load_tracked_rule_ids(environment: str) -> set[str]:
         return set()
 
     try:
-        with open(state_file, 'r') as f:
+        with open(state_file, "r") as f:
             state = json.load(f)
 
         tracked_ids = set()
-        detections = state.get('resources', {}).get('detection', {})
+        detections = state.get("resources", {}).get("detection", {})
 
         for resource_id, resource_data in detections.items():
             # Prefer provider_metadata.rule_id (permanent identifier)
-            pm = resource_data.get('provider_metadata', {})
-            rule_id = pm.get('rule_id') or resource_data.get('id')
+            pm = resource_data.get("provider_metadata", {})
+            rule_id = pm.get("rule_id") or resource_data.get("id")
             if rule_id:
                 tracked_ids.add(rule_id)
 
@@ -71,7 +69,7 @@ def load_credentials(environment: str) -> dict | None:
     config_path = os.path.join(base_dir, f"credentials.{environment}.json")
 
     try:
-        with open(config_path, 'r') as f:
+        with open(config_path, "r") as f:
             return json.load(f)
     except FileNotFoundError:
         print(f"Credentials file not found: {config_path}")
@@ -88,9 +86,9 @@ def get_falcon_client(environment: str) -> APIHarnessV2 | None:
         return None
 
     return APIHarnessV2(
-        client_id=config.get('falcon_client_id'),
-        client_secret=config.get('falcon_client_secret'),
-        base_url=config.get('base_url', 'US1')
+        client_id=config.get("falcon_client_id"),
+        client_secret=config.get("falcon_client_secret"),
+        base_url=config.get("base_url", "US1"),
     )
 
 
@@ -106,12 +104,7 @@ def fetch_all_rules(falcon: APIHarnessV2, environment: str) -> list[dict]:
     print(f"  Fetching rules from {environment}...")
 
     while True:
-        response = falcon.command(
-            "combined_rules_get_v2",
-            limit=limit,
-            offset=offset,
-            sort="name.asc"
-        )
+        response = falcon.command("combined_rules_get_v2", limit=limit, offset=offset, sort="name.asc")
 
         if response["status_code"] != 200:
             print(f"  ERROR: API request failed: {response.get('body', {}).get('errors', response)}")
@@ -147,16 +140,16 @@ def find_duplicates(rules: list[dict]) -> dict[str, list[dict]]:
     # First, deduplicate by (name, rule_id) - keep the most recent version
     unique_rules = {}
     for rule in rules:
-        name = rule.get('name', 'UNNAMED')
-        rule_id = rule.get('rule_id') or rule.get('id', 'UNKNOWN')
+        name = rule.get("name", "UNNAMED")
+        rule_id = rule.get("rule_id") or rule.get("id", "UNKNOWN")
         key = (name, rule_id)
 
         # Keep the rule with the latest last_updated_on
         if key not in unique_rules:
             unique_rules[key] = rule
         else:
-            existing_updated = unique_rules[key].get('last_updated_on', '')
-            new_updated = rule.get('last_updated_on', '')
+            existing_updated = unique_rules[key].get("last_updated_on", "")
+            new_updated = rule.get("last_updated_on", "")
             if new_updated > existing_updated:
                 unique_rules[key] = rule
 
@@ -171,8 +164,13 @@ def find_duplicates(rules: list[dict]) -> dict[str, list[dict]]:
     return duplicates
 
 
-def write_csv(duplicates: dict[str, list[dict]], environment: str, output_path: str,
-               tracked_ids: set[str], exclude_tracked: bool = True):
+def write_csv(
+    duplicates: dict[str, list[dict]],
+    environment: str,
+    output_path: str,
+    tracked_ids: set[str],
+    exclude_tracked: bool = True,
+):
     """Write duplicate rules to CSV file.
 
     Args:
@@ -184,21 +182,21 @@ def write_csv(duplicates: dict[str, list[dict]], environment: str, output_path: 
     """
 
     fieldnames = [
-        'environment',
-        'name',
-        'rule_id',
-        'is_tracked',
-        'status',
-        'severity',
-        'created_on',
-        'last_updated_on',
-        'description'
+        "environment",
+        "name",
+        "rule_id",
+        "is_tracked",
+        "status",
+        "severity",
+        "created_on",
+        "last_updated_on",
+        "description",
     ]
 
     rows_written = 0
     tracked_skipped = 0
 
-    with open(output_path, 'w', newline='', encoding='utf-8') as f:
+    with open(output_path, "w", newline="", encoding="utf-8") as f:
         writer = csv.DictWriter(f, fieldnames=fieldnames)
         writer.writeheader()
 
@@ -206,10 +204,10 @@ def write_csv(duplicates: dict[str, list[dict]], environment: str, output_path: 
         for name in sorted(duplicates.keys()):
             group = duplicates[name]
             # Sort group by created_on
-            sorted_group = sorted(group, key=lambda r: r.get('created_on', '') or '')
+            sorted_group = sorted(group, key=lambda r: r.get("created_on", "") or "")
 
             for rule in sorted_group:
-                rule_id = rule.get('rule_id') or rule.get('id', 'UNKNOWN')
+                rule_id = rule.get("rule_id") or rule.get("id", "UNKNOWN")
                 is_tracked = rule_id in tracked_ids
 
                 # Skip tracked rules if exclude_tracked is True
@@ -218,19 +216,21 @@ def write_csv(duplicates: dict[str, list[dict]], environment: str, output_path: 
                     continue
 
                 # Clean description: replace newlines with spaces, truncate
-                desc = (rule.get('description', '') or '').replace('\n', ' ').replace('\r', ' ')[:200]
+                desc = (rule.get("description", "") or "").replace("\n", " ").replace("\r", " ")[:200]
 
-                writer.writerow({
-                    'environment': environment,
-                    'name': name,
-                    'rule_id': rule_id,
-                    'is_tracked': 'YES' if is_tracked else 'NO',
-                    'status': rule.get('status', ''),
-                    'severity': rule.get('severity', ''),
-                    'created_on': rule.get('created_on', ''),
-                    'last_updated_on': rule.get('last_updated_on', ''),
-                    'description': desc
-                })
+                writer.writerow(
+                    {
+                        "environment": environment,
+                        "name": name,
+                        "rule_id": rule_id,
+                        "is_tracked": "YES" if is_tracked else "NO",
+                        "status": rule.get("status", ""),
+                        "severity": rule.get("severity", ""),
+                        "created_on": rule.get("created_on", ""),
+                        "last_updated_on": rule.get("last_updated_on", ""),
+                        "description": desc,
+                    }
+                )
                 rows_written += 1
 
     print(f"  Wrote {output_path} ({rows_written} untracked duplicates, {tracked_skipped} tracked rules excluded)")
@@ -240,67 +240,69 @@ def write_all_rules_csv(rules: list[dict], environment: str, output_path: str, t
     """Write ALL rules to CSV for complete analysis."""
 
     fieldnames = [
-        'environment',
-        'name',
-        'rule_id',
-        'is_tracked',
-        'is_duplicate',
-        'status',
-        'severity',
-        'created_on',
-        'last_updated_on',
-        'description'
+        "environment",
+        "name",
+        "rule_id",
+        "is_tracked",
+        "is_duplicate",
+        "status",
+        "severity",
+        "created_on",
+        "last_updated_on",
+        "description",
     ]
 
     # First, deduplicate by (name, rule_id) and find which names have duplicates
     unique_rules = {}
     for rule in rules:
-        name = rule.get('name', 'UNNAMED')
-        rule_id = rule.get('rule_id') or rule.get('id', 'UNKNOWN')
+        name = rule.get("name", "UNNAMED")
+        rule_id = rule.get("rule_id") or rule.get("id", "UNKNOWN")
         key = (name, rule_id)
 
         if key not in unique_rules:
             unique_rules[key] = rule
         else:
-            existing_updated = unique_rules[key].get('last_updated_on', '')
-            new_updated = rule.get('last_updated_on', '')
+            existing_updated = unique_rules[key].get("last_updated_on", "")
+            new_updated = rule.get("last_updated_on", "")
             if new_updated > existing_updated:
                 unique_rules[key] = rule
 
     # Count names to find duplicates
     name_counts = defaultdict(int)
-    for (name, rule_id) in unique_rules.keys():
+    for name, rule_id in unique_rules.keys():
         name_counts[name] += 1
 
     duplicate_names = {name for name, count in name_counts.items() if count > 1}
 
-    with open(output_path, 'w', newline='', encoding='utf-8') as f:
+    with open(output_path, "w", newline="", encoding="utf-8") as f:
         writer = csv.DictWriter(f, fieldnames=fieldnames)
         writer.writeheader()
 
-        for (name, rule_id), rule in sorted(unique_rules.items(), key=lambda x: (x[0][0], x[1].get('created_on', ''))):
+        for (name, rule_id), rule in sorted(unique_rules.items(), key=lambda x: (x[0][0], x[1].get("created_on", ""))):
             is_tracked = rule_id in tracked_ids
             is_duplicate = name in duplicate_names
-            desc = (rule.get('description', '') or '').replace('\n', ' ').replace('\r', ' ')[:200]
+            desc = (rule.get("description", "") or "").replace("\n", " ").replace("\r", " ")[:200]
 
-            writer.writerow({
-                'environment': environment,
-                'name': name,
-                'rule_id': rule_id,
-                'is_tracked': 'YES' if is_tracked else 'NO',
-                'is_duplicate': 'YES' if is_duplicate else 'NO',
-                'status': rule.get('status', ''),
-                'severity': rule.get('severity', ''),
-                'created_on': rule.get('created_on', ''),
-                'last_updated_on': rule.get('last_updated_on', ''),
-                'description': desc
-            })
+            writer.writerow(
+                {
+                    "environment": environment,
+                    "name": name,
+                    "rule_id": rule_id,
+                    "is_tracked": "YES" if is_tracked else "NO",
+                    "is_duplicate": "YES" if is_duplicate else "NO",
+                    "status": rule.get("status", ""),
+                    "severity": rule.get("severity", ""),
+                    "created_on": rule.get("created_on", ""),
+                    "last_updated_on": rule.get("last_updated_on", ""),
+                    "description": desc,
+                }
+            )
 
     print(f"  Wrote {output_path} ({len(unique_rules)} unique rules)")
 
 
 def main():
-    environments = ['production', 'staging']
+    environments = ["production", "staging"]
 
     print("=" * 60)
     print("CrowdStrike Detection Rule Analysis")
@@ -350,8 +352,8 @@ def main():
         # Summary breakdown
         unique_by_name_ruleid = {}
         for rule in rules:
-            name = rule.get('name', 'UNNAMED')
-            rule_id = rule.get('rule_id') or rule.get('id', 'UNKNOWN')
+            name = rule.get("name", "UNNAMED")
+            rule_id = rule.get("rule_id") or rule.get("id", "UNKNOWN")
             key = (name, rule_id)
             if key not in unique_by_name_ruleid:
                 unique_by_name_ruleid[key] = rule
@@ -361,7 +363,7 @@ def main():
         untracked_count = total_unique - tracked_count
         non_duplicate_count = total_unique - total_duplicate_rules
 
-        print(f"\n  === BREAKDOWN ===")
+        print("\n  === BREAKDOWN ===")
         print(f"  Total unique rules:        {total_unique}")
         print(f"    - Tracked (in state):    {tracked_count}")
         print(f"    - Untracked:             {untracked_count}")

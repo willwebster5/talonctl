@@ -11,6 +11,7 @@ Uses the same API endpoint as the lookup file provider:
 Supports CSV and JSON file formats with appropriate content types.
 Maximum file sizes: CSV: 209.7 MB, JSON: 104.9 MB
 """
+
 import os
 import json
 import logging
@@ -20,7 +21,7 @@ from pathlib import Path
 logger = logging.getLogger(__name__)
 
 # Valid search domain options (same as lookup_file_provider.py)
-VALID_SEARCH_DOMAINS = ['all', 'falcon', 'third-party', 'dashboards', 'parsers-repository']
+VALID_SEARCH_DOMAINS = ["all", "falcon", "third-party", "dashboards", "parsers-repository"]
 
 # File size limits
 MAX_FILE_SIZE_CSV = 209.7 * 1024 * 1024  # 209.7 MB
@@ -28,10 +29,7 @@ MAX_FILE_SIZE_JSON = 104.9 * 1024 * 1024  # 104.9 MB
 
 
 def upload_file(
-    falcon_client,
-    file_path: str,
-    search_domain: str = "falcon",
-    filename: Optional[str] = None
+    falcon_client, file_path: str, search_domain: str = "falcon", filename: Optional[str] = None
 ) -> Dict[str, Any]:
     """
     Upload a file to CrowdStrike NGSIEM as a lookup file.
@@ -51,10 +49,7 @@ def upload_file(
     """
     # Validate search domain
     if search_domain not in VALID_SEARCH_DOMAINS:
-        raise ValueError(
-            f"Invalid search_domain: {search_domain}. "
-            f"Must be one of {VALID_SEARCH_DOMAINS}"
-        )
+        raise ValueError(f"Invalid search_domain: {search_domain}. Must be one of {VALID_SEARCH_DOMAINS}")
 
     # Validate file exists
     if not os.path.exists(file_path):
@@ -64,20 +59,20 @@ def upload_file(
     file_size = os.path.getsize(file_path)
     file_extension = Path(file_path).suffix.lower()
 
-    if file_extension == '.csv' and file_size > MAX_FILE_SIZE_CSV:
+    if file_extension == ".csv" and file_size > MAX_FILE_SIZE_CSV:
         size_mb = file_size / (1024 * 1024)
         raise ValueError(f"CSV file exceeds 209.7 MB limit: {size_mb:.2f} MB")
-    elif file_extension == '.json' and file_size > MAX_FILE_SIZE_JSON:
+    elif file_extension == ".json" and file_size > MAX_FILE_SIZE_JSON:
         size_mb = file_size / (1024 * 1024)
         raise ValueError(f"JSON file exceeds 104.9 MB limit: {size_mb:.2f} MB")
 
     # Determine content type
-    if file_extension == '.csv':
-        content_type = 'text/csv'
-    elif file_extension == '.json':
-        content_type = 'application/json'
+    if file_extension == ".csv":
+        content_type = "text/csv"
+    elif file_extension == ".json":
+        content_type = "application/json"
     else:
-        content_type = 'application/octet-stream'
+        content_type = "application/octet-stream"
 
     # Use custom filename if provided
     upload_filename = filename if filename else os.path.basename(file_path)
@@ -87,32 +82,20 @@ def upload_file(
         file_content = file_handle.read()
 
     # Prepare multipart file upload
-    files = [('file', (upload_filename, file_content, content_type))]
+    files = [("file", (upload_filename, file_content, content_type))]
 
     # API parameters as formData
-    data = {
-        'search_domain': search_domain,
-        'filename': upload_filename
-    }
+    data = {"search_domain": search_domain, "filename": upload_filename}
 
     endpoint = "/ngsiem-content/entities/lookupfiles/v1"
     override = f"POST,{endpoint}"
 
-    response = falcon_client.command(
-        override=override,
-        files=files,
-        data=data
-    )
+    response = falcon_client.command(override=override, files=files, data=data)
 
     return response
 
 
-def upload_json_data(
-    falcon_client,
-    data: Union[Dict, list],
-    search_domain: str,
-    filename: str
-) -> Dict[str, Any]:
+def upload_json_data(falcon_client, data: Union[Dict, list], search_domain: str, filename: str) -> Dict[str, Any]:
     """
     Upload JSON data directly to NGSIEM without writing to disk.
 
@@ -130,14 +113,11 @@ def upload_json_data(
     """
     # Validate search domain
     if search_domain not in VALID_SEARCH_DOMAINS:
-        raise ValueError(
-            f"Invalid search_domain: {search_domain}. "
-            f"Must be one of {VALID_SEARCH_DOMAINS}"
-        )
+        raise ValueError(f"Invalid search_domain: {search_domain}. Must be one of {VALID_SEARCH_DOMAINS}")
 
     # Serialize to JSON
     json_content = json.dumps(data, indent=2, sort_keys=True)
-    json_bytes = json_content.encode('utf-8')
+    json_bytes = json_content.encode("utf-8")
 
     # Check size limit
     size_mb = len(json_bytes) / (1024 * 1024)
@@ -145,31 +125,21 @@ def upload_json_data(
         raise ValueError(f"JSON data exceeds 104.9 MB limit: {size_mb:.2f} MB")
 
     # Prepare multipart file upload
-    files = [('file', (filename, json_bytes, 'application/json'))]
+    files = [("file", (filename, json_bytes, "application/json"))]
 
     # API parameters as formData
-    form_data = {
-        'search_domain': search_domain,
-        'filename': filename
-    }
+    form_data = {"search_domain": search_domain, "filename": filename}
 
     endpoint = "/ngsiem-content/entities/lookupfiles/v1"
     override = f"POST,{endpoint}"
 
-    response = falcon_client.command(
-        override=override,
-        files=files,
-        data=form_data
-    )
+    response = falcon_client.command(override=override, files=files, data=form_data)
 
     return response
 
 
 def download_file(
-    falcon_client,
-    filename: str,
-    search_domain: str = "falcon",
-    output_path: Optional[str] = None
+    falcon_client, filename: str, search_domain: str = "falcon", output_path: Optional[str] = None
 ) -> Union[bytes, Dict[str, Any]]:
     """
     Download a file from CrowdStrike NGSIEM lookup files.
@@ -187,21 +157,15 @@ def download_file(
     endpoint = "/ngsiem-content/entities/lookupfiles/v1"
     override = f"GET,{endpoint}"
 
-    params = {
-        'filename': filename,
-        'search_domain': search_domain
-    }
+    params = {"filename": filename, "search_domain": search_domain}
 
-    response = falcon_client.command(
-        override=override,
-        parameters=params
-    )
+    response = falcon_client.command(override=override, parameters=params)
 
     # Check if successful - API may return bytes directly
     if isinstance(response, bytes):
         # Direct bytes response means success
         if output_path:
-            with open(output_path, 'wb') as f:
+            with open(output_path, "wb") as f:
                 f.write(response)
             return {"status": "success", "message": f"File saved to {output_path}"}
         else:
@@ -209,31 +173,31 @@ def download_file(
 
     elif isinstance(response, dict):
         # Check for success status code
-        status_code = response.get('status_code')
+        status_code = response.get("status_code")
 
         if status_code in (200, 201):
-            body = response.get('body', b'')
+            body = response.get("body", b"")
 
             # Body might be bytes or dict with 'resources'
             if isinstance(body, bytes):
                 content = body
             elif isinstance(body, dict):
-                resources = body.get('resources', [])
+                resources = body.get("resources", [])
                 if resources and len(resources) > 0:
                     content = resources[0]
                     if isinstance(content, dict):
-                        content = content.get('content', b'')
+                        content = content.get("content", b"")
                 else:
-                    content = body.get('content', b'')
+                    content = body.get("content", b"")
             else:
-                content = b''
+                content = b""
 
             # Ensure content is bytes
             if isinstance(content, str):
-                content = content.encode('utf-8')
+                content = content.encode("utf-8")
 
             if output_path and content:
-                with open(output_path, 'wb') as f:
+                with open(output_path, "wb") as f:
                     f.write(content)
                 return {"status": "success", "message": f"File saved to {output_path}"}
             else:
@@ -247,9 +211,7 @@ def download_file(
 
 
 def download_json(
-    falcon_client,
-    filename: str,
-    search_domain: str = "falcon"
+    falcon_client, filename: str, search_domain: str = "falcon"
 ) -> Tuple[Optional[Union[Dict, list]], Optional[str]]:
     """
     Download and parse a JSON file from NGSIEM.
@@ -270,28 +232,30 @@ def download_json(
         # Check if it's a response dict with error
         if isinstance(content, dict):
             # Check for HTTP error status codes
-            if 'status_code' in content:
-                status_code = content.get('status_code')
+            if "status_code" in content:
+                status_code = content.get("status_code")
                 if status_code == 404:
                     return None, "File not found"
                 elif status_code not in (200, 201):
-                    errors = content.get('errors', [])
+                    errors = content.get("errors", [])
                     if errors:
-                        error_msg = errors[0].get('message', str(errors[0])) if isinstance(errors[0], dict) else str(errors[0])
+                        error_msg = (
+                            errors[0].get("message", str(errors[0])) if isinstance(errors[0], dict) else str(errors[0])
+                        )
                     else:
                         error_msg = f"HTTP {status_code}"
                     return None, f"API error: {error_msg}"
 
-            if 'error' in content:
+            if "error" in content:
                 return None, f"Error: {content['error']}"
-            if 'errors' in content and content['errors']:
-                errors = content.get('errors', [])
-                error_msg = errors[0].get('message', str(errors[0])) if isinstance(errors[0], dict) else str(errors[0])
+            if "errors" in content and content["errors"]:
+                errors = content.get("errors", [])
+                error_msg = errors[0].get("message", str(errors[0])) if isinstance(errors[0], dict) else str(errors[0])
                 return None, f"API error: {error_msg}"
 
             # If it's a dict but not an error, it might be valid JSON data
             # Only return if it doesn't look like an API response
-            if not set(content.keys()).intersection({'status_code', 'headers', 'body'}):
+            if not set(content.keys()).intersection({"status_code", "headers", "body"}):
                 return content, None
             else:
                 # Looks like an API response wrapper, not parsed JSON
@@ -300,7 +264,7 @@ def download_json(
         # If it's bytes, try to parse as JSON
         if isinstance(content, bytes):
             try:
-                return json.loads(content.decode('utf-8')), None
+                return json.loads(content.decode("utf-8")), None
             except json.JSONDecodeError as e:
                 return None, f"Invalid JSON: {e}"
         elif isinstance(content, str):
@@ -315,11 +279,7 @@ def download_json(
         return None, f"Download failed: {e}"
 
 
-def file_exists(
-    falcon_client,
-    filename: str,
-    search_domain: str = "falcon"
-) -> bool:
+def file_exists(falcon_client, filename: str, search_domain: str = "falcon") -> bool:
     """
     Check if a file exists in NGSIEM lookup files.
 
@@ -340,9 +300,9 @@ def file_exists(
 
         if isinstance(content, dict):
             # Check for error indicators
-            if 'error' in content or 'errors' in content:
+            if "error" in content or "errors" in content:
                 return False
-            if content.get('status_code', 200) not in (200, 201):
+            if content.get("status_code", 200) not in (200, 201):
                 return False
             return True
 
