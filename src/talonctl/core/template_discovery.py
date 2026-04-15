@@ -70,17 +70,9 @@ class TemplateDiscovery:
         self._template_cache: Dict[str, DiscoveredTemplate] = {}
 
     def _find_project_root(self) -> Path:
-        """Find project root directory"""
-        current = Path(__file__).resolve().parent
-
-        # Look for project markers (resources/ directory, .git directory)
-        while current != current.parent:
-            if (current / 'resources').exists() or (current / '.git').exists():
-                return current
-            current = current.parent
-
-        # Fallback: 2 levels up from scripts/core/
-        return Path(__file__).resolve().parent.parent.parent
+        """Find project root directory by walking up from CWD looking for .crowdstrike/."""
+        from talonctl.project import find_project_root
+        return find_project_root()
 
     def discover_all(
         self,
