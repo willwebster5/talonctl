@@ -432,7 +432,7 @@ class DriftDetector:
 
             # For mitre_attack, normalize both string and dict formats to canonical form
             if field_name == 'mitre_attack':
-                from providers.detection_provider import DetectionProvider
+                from talonctl.providers.detection_provider import DetectionProvider
                 t_norm = DetectionProvider._normalize_mitre_for_hash(template_value or [])
                 r_norm = DetectionProvider._normalize_mitre_for_hash(remote_value or [])
                 if t_norm != r_norm:

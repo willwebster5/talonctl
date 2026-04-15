@@ -3,17 +3,12 @@ Unit tests for DetectionProvider
 """
 
 import pytest
-import sys
 from pathlib import Path
 from unittest.mock import Mock, MagicMock, patch
 from datetime import datetime, timezone
 
-# Add scripts directory to path
-SCRIPTS_DIR = Path(__file__).parent.parent.parent / "scripts"
-sys.path.insert(0, str(SCRIPTS_DIR))
-
-from providers.detection_provider import DetectionProvider
-from core import ResourceAction
+from talonctl.providers.detection_provider import DetectionProvider
+from talonctl.core import ResourceAction
 
 
 class TestDetectionProvider:

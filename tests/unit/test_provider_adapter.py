@@ -3,19 +3,14 @@ Unit tests for ProviderAdapter
 """
 
 import pytest
-import sys
 from pathlib import Path
 from unittest.mock import Mock, MagicMock, patch
 from datetime import datetime, timezone
 import tempfile
 import json
 
-# Add scripts directory to path
-SCRIPTS_DIR = Path(__file__).parent.parent.parent / "scripts"
-sys.path.insert(0, str(SCRIPTS_DIR))
-
-from core.provider_adapter import ProviderAdapter
-from core import ResourceState, ResourceAction
+from talonctl.core.provider_adapter import ProviderAdapter
+from talonctl.core import ResourceState, ResourceAction
 
 
 class TestProviderAdapter:
@@ -42,8 +37,8 @@ class TestProviderAdapter:
     @pytest.fixture
     def adapter(self, mock_falcon, temp_state_file):
         """Create ProviderAdapter instance"""
-        with patch('providers.detection_provider.DetectionProvider'):
-            with patch('providers.workflow_provider.WorkflowProvider'):
+        with patch('talonctl.providers.detection_provider.DetectionProvider'):
+            with patch('talonctl.providers.workflow_provider.WorkflowProvider'):
                 adapter = ProviderAdapter(mock_falcon, temp_state_file)
                 return adapter
 
@@ -202,7 +197,7 @@ class TestProviderAdapter:
 
     def test_apply_resource_change_create_updates_state(self, adapter):
         """apply_resource_change CREATE should persist resource id to state"""
-        from core import ResourceAction, ResourceChange
+        from talonctl.core import ResourceAction, ResourceChange
         change = ResourceChange(
             action=ResourceAction.CREATE,
             resource_type='detection',

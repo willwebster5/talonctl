@@ -23,13 +23,8 @@ from dataclasses import dataclass, asdict
 from io import StringIO
 from collections import defaultdict
 
-# Add scripts directory to path
-scripts_dir = Path(__file__).resolve().parent
-if str(scripts_dir) not in sys.path:
-    sys.path.insert(0, str(scripts_dir))
-
-from utils.auth import load_credentials
-from utils.template_matcher import TemplateMatcher
+from talonctl.utils.auth import load_credentials
+from talonctl.utils.template_matcher import TemplateMatcher
 
 try:
     from falconpy import OAuth2

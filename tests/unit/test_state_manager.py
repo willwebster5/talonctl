@@ -5,15 +5,10 @@ Unit tests for StateManager v3.0
 import pytest
 import json
 import tempfile
-import sys
 from pathlib import Path
 from datetime import datetime, timezone
 
-# Add scripts directory to path
-SCRIPTS_DIR = Path(__file__).parent.parent.parent / "scripts"
-sys.path.insert(0, str(SCRIPTS_DIR))
-
-from core.state_manager import StateManager, ResourceState
+from talonctl.core.state_manager import StateManager, ResourceState
 
 
 class TestStateManager:
@@ -159,7 +154,7 @@ class TestStateManager:
         """Test managing resource dependency graph"""
         manager = StateManager(temp_state_file)
 
-        from core.resource_graph import ResourceGraph
+        from talonctl.core.resource_graph import ResourceGraph
 
         graph = ResourceGraph()
         graph.add_dependency("workflow.notify", "detection.alert")

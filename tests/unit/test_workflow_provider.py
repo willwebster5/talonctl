@@ -8,16 +8,8 @@ from pathlib import Path
 from unittest.mock import Mock, MagicMock, patch
 from datetime import datetime, timezone
 
-# Add scripts directory to path
-SCRIPTS_DIR = Path(__file__).parent.parent.parent / "scripts"
-sys.path.insert(0, str(SCRIPTS_DIR))
-
-# Mock the Workflows import before importing provider
-sys.modules['falconpy'] = Mock()
-sys.modules['falconpy'].Workflows = Mock
-
-from providers.workflow_provider import WorkflowProvider
-from core import ResourceAction
+from talonctl.providers.workflow_provider import WorkflowProvider
+from talonctl.core import ResourceAction
 
 
 class TestWorkflowProvider:
@@ -36,13 +28,13 @@ class TestWorkflowProvider:
     @pytest.fixture
     def provider(self, mock_falcon, mock_workflows_client):
         """Create WorkflowProvider instance"""
-        with patch('providers.workflow_provider.load_credentials') as mock_creds:
+        with patch('talonctl.providers.workflow_provider.load_credentials') as mock_creds:
             mock_creds.return_value = {
                 'falcon_client_id': 'test',
                 'falcon_client_secret': 'test',
                 'base_url': 'https://api.crowdstrike.com'
             }
-            with patch('providers.workflow_provider.Workflows') as mock_wf_class:
+            with patch('talonctl.providers.workflow_provider.Workflows') as mock_wf_class:
                 mock_wf_class.return_value = mock_workflows_client
                 provider = WorkflowProvider(mock_falcon)
                 return provider

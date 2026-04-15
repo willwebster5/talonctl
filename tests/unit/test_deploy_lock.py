@@ -4,7 +4,6 @@ Unit tests for deployment file locking
 
 import pytest
 import os
-import sys
 import json
 import tempfile
 import threading
@@ -12,11 +11,7 @@ import time
 from pathlib import Path
 from unittest.mock import patch
 
-# Add scripts directory to path
-SCRIPTS_DIR = Path(__file__).parent.parent.parent / "scripts"
-sys.path.insert(0, str(SCRIPTS_DIR))
-
-from core.deploy_lock import deployment_lock, DeploymentLockError
+from talonctl.core.deploy_lock import deployment_lock, DeploymentLockError
 
 
 class TestDeploymentLock:

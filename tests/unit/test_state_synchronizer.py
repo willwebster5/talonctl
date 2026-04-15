@@ -3,7 +3,6 @@ Unit tests for StateSynchronizer.update_after_deployment UUID fast-path.
 """
 
 import pytest
-import sys
 import json
 import logging
 import tempfile
@@ -11,12 +10,9 @@ from pathlib import Path
 from unittest.mock import Mock
 from datetime import datetime, timezone
 
-SCRIPTS_DIR = Path(__file__).parent.parent.parent / "scripts"
-sys.path.insert(0, str(SCRIPTS_DIR))
-
-from core.state_synchronizer import StateSynchronizer
-from core.state_manager import StateManager
-from core import ResourceAction, ResourceChange
+from talonctl.core.state_synchronizer import StateSynchronizer
+from talonctl.core.state_manager import StateManager
+from talonctl.core import ResourceAction, ResourceChange
 
 
 @pytest.fixture
@@ -190,7 +186,7 @@ class TestUpdateAfterDeploymentFastPath:
             'saved_search.my_search': {'name': 'My Search', 'created_at': '2026-01-01'}
         }
 
-        with caplog.at_level(logging.WARNING, logger='core.state_synchronizer'):
+        with caplog.at_level(logging.WARNING, logger='talonctl.core.state_synchronizer'):
             synchronizer.update_after_deployment(
                 deployed=['saved_search.my_search'],
                 changes=[change],

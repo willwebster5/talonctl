@@ -23,22 +23,8 @@ from dataclasses import dataclass, field, asdict
 from typing import Dict, List, Optional, Any, Set
 from datetime import datetime, timezone
 
-# Standard script boilerplate
-def find_scripts_dir():
-    current = Path(__file__).resolve().parent
-    while current.name != 'scripts' and current != current.parent:
-        current = current.parent
-    return current if current.name == 'scripts' else Path(__file__).parent
-
-SCRIPTS_DIR = find_scripts_dir()
-if str(SCRIPTS_DIR) not in sys.path:
-    sys.path.insert(0, str(SCRIPTS_DIR))
-
-from common import PATHS, setup_imports
-setup_imports()
-
-from core.template_discovery import TemplateDiscovery
-from core.dependency_validator import DependencyValidator
+from talonctl.core.template_discovery import TemplateDiscovery
+from talonctl.core.dependency_validator import DependencyValidator
 
 logger = logging.getLogger(__name__)
 

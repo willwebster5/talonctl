@@ -5,16 +5,11 @@ Unit tests for RTRPutFileProvider
 import pytest
 import json
 import hashlib
-import sys
 from pathlib import Path
 from unittest.mock import Mock, MagicMock, call
 
-# Add scripts directory to path
-SCRIPTS_DIR = Path(__file__).parent.parent.parent / "scripts"
-sys.path.insert(0, str(SCRIPTS_DIR))
-
-from providers.rtr_put_file_provider import RTRPutFileProvider
-from core import ResourceAction
+from talonctl.providers.rtr_put_file_provider import RTRPutFileProvider
+from talonctl.core import ResourceAction
 
 
 class TestRTRPutFileProvider:

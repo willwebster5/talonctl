@@ -185,7 +185,7 @@ class StateManager:
 
         try:
             # Import here to avoid circular dependency
-            from utils.ngsiem_files import download_json
+            from talonctl.utils.ngsiem_files import download_json
 
             logger.info(
                 f"Syncing state from NGSIEM lookup file "
@@ -412,7 +412,7 @@ class StateManager:
 
         try:
             # Import here to avoid circular dependency
-            from utils.ngsiem_files import upload_json_data
+            from talonctl.utils.ngsiem_files import upload_json_data
 
             logger.info(
                 f"Uploading state to NGSIEM lookup file "

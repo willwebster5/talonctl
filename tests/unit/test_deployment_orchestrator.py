@@ -6,27 +6,22 @@ error handling, and state management.
 """
 
 import pytest
-import sys
 from pathlib import Path
 from unittest.mock import Mock, MagicMock, patch, call
 from datetime import datetime, timezone
 import tempfile
 import json
 
-# Add scripts directory to path
-SCRIPTS_DIR = Path(__file__).parent.parent.parent / "scripts"
-sys.path.insert(0, str(SCRIPTS_DIR))
-
-from core.deployment_orchestrator import (
+from talonctl.core.deployment_orchestrator import (
     DeploymentOrchestrator,
     ResourceChange,
     DeploymentPlan,
     DeploymentResult,
     QueryValidationResult
 )
-from core.template_discovery import DiscoveredTemplate
-from core.resource_graph import ResourceGraph
-from core import ResourceAction
+from talonctl.core.template_discovery import DiscoveredTemplate
+from talonctl.core.resource_graph import ResourceGraph
+from talonctl.core import ResourceAction
 
 
 class TestDeploymentOrchestrator:
@@ -68,8 +63,8 @@ class TestDeploymentOrchestrator:
     @pytest.fixture
     def orchestrator(self, mock_falcon, temp_state_file):
         """Create DeploymentOrchestrator instance with mocked dependencies"""
-        with patch('core.deployment_orchestrator.TemplateDiscovery'):
-            with patch('core.deployment_orchestrator.ProviderAdapter'):
+        with patch('talonctl.core.deployment_orchestrator.TemplateDiscovery'):
+            with patch('talonctl.core.deployment_orchestrator.ProviderAdapter'):
                 orch = DeploymentOrchestrator(
                     falcon_client=mock_falcon,
                     state_file_path=temp_state_file,
@@ -902,7 +897,7 @@ class TestDeploymentOrchestrator:
 
     def test_apply_stores_provider_uuid_in_state_not_iac_key(self, orchestrator):
         """End-to-end: after apply, state id is the real CrowdStrike UUID, not the IaC key."""
-        from core import ResourceAction
+        from talonctl.core import ResourceAction
         change = ResourceChange(
             action=ResourceAction.CREATE,
             resource_type='saved_search',

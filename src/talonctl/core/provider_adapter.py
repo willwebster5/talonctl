@@ -49,7 +49,7 @@ class ProviderAdapter:
         self.credentials = credentials
 
         # Initialize providers (lazy import to avoid circular dependency)
-        from providers import (
+        from talonctl.providers import (
             DetectionProvider,
             WorkflowProvider,
             SavedSearchProvider,

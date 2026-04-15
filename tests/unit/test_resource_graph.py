@@ -3,14 +3,9 @@ Unit tests for ResourceGraph dependency management
 """
 
 import pytest
-import sys
 from pathlib import Path
 
-# Add scripts directory to path
-SCRIPTS_DIR = Path(__file__).parent.parent.parent / "scripts"
-sys.path.insert(0, str(SCRIPTS_DIR))
-
-from core.resource_graph import ResourceGraph, DependencyCycle
+from talonctl.core.resource_graph import ResourceGraph, DependencyCycle
 
 
 class TestResourceGraph:

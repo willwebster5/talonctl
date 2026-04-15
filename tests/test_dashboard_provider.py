@@ -1,7 +1,5 @@
 """Tests for DashboardProvider — validation, hashing, dependency extraction."""
 
-import sys
-import os
 import copy
 import hashlib
 import json
@@ -9,8 +7,6 @@ from unittest.mock import MagicMock
 
 import pytest
 import yaml
-
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '../scripts'))
 
 
 @pytest.fixture
@@ -20,7 +16,7 @@ def mock_falcon():
 
 @pytest.fixture
 def provider(mock_falcon):
-    from providers.dashboard_provider import DashboardProvider
+    from talonctl.providers.dashboard_provider import DashboardProvider
     return DashboardProvider(mock_falcon)
 
 
@@ -401,7 +397,7 @@ class TestDeleteResource:
 
 class TestPlanMethods:
     def test_plan_create(self, provider, valid_template):
-        from core.base_provider import ResourceAction
+        from talonctl.core.base_provider import ResourceAction
         change = provider.plan_create(valid_template, '/path/to/template.yaml')
         assert change.action == ResourceAction.CREATE
         assert change.resource_type == 'dashboard'
@@ -409,7 +405,7 @@ class TestPlanMethods:
         assert change.resource_name == 'Test Dashboard'
 
     def test_plan_update(self, provider, valid_template):
-        from core.base_provider import ResourceAction
+        from talonctl.core.base_provider import ResourceAction
         current_state = {
             'id': 'old-id',
             'content_hash': 'different-hash',
@@ -420,7 +416,7 @@ class TestPlanMethods:
         assert change.resource_type == 'dashboard'
 
     def test_plan_update_no_change(self, provider, valid_template):
-        from core.base_provider import ResourceAction
+        from talonctl.core.base_provider import ResourceAction
         content_hash = provider.compute_content_hash(valid_template)
         current_state = {
             'id': 'old-id',
@@ -431,7 +427,7 @@ class TestPlanMethods:
         assert change.action == ResourceAction.NO_CHANGE
 
     def test_plan_delete(self, provider):
-        from core.base_provider import ResourceAction
+        from talonctl.core.base_provider import ResourceAction
         change = provider.plan_delete('test_dashboard', 'Test Dashboard')
         assert change.action == ResourceAction.DELETE
         assert change.resource_type == 'dashboard'
@@ -575,20 +571,20 @@ class TestSuggestPath:
 
 class TestRegistration:
     def test_dashboard_in_valid_resource_types(self):
-        from core.template_discovery import TemplateDiscovery
+        from talonctl.core.template_discovery import TemplateDiscovery
         assert 'dashboard' in TemplateDiscovery.VALID_RESOURCE_TYPES
 
     def test_dashboard_in_type_to_dir(self):
         """Template discovery maps 'dashboard' to 'dashboards' directory."""
-        from core import template_discovery
+        from talonctl.core import template_discovery
         import inspect
         source = inspect.getsource(template_discovery)
         assert "'dashboard': 'dashboards'" in source or '"dashboard": "dashboards"' in source
 
     def test_provider_importable(self):
-        from providers.dashboard_provider import DashboardProvider
+        from talonctl.providers.dashboard_provider import DashboardProvider
         assert DashboardProvider is not None
 
     def test_provider_in_init_exports(self):
-        from providers import DashboardProvider
+        from talonctl.providers import DashboardProvider
         assert DashboardProvider is not None

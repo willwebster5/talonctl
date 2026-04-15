@@ -3,14 +3,10 @@ Unit tests for DependencyValidator — static analysis of saved search reference
 """
 
 import pytest
-import sys
 from pathlib import Path
 from unittest.mock import MagicMock
 
-SCRIPTS_DIR = Path(__file__).parent.parent.parent / "scripts"
-sys.path.insert(0, str(SCRIPTS_DIR))
-
-from core.dependency_validator import DependencyValidator, DependencyIssue
+from talonctl.core.dependency_validator import DependencyValidator, DependencyIssue
 
 
 class TestExtractFunctionReferences:

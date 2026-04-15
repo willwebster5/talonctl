@@ -12,13 +12,8 @@ import pytest
 from pathlib import Path
 from unittest.mock import Mock, MagicMock, patch, mock_open
 
-# Add scripts directory to path
-import sys
-SCRIPTS_DIR = Path(__file__).resolve().parent.parent.parent / 'scripts'
-sys.path.insert(0, str(SCRIPTS_DIR))
-
-from providers.lookup_file_provider import LookupFileProvider
-from core import ResourceAction
+from talonctl.providers.lookup_file_provider import LookupFileProvider
+from talonctl.core import ResourceAction
 
 
 class TestLookupFileProvider:
