@@ -45,6 +45,7 @@ from talonctl.commands.init import init  # noqa: E402
 from talonctl.commands.discover import discover  # noqa: E402
 from talonctl.commands.backup import backup  # noqa: E402
 from talonctl.commands.auth import auth  # noqa: E402
+from talonctl.commands.health import health  # noqa: E402
 
 cli.add_command(validate)
 cli.add_command(plan)
@@ -60,3 +61,4 @@ cli.add_command(init)
 cli.add_command(discover)
 cli.add_command(backup)
 cli.add_command(auth)
+cli.add_command(health)
