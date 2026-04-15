@@ -7,16 +7,11 @@ that classifies detections as healthy, silent, erroring, or broken.
 
 import pytest
 import json
-import sys
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 from datetime import datetime, timezone
 
-# detection_health.py is a standalone script in scripts/, not part of the talonctl package
-SCRIPTS_DIR = Path(__file__).parent.parent.parent / "scripts"
-sys.path.insert(0, str(SCRIPTS_DIR))
-
-from detection_health import (
+from talonctl.commands.health import (
     DetectionHealthChecker,
     DetectionHealthReport,
     DetectionHealthStatus,

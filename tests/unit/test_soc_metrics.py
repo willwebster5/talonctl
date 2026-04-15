@@ -5,15 +5,10 @@ Unit tests for soc_metrics.py — metric aggregation and CSV management.
 import pytest
 import csv
 import io
-import sys
 from pathlib import Path
 from datetime import datetime, timezone
 
-# soc_metrics.py is a standalone script in scripts/, not part of the talonctl package
-SCRIPTS_DIR = Path(__file__).parent.parent.parent / "scripts"
-sys.path.insert(0, str(SCRIPTS_DIR))
-
-from soc_metrics import (
+from talonctl.commands.metrics import (
     MetricsAggregator,
     WeeklyDetectionRow,
     WeeklyKPIRow,
