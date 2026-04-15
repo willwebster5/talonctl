@@ -15,22 +15,7 @@ from pathlib import Path
 from typing import Dict, List, Optional, Any
 from datetime import datetime, timezone
 
-# Import core infrastructure
-import sys
-from pathlib import Path as PathLib
-
-def find_scripts_dir():
-    """Find scripts directory from any subdirectory"""
-    current = PathLib(__file__).resolve().parent
-    while current.name != 'scripts' and current != current.parent:
-        current = current.parent
-    return current if current.name == 'scripts' else PathLib(__file__).parent
-
-SCRIPTS_DIR = find_scripts_dir()
-if str(SCRIPTS_DIR) not in sys.path:
-    sys.path.insert(0, str(SCRIPTS_DIR))
-
-from core import (
+from talonctl.core.base_provider import (
     BaseResourceProvider,
     ResourceAction,
     ResourceChange

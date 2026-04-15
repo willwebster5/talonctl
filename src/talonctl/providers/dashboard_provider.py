@@ -16,7 +16,7 @@ from typing import Any, Dict, List, Optional
 
 import yaml
 
-from core.base_provider import BaseResourceProvider, ResourceChange, ResourceAction
+from talonctl.core.base_provider import BaseResourceProvider, ResourceChange, ResourceAction
 
 logger = logging.getLogger(__name__)
 
