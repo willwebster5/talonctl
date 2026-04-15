@@ -20,19 +20,7 @@ from dataclasses import dataclass, fields
 from typing import Dict, List, Any, Optional
 from datetime import datetime, timedelta, timezone
 
-# Standard script boilerplate
-def find_scripts_dir():
-    current = Path(__file__).resolve().parent
-    while current.name != 'scripts' and current != current.parent:
-        current = current.parent
-    return current if current.name == 'scripts' else Path(__file__).parent
-
-SCRIPTS_DIR = find_scripts_dir()
-if str(SCRIPTS_DIR) not in sys.path:
-    sys.path.insert(0, str(SCRIPTS_DIR))
-
-from common import PATHS, setup_imports
-setup_imports()
+from talonctl.project import find_project_root
 
 logger = logging.getLogger(__name__)
 
@@ -249,7 +237,7 @@ def main():
         week = compute_week_start(report["generated_at"][:10])
 
         csv_path = Path(args.csv_path) if args.csv_path else (
-            PATHS.PROJECT_ROOT / "resources" / "lookup_files" / "crowdstrike" / "detection_health_metrics.csv"
+            find_project_root() / "resources" / "lookup_files" / "crowdstrike" / "detection_health_metrics.csv"
         )
 
         agg = MetricsAggregator(retention_weeks=52)
@@ -271,7 +259,7 @@ def main():
         week = compute_week_start(report["generated_at"][:10])
 
         csv_path = Path(args.csv_path) if args.csv_path else (
-            PATHS.PROJECT_ROOT / "resources" / "lookup_files" / "crowdstrike" / "soc_weekly_kpis.csv"
+            find_project_root() / "resources" / "lookup_files" / "crowdstrike" / "soc_weekly_kpis.csv"
         )
 
         total_alerts = sum(d.get("alert_count", 0) for d in report.get("detections", []))
