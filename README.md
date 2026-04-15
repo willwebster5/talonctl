@@ -4,15 +4,79 @@ Infrastructure as code for CrowdStrike. Manage detections, workflows, saved sear
 
 ## What This Is
 
-I'm a security engineer who built this to manage my CrowdStrike tenant as code. It started as the deployment engine behind an AI-assisted SOC project and works just as well standalone. If you use CrowdStrike NG-SIEM and want version-controlled, CI/CD-deployed resources — this is it.
+A pip-installable CLI tool for managing CrowdStrike NGSIEM resources as code. It started as the deployment engine behind an AI-assisted SOC project and works just as well standalone. If you use CrowdStrike NG-SIEM and want version-controlled, CI/CD-deployed resources -- this is it.
 
 What you get:
-- **Terraform-like deployment** — plan/apply/import/drift/sync for CrowdStrike NGSIEM resources
-- **Seven resource types** — detections, saved searches, dashboards, workflows, lookup files, RTR scripts, RTR put files
-- **CI/CD workflows** — GitHub Actions for automated plan-on-PR, apply-on-merge
-- **State management** — tracks deployed resources, content hashes, and CrowdStrike API IDs
-- **Dependency resolution** — DAG-based ordering so resources deploy in the right sequence
-- **Drift detection** — catch manual console changes that diverge from your templates
+- **Terraform-like deployment** -- plan/apply/import/drift/sync for CrowdStrike NGSIEM resources
+- **Seven resource types** -- detections, saved searches, dashboards, workflows, lookup files, RTR scripts, RTR put files
+- **State management** -- tracks deployed resources, content hashes, and CrowdStrike API IDs
+- **Dependency resolution** -- DAG-based ordering so resources deploy in the right sequence
+- **Drift detection** -- catch manual console changes that diverge from your templates
+- **Project scaffolding** -- `talonctl init` creates new projects with the correct directory structure
+
+## Getting Started
+
+```bash
+# Install
+python3 -m venv .venv
+source .venv/bin/activate
+pip install talonctl
+
+# Scaffold a new project
+talonctl init myproject
+cd myproject
+
+# Configure credentials
+talonctl auth setup
+
+# Import your existing detections
+talonctl import --plan              # preview what would be imported
+talonctl import --resources=detection  # import detection rules
+
+# Plan and deploy
+talonctl plan    # preview changes
+talonctl apply   # deploy
+```
+
+For a working example project, see [talonctl-demo](https://github.com/willwebster5/talonctl-demo).
+
+## Commands
+
+### IaC Lifecycle
+
+```bash
+talonctl validate                    # Check templates (no API calls)
+talonctl plan                        # Preview changes
+talonctl apply                       # Deploy changes
+talonctl import                      # Onboard existing resources
+talonctl import --plan               # Preview import
+talonctl sync                        # Reconcile state with tenant
+talonctl drift                       # Detect manual console changes
+talonctl show                        # Display current state
+talonctl init                        # Scaffold a new project
+talonctl validate-query              # Validate CQL syntax
+talonctl publish                     # Activate inactive detection rules
+talonctl discover                    # Find new detection templates
+```
+
+### Credential Management
+
+```bash
+talonctl auth setup                  # Interactive credential setup wizard
+talonctl auth check                  # Verify stored credentials
+```
+
+### Operational
+
+```bash
+talonctl health                      # Detection health check
+talonctl health --format json -o r.json  # Export health report
+talonctl metrics update-detections --report r.json  # Update detection metrics CSV
+talonctl metrics update-kpis --report r.json        # Update KPI CSV
+talonctl backup create               # Create state backup (GitHub Release)
+talonctl backup list                 # List available backups
+talonctl backup restore <tag>        # Restore from backup
+```
 
 ## What It Manages
 
@@ -26,110 +90,11 @@ What you get:
 | RTR Script | `resources/rtr_scripts/` | Real Time Response scripts |
 | RTR Put File | `resources/rtr_put_files/` | Files pushed to endpoints via RTR |
 
-## Project Structure
-
-```
-talonctl/
-├── pyproject.toml              # Package configuration
-├── src/talonctl/               # Package source
-│   ├── cli.py                  # Click CLI entry point
-│   ├── project.py              # Project root finder
-│   ├── commands/               # CLI command modules
-│   ├── core/                   # Orchestrator, state, plan, drift
-│   ├── providers/              # Per-resource-type API adapters
-│   ├── utils/                  # Auth, NGSIEM client, MITRE processor
-│   └── templates/              # Scaffolding templates for init
-├── .crowdstrike/               # State files (deployed_state.json)
-├── .github/workflows/          # CI/CD: plan on PR, apply on merge
-├── resources/                  # IaC templates
-│   ├── detections/
-│   ├── saved_searches/
-│   ├── dashboards/
-│   ├── workflows/
-│   ├── lookup_files/
-│   ├── rtr_scripts/
-│   └── rtr_put_files/
-├── scripts/                    # Standalone utilities
-│   ├── setup.py                # Credential setup wizard
-│   ├── detection_health.py     # Detection health checker
-│   └── soc_metrics.py          # SOC metrics aggregator
-├── tests/                      # Unit tests
-└── examples/                   # Dashboards, parsers, lookup file templates
-```
-
 ## Prerequisites
 
 - CrowdStrike Falcon tenant with NG-SIEM (LogScale)
 - Python 3.11+
 - CrowdStrike API credentials (Falcon Console > Support & Resources > API Clients and Keys)
-
-## Quick Start
-
-```bash
-# Install
-python3 -m venv .venv
-source .venv/bin/activate
-pip install git+https://github.com/willwebster5/talonctl.git
-
-# Scaffold a new project
-talonctl init myproject
-cd myproject
-
-# Configure credentials
-python -m talonctl.utils.auth  # or use scripts/setup.py
-
-# Import your existing detections
-talonctl import --plan              # preview what would be imported
-talonctl import --resources=detection  # import detection rules
-
-# Plan and deploy
-talonctl plan    # preview changes
-talonctl apply   # deploy
-```
-
-## Commands
-
-```bash
-talonctl validate       # check templates (no API calls)
-talonctl plan            # preview changes
-talonctl apply           # deploy changes
-talonctl import          # onboard existing resources
-talonctl import --plan   # preview import
-talonctl sync            # reconcile state with tenant
-talonctl drift           # detect manual console changes
-talonctl show            # display current state
-talonctl init            # scaffold a new project
-talonctl validate-query  # validate CQL syntax
-talonctl publish         # activate inactive detection rules
-```
-
-## Import
-
-Already have detections in your tenant? Import them:
-
-```bash
-# Preview what would be imported
-talonctl import --plan
-
-# Import specific resource types
-talonctl import --resources=detection
-talonctl import --resources=saved_search,detection
-
-# Import everything
-talonctl import
-```
-
-This generates YAML templates in `resources/` and updates the state file, bringing existing resources under IaC management.
-
-## CI/CD
-
-GitHub Actions workflows included:
-
-- **PR opened** — runs `plan`, posts a summary comment with what would change
-- **Merge to main** — runs `apply --auto-approve` to deploy
-- **Weekly** — template discovery for new CrowdStrike OOTB content
-
-Required secrets: `FALCON_CLIENT_ID`, `FALCON_CLIENT_SECRET`, `FALCON_BASE_URL`
 
 ## Required API Scopes
 
@@ -145,19 +110,6 @@ Required secrets: `FALCON_CLIENT_ID`, `FALCON_CLIENT_SECRET`, `FALCON_BASE_URL`
 | RTR Script | `real-time-response-admin:write` | `real-time-response-admin:write` |
 | RTR Put File | `real-time-response-admin:write` | `real-time-response-admin:write` |
 
-### By Command
-
-| Command | Required Scopes | Notes |
-|---------|----------------|-------|
-| `validate` | None | Local-only, no API calls |
-| `plan` | Read scopes for managed resource types | Compares templates to remote state |
-| `apply` | Read + Write scopes for managed resource types | Creates, updates, and deletes resources |
-| `import` | Read scopes for target resource types | Fetches remote resources, writes local YAML |
-| `sync` | Read scopes for managed resource types | Reconciles state file with remote |
-| `drift` | Read scopes for managed resource types | Detects manual console changes |
-| `show` | None | Reads local state file only |
-| `validate-query` | `ngsiem:read` | Validates CQL syntax via API |
-
 ### Minimum Scopes by Workflow
 
 | Workflow | Scopes |
@@ -167,19 +119,27 @@ Required secrets: `FALCON_CLIENT_ID`, `FALCON_CLIENT_SECRET`, `FALCON_BASE_URL`
 | **Full IaC** (all resource types) | All read + write scopes above |
 | **Import only** (onboarding) | Read scopes for target resource types |
 
-### Setup Script
-
-`python scripts/setup.py` uses `sensor-installers:read` to validate credentials. This scope is only needed for the one-time setup check.
-
 ## Ecosystem
 
 talonctl was built alongside a set of AI-assisted security skills and a CrowdStrike MCP server. Together they form a detection engineering and SOC operations toolkit:
 
-- **[agent-skills](https://github.com/willwebster5/agent-skills)** — Claude Code plugin marketplace with CrowdStrike skills for SOC triage, detection engineering, threat hunting, and more. The skills are designed to work on top of talonctl-managed resources.
-- **[crowdstrike-mcp](https://github.com/willwebster5/crowdstrike-mcp)** — MCP server for querying alerts, running CQL, host lookup, and case management. Used by the agent-skills plugins.
+- **[talonctl-demo](https://github.com/willwebster5/talonctl-demo)** -- Working example project with saved searches, lookup files, knowledge base, and CI/CD workflows
+- **[agent-skills](https://github.com/willwebster5/agent-skills)** -- Claude Code plugins for SOC triage, detection engineering, threat hunting, and more
+- **[crowdstrike-mcp](https://github.com/willwebster5/crowdstrike-mcp)** -- MCP server for querying alerts, running CQL, host lookup, and case management
 
-To use talonctl with AI-assisted workflows: install the agent-skills plugins into Claude Code, point them at a talonctl-managed repo, and copy `CLAUDE.integrated.md` over `CLAUDE.md` for the full experience.
+## Development
+
+```bash
+git clone https://github.com/willwebster5/talonctl.git
+cd talonctl
+python3 -m venv .venv
+source .venv/bin/activate
+pip install -e .[dev]
+pytest tests/ -v
+```
+
+Format reference templates are in `examples/resources/` -- annotated YAML examples for every resource type.
 
 ## License
 
-MIT — do whatever you want, no warranty, no liability. See [LICENSE](LICENSE).
+MIT -- do whatever you want, no warranty, no liability. See [LICENSE](LICENSE).
