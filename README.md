@@ -67,6 +67,8 @@ talonctl/
 
 ```bash
 # Install
+python3 -m venv .venv
+source .venv/bin/activate
 pip install git+https://github.com/willwebster5/talonctl.git
 
 # Scaffold a new project

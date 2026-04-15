@@ -17,11 +17,15 @@ You need:
 
 ```bash
 # Install from GitHub
+python3 -m venv .venv
+source .venv/bin/activate
 pip install git+https://github.com/willwebster5/talonctl.git
 
 # Or install for development
 git clone https://github.com/willwebster5/talonctl.git
 cd talonctl
+python3 -m venv .venv
+source .venv/bin/activate
 pip install -e .[dev]
 ```
 
