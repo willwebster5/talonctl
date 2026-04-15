@@ -2,16 +2,11 @@
 Unit tests for TemplateDiscovery
 """
 import pytest
-import sys
 from pathlib import Path
 from unittest.mock import Mock, patch, MagicMock
 from datetime import datetime, timezone
 
-# template_discovery.py is a standalone script in scripts/, not part of the talonctl package
-SCRIPTS_DIR = Path(__file__).parent.parent.parent / "scripts"
-sys.path.insert(0, str(SCRIPTS_DIR))
-
-from template_discovery import TemplateDiscovery, Template
+from talonctl.core.template_library import TemplateDiscovery, Template
 
 
 @pytest.fixture
@@ -213,8 +208,8 @@ class TestFetchFromApi:
         }
         return mock_auth
 
-    @patch('template_discovery.OAuth2')
-    @patch('template_discovery.requests')
+    @patch('talonctl.core.template_library.OAuth2')
+    @patch('talonctl.core.template_library.requests')
     def test_fetches_and_parses_templates(self, mock_requests, mock_oauth2, discovery):
         mock_oauth2.return_value = self._make_token_response()
 
@@ -240,8 +235,8 @@ class TestFetchFromApi:
         assert templates[0].id == 'tmpl-001'
         assert templates[0].mitre_attack == ['TA0001:T1078']
 
-    @patch('template_discovery.OAuth2')
-    @patch('template_discovery.requests')
+    @patch('talonctl.core.template_library.OAuth2')
+    @patch('talonctl.core.template_library.requests')
     def test_passes_fql_filter_to_query(self, mock_requests, mock_oauth2, discovery):
         mock_oauth2.return_value = self._make_token_response()
 
@@ -256,8 +251,8 @@ class TestFetchFromApi:
         call_kwargs = mock_requests.get.call_args
         assert call_kwargs[1]['params']['filter'] == "vendor:'aws'"
 
-    @patch('template_discovery.OAuth2')
-    @patch('template_discovery.requests')
+    @patch('talonctl.core.template_library.OAuth2')
+    @patch('talonctl.core.template_library.requests')
     def test_raises_on_auth_failure(self, mock_requests, mock_oauth2, discovery):
         mock_auth = Mock()
         mock_auth.token.return_value = {'status_code': 401, 'body': {}}
@@ -267,8 +262,8 @@ class TestFetchFromApi:
             with pytest.raises(ValueError, match="Failed to authenticate"):
                 discovery.fetch_from_api()
 
-    @patch('template_discovery.OAuth2')
-    @patch('template_discovery.requests')
+    @patch('talonctl.core.template_library.OAuth2')
+    @patch('talonctl.core.template_library.requests')
     def test_raises_on_api_error(self, mock_requests, mock_oauth2, discovery):
         mock_oauth2.return_value = self._make_token_response()
 
@@ -281,8 +276,8 @@ class TestFetchFromApi:
             with pytest.raises(ValueError, match="400"):
                 discovery.fetch_from_api(fql_filter="bad:fql")
 
-    @patch('template_discovery.OAuth2')
-    @patch('template_discovery.requests')
+    @patch('talonctl.core.template_library.OAuth2')
+    @patch('talonctl.core.template_library.requests')
     def test_paginates_across_multiple_pages(self, mock_requests, mock_oauth2, discovery):
         mock_oauth2.return_value = self._make_token_response()
 
