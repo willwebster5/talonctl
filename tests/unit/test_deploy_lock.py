@@ -4,19 +4,12 @@ Unit tests for deployment file locking
 
 import pytest
 import os
-import sys
 import json
 import tempfile
 import threading
-import time
 from pathlib import Path
-from unittest.mock import patch
 
-# Add scripts directory to path
-SCRIPTS_DIR = Path(__file__).parent.parent.parent / "scripts"
-sys.path.insert(0, str(SCRIPTS_DIR))
-
-from core.deploy_lock import deployment_lock, DeploymentLockError
+from talonctl.core.deploy_lock import deployment_lock, DeploymentLockError
 
 
 class TestDeploymentLock:
@@ -32,7 +25,7 @@ class TestDeploymentLock:
         """Lock is acquired, metadata written, then released cleanly"""
         with deployment_lock(lock_dir) as lock_path:
             assert lock_path.exists()
-            with open(lock_path, 'r') as f:
+            with open(lock_path, "r") as f:
                 content = f.read()
             metadata = json.loads(content)
             assert metadata["pid"] == os.getpid()

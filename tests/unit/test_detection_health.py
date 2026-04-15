@@ -6,19 +6,12 @@ that classifies detections as healthy, silent, erroring, or broken.
 """
 
 import pytest
-import json
-import sys
 from pathlib import Path
-from unittest.mock import MagicMock, patch
-from datetime import datetime, timezone
+from unittest.mock import MagicMock
 
-SCRIPTS_DIR = Path(__file__).parent.parent.parent / "scripts"
-sys.path.insert(0, str(SCRIPTS_DIR))
-
-from detection_health import (
+from talonctl.commands.health import (
     DetectionHealthChecker,
     DetectionHealthReport,
-    DetectionHealthStatus,
     classify_platform,
 )
 
@@ -146,9 +139,30 @@ class TestDetectionHealthReport:
         report = DetectionHealthReport(
             period_days=90,
             detections=[
-                {"resource_id": "a1", "name": "A1", "platform": "aws", "enabled": True, "severity": 30, "dependencies_valid": True},
-                {"resource_id": "a2", "name": "A2", "platform": "aws", "enabled": True, "severity": 30, "dependencies_valid": True},
-                {"resource_id": "m1", "name": "M1", "platform": "microsoft", "enabled": True, "severity": 30, "dependencies_valid": True},
+                {
+                    "resource_id": "a1",
+                    "name": "A1",
+                    "platform": "aws",
+                    "enabled": True,
+                    "severity": 30,
+                    "dependencies_valid": True,
+                },
+                {
+                    "resource_id": "a2",
+                    "name": "A2",
+                    "platform": "aws",
+                    "enabled": True,
+                    "severity": 30,
+                    "dependencies_valid": True,
+                },
+                {
+                    "resource_id": "m1",
+                    "name": "M1",
+                    "platform": "microsoft",
+                    "enabled": True,
+                    "severity": 30,
+                    "dependencies_valid": True,
+                },
             ],
             alert_volumes={"A1": {"count": 5}},
         )

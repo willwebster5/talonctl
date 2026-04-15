@@ -1,0 +1,107 @@
+"""Shared CLI helpers for talonctl commands."""
+
+import os
+import logging
+from pathlib import Path
+from typing import Optional
+
+import click
+from rich.console import Console
+
+from talonctl.project import find_project_root
+
+# Rich console — shared by all commands
+disable_color = os.getenv("NO_COLOR") is not None or os.getenv("CI") is not None
+console = Console(
+    width=200 if os.getenv("CI") else None,
+    force_terminal=not disable_color,
+    no_color=disable_color,
+    force_jupyter=False,
+)
+
+logger = logging.getLogger("talonctl")
+
+
+def parse_filters(
+    resources: Optional[str] = None,
+    tags: Optional[str] = None,
+    names: Optional[str] = None,
+) -> dict:
+    """Parse comma-separated filter strings into lists."""
+    filters = {}
+    if resources:
+        filters["resource_types"] = [r.strip() for r in resources.split(",")]
+    if tags:
+        filters["tags"] = [t.strip() for t in tags.split(",")]
+    if names:
+        filters["names"] = [n.strip() for n in names.split(",")]
+    return filters
+
+
+def get_state_file_path(state_file: Optional[str] = None) -> Path:
+    """Determine state file path."""
+    if state_file:
+        return Path(state_file)
+    project_root = find_project_root()
+    return project_root / ".crowdstrike" / "deployed_state.json"
+
+
+def init_orchestrator(
+    state_file: Optional[str] = None,
+    require_credentials: bool = True,
+    remote_state: bool = False,
+    remote_state_search_domain: str = "falcon",
+    remote_state_filename: str = "unified_deployment_state.json",
+):
+    """Initialize deployment orchestrator."""
+    from falconpy import APIHarnessV2
+    from talonctl.utils.auth import load_credentials
+    from talonctl.core import DeploymentOrchestrator
+
+    state_file_path = get_state_file_path(state_file)
+
+    creds = None
+    falcon = None
+    if require_credentials:
+        creds = load_credentials()
+        falcon = APIHarnessV2(
+            client_id=creds["falcon_client_id"],
+            client_secret=creds["falcon_client_secret"],
+            base_url=creds.get("base_url", "US1"),
+        )
+
+    return DeploymentOrchestrator(
+        falcon_client=falcon,
+        state_file_path=state_file_path,
+        remote_state_enabled=remote_state,
+        remote_state_search_domain=remote_state_search_domain,
+        remote_state_filename=remote_state_filename,
+        credentials=creds,
+    )
+
+
+# Common Click options used by multiple commands
+def filter_options(f):
+    """Decorator adding --resources, --tags, --names options."""
+    f = click.option("--resources", type=str, help="Filter by resource types (comma-separated)")(f)
+    f = click.option("--tags", type=str, help="Filter by tags (comma-separated)")(f)
+    f = click.option("--names", type=str, help="Filter by resource names (glob patterns, comma-separated)")(f)
+    return f
+
+
+def state_options(f):
+    """Decorator adding --state-file option."""
+    f = click.option("--state-file", type=str, help="Custom state file location")(f)
+    return f
+
+
+def remote_state_options(f):
+    """Decorator adding remote state options."""
+    f = click.option("--remote-state", is_flag=True, help="Enable remote state sync")(f)
+    f = click.option(
+        "--remote-state-search-domain",
+        type=click.Choice(["falcon", "all", "third-party", "dashboards", "parsers-repository"]),
+        default="falcon",
+    )(f)
+    f = click.option("--remote-state-filename", type=str, default="unified_deployment_state.json")(f)
+    return f

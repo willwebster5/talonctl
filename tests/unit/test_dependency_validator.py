@@ -3,26 +3,21 @@ Unit tests for DependencyValidator — static analysis of saved search reference
 """
 
 import pytest
-import sys
-from pathlib import Path
 from unittest.mock import MagicMock
 
-SCRIPTS_DIR = Path(__file__).parent.parent.parent / "scripts"
-sys.path.insert(0, str(SCRIPTS_DIR))
-
-from core.dependency_validator import DependencyValidator, DependencyIssue
+from talonctl.core.dependency_validator import DependencyValidator
 
 
 class TestExtractFunctionReferences:
     """Test extraction of $function_name() references from CQL."""
 
     def test_extract_single_function(self):
-        cql = '| $aws_enrich_user_identity() | count()'
+        cql = "| $aws_enrich_user_identity() | count()"
         refs = DependencyValidator.extract_function_references(cql)
         assert refs == {"aws_enrich_user_identity"}
 
     def test_extract_multiple_functions(self):
-        cql = '| $aws_enrich_user_identity() | $aws_classify_identity_type() | count()'
+        cql = "| $aws_enrich_user_identity() | $aws_classify_identity_type() | count()"
         refs = DependencyValidator.extract_function_references(cql)
         assert refs == {"aws_enrich_user_identity", "aws_classify_identity_type"}
 
@@ -35,13 +30,13 @@ class TestExtractFunctionReferences:
         # Comments in CQL use //, but we extract all references — the CQL engine
         # strips comments before execution, so a commented reference is harmless.
         # We still extract it because false positives are better than missed breaks.
-        cql = '// | $old_function()\n| $aws_enrich_user_identity()'
+        cql = "// | $old_function()\n| $aws_enrich_user_identity()"
         refs = DependencyValidator.extract_function_references(cql)
         assert "aws_enrich_user_identity" in refs
 
     def test_function_with_arguments(self):
         # Saved searches can take arguments: $func(field=value)
-        cql = '| $score_geo_risk(ip=source.ip)'
+        cql = "| $score_geo_risk(ip=source.ip)"
         refs = DependencyValidator.extract_function_references(cql)
         assert refs == {"score_geo_risk"}
 
@@ -74,9 +69,7 @@ class TestValidateDependencies:
         det.name = "aws_test_detection"
         det.resource_id = "detection.aws_test_detection"
         det.template_data = {
-            "search": {
-                "filter": '| $aws_enrich_user_identity() | $aws_classify_identity_type() | count()'
-            }
+            "search": {"filter": "| $aws_enrich_user_identity() | $aws_classify_identity_type() | count()"}
         }
 
         validator = DependencyValidator(mock_discovery)
@@ -88,11 +81,7 @@ class TestValidateDependencies:
         det = MagicMock()
         det.name = "aws_broken_detection"
         det.resource_id = "detection.aws_broken_detection"
-        det.template_data = {
-            "search": {
-                "filter": '| $aws_enrich_user_identity() | $nonexistent_function() | count()'
-            }
-        }
+        det.template_data = {"search": {"filter": "| $aws_enrich_user_identity() | $nonexistent_function() | count()"}}
 
         validator = DependencyValidator(mock_discovery)
         issues = validator.validate_detection(det)
@@ -116,15 +105,11 @@ class TestValidateDependencies:
         det_good = MagicMock()
         det_good.name = "good"
         det_good.resource_id = "detection.good"
-        det_good.template_data = {
-            "search": {"filter": "| $aws_enrich_user_identity() | count()"}
-        }
+        det_good.template_data = {"search": {"filter": "| $aws_enrich_user_identity() | count()"}}
         det_bad = MagicMock()
         det_bad.name = "bad"
         det_bad.resource_id = "detection.bad"
-        det_bad.template_data = {
-            "search": {"filter": "| $missing_func() | count()"}
-        }
+        det_bad.template_data = {"search": {"filter": "| $missing_func() | count()"}}
 
         mock_discovery.discover_all.return_value["detection"] = [det_good, det_bad]
 

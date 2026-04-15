@@ -3,21 +3,10 @@ Unit tests for WorkflowProvider
 """
 
 import pytest
-import sys
-from pathlib import Path
-from unittest.mock import Mock, MagicMock, patch
-from datetime import datetime, timezone
+from unittest.mock import Mock, patch
 
-# Add scripts directory to path
-SCRIPTS_DIR = Path(__file__).parent.parent.parent / "scripts"
-sys.path.insert(0, str(SCRIPTS_DIR))
-
-# Mock the Workflows import before importing provider
-sys.modules['falconpy'] = Mock()
-sys.modules['falconpy'].Workflows = Mock
-
-from providers.workflow_provider import WorkflowProvider
-from core import ResourceAction
+from talonctl.providers.workflow_provider import WorkflowProvider
+from talonctl.core import ResourceAction
 
 
 class TestWorkflowProvider:
@@ -36,13 +25,13 @@ class TestWorkflowProvider:
     @pytest.fixture
     def provider(self, mock_falcon, mock_workflows_client):
         """Create WorkflowProvider instance"""
-        with patch('providers.workflow_provider.load_credentials') as mock_creds:
+        with patch("talonctl.providers.workflow_provider.load_credentials") as mock_creds:
             mock_creds.return_value = {
-                'falcon_client_id': 'test',
-                'falcon_client_secret': 'test',
-                'base_url': 'https://api.crowdstrike.com'
+                "falcon_client_id": "test",
+                "falcon_client_secret": "test",
+                "base_url": "https://api.crowdstrike.com",
             }
-            with patch('providers.workflow_provider.Workflows') as mock_wf_class:
+            with patch("talonctl.providers.workflow_provider.Workflows") as mock_wf_class:
                 mock_wf_class.return_value = mock_workflows_client
                 provider = WorkflowProvider(mock_falcon)
                 return provider
@@ -54,18 +43,10 @@ class TestWorkflowProvider:
     def test_validate_template_valid(self, provider):
         """Test validation of valid template"""
         template = {
-            'resource_id': 'test___workflow',
-            'name': 'test_workflow',
-            'trigger': {
-                'event': 'Investigatable/NGSIEM',
-                'type': 'Signal'
-            },
-            'actions': {
-                'send_slack': {
-                    'id': 'slack_action',
-                    'properties': {'msg': 'Test alert'}
-                }
-            }
+            "resource_id": "test___workflow",
+            "name": "test_workflow",
+            "trigger": {"event": "Investigatable/NGSIEM", "type": "Signal"},
+            "actions": {"send_slack": {"id": "slack_action", "properties": {"msg": "Test alert"}}},
         }
 
         errors = provider.validate_template(template)
@@ -74,188 +55,167 @@ class TestWorkflowProvider:
     def test_validate_template_missing_fields(self, provider):
         """Test validation catches missing required fields"""
         template = {
-            'name': 'test_workflow'
+            "name": "test_workflow"
             # Missing: trigger, actions
         }
 
         errors = provider.validate_template(template)
         assert len(errors) >= 2
-        assert any('trigger' in err for err in errors)
-        assert any('actions' in err for err in errors)
+        assert any("trigger" in err for err in errors)
+        assert any("actions" in err for err in errors)
 
     def test_validate_template_missing_trigger_event(self, provider):
         """Test validation catches missing trigger event"""
         template = {
-            'resource_id': 'test___workflow',
-            'name': 'test_workflow',
-            'trigger': {
-                'type': 'Signal'
+            "resource_id": "test___workflow",
+            "name": "test_workflow",
+            "trigger": {
+                "type": "Signal"
                 # Missing: event
             },
-            'actions': {'action1': {}}
+            "actions": {"action1": {}},
         }
 
         errors = provider.validate_template(template)
-        assert any('event' in err.lower() for err in errors)
+        assert any("event" in err.lower() for err in errors)
 
     def test_validate_template_empty_actions(self, provider):
         """Test validation catches empty actions"""
         template = {
-            'resource_id': 'test___workflow',
-            'name': 'test_workflow',
-            'trigger': {
-                'event': 'test',
-                'type': 'Signal'
-            },
-            'actions': {}  # Empty
+            "resource_id": "test___workflow",
+            "name": "test_workflow",
+            "trigger": {"event": "test", "type": "Signal"},
+            "actions": {},  # Empty
         }
 
         errors = provider.validate_template(template)
-        assert any('actions' in err.lower() for err in errors)
+        assert any("actions" in err.lower() for err in errors)
 
     def test_fetch_remote_state(self, provider, mock_workflows_client):
         """Test fetching remote workflow state"""
         mock_workflows_client.get_definitions.return_value = {
-            'status_code': 200,
-            'body': {
-                'resources': [{
-                    'id': 'wf123',
-                    'name': 'test_workflow',
-                    'enabled': True,
-                    'trigger': {'event': 'test'},
-                    'actions': {'action1': {}}
-                }]
-            }
+            "status_code": 200,
+            "body": {
+                "resources": [
+                    {
+                        "id": "wf123",
+                        "name": "test_workflow",
+                        "enabled": True,
+                        "trigger": {"event": "test"},
+                        "actions": {"action1": {}},
+                    }
+                ]
+            },
         }
 
         provider._remote_workflows_cache = {
-            'test_workflow': {
-                'id': 'wf123',
-                'name': 'test_workflow',
-                'enabled': True,
-                'trigger': {'event': 'test'},
-                'actions': {'action1': {}}
+            "test_workflow": {
+                "id": "wf123",
+                "name": "test_workflow",
+                "enabled": True,
+                "trigger": {"event": "test"},
+                "actions": {"action1": {}},
             }
         }
 
-        result = provider.fetch_remote_state('wf123')
+        result = provider.fetch_remote_state("wf123")
 
         assert result is not None
-        assert result['id'] == 'wf123'
-        assert result['name'] == 'test_workflow'
-        assert result['enabled'] is True
+        assert result["id"] == "wf123"
+        assert result["name"] == "test_workflow"
+        assert result["enabled"] is True
 
     def test_fetch_remote_state_not_found(self, provider, mock_workflows_client):
         """Test fetching non-existent workflow"""
         provider._remote_workflows_cache = {}
 
-        result = provider.fetch_remote_state('nonexistent')
+        result = provider.fetch_remote_state("nonexistent")
         assert result is None
 
     def test_plan_create(self, provider):
         """Test planning workflow creation"""
-        template = {
-            'name': 'new_workflow',
-            'trigger': {'event': 'test', 'type': 'Signal'},
-            'actions': {'action1': {}}
-        }
+        template = {"name": "new_workflow", "trigger": {"event": "test", "type": "Signal"}, "actions": {"action1": {}}}
 
-        change = provider.plan_create(template, 'workflows/test.yaml')
+        change = provider.plan_create(template, "workflows/test.yaml")
 
         assert change.action == ResourceAction.CREATE
-        assert change.resource_type == 'workflow'
-        assert change.resource_name == 'new_workflow'
+        assert change.resource_type == "workflow"
+        assert change.resource_name == "new_workflow"
         assert change.resource_id is None
         assert change.new_value == template
-        assert change.template_path == 'workflows/test.yaml'
+        assert change.template_path == "workflows/test.yaml"
 
     def test_plan_update_with_changes(self, provider):
         """Test planning workflow update when changes exist"""
         template = {
-            'name': 'test_workflow',
-            'enabled': False,
-            'trigger': {'event': 'new_event', 'type': 'Signal'},
-            'actions': {'new_action': {}}
+            "name": "test_workflow",
+            "enabled": False,
+            "trigger": {"event": "new_event", "type": "Signal"},
+            "actions": {"new_action": {}},
         }
 
         current_state = {
-            'id': 'wf123',
-            'name': 'test_workflow',
-            'enabled': True,
-            'trigger': {'event': 'old_event', 'type': 'Signal'},
-            'actions': {'old_action': {}}
+            "id": "wf123",
+            "name": "test_workflow",
+            "enabled": True,
+            "trigger": {"event": "old_event", "type": "Signal"},
+            "actions": {"old_action": {}},
         }
 
-        change = provider.plan_update(template, current_state, 'workflows/test.yaml')
+        change = provider.plan_update(template, current_state, "workflows/test.yaml")
 
         assert change.action == ResourceAction.UPDATE
-        assert change.resource_type == 'workflow'
-        assert change.resource_name == 'test_workflow'
-        assert change.resource_id == 'wf123'
-        assert 'enabled' in change.changes
-        assert 'trigger' in change.changes
-        assert 'actions' in change.changes
+        assert change.resource_type == "workflow"
+        assert change.resource_name == "test_workflow"
+        assert change.resource_id == "wf123"
+        assert "enabled" in change.changes
+        assert "trigger" in change.changes
+        assert "actions" in change.changes
 
     def test_plan_update_no_changes(self, provider):
         """Test planning workflow update when no changes exist"""
         template = {
-            'name': 'test_workflow',
-            'enabled': True,
-            'trigger': {'event': 'test', 'type': 'Signal'},
-            'actions': {'action1': {}},
-            'conditions': {}
+            "name": "test_workflow",
+            "enabled": True,
+            "trigger": {"event": "test", "type": "Signal"},
+            "actions": {"action1": {}},
+            "conditions": {},
         }
 
         current_state = template.copy()
-        current_state['id'] = 'wf123'
+        current_state["id"] = "wf123"
 
-        change = provider.plan_update(template, current_state, 'workflows/test.yaml')
+        change = provider.plan_update(template, current_state, "workflows/test.yaml")
 
         assert change.action == ResourceAction.NO_CHANGE
-        assert change.resource_id == 'wf123'
+        assert change.resource_id == "wf123"
 
     def test_plan_delete(self, provider, mock_workflows_client):
         """Test planning workflow deletion"""
-        provider._remote_workflows_cache = {
-            'test_workflow': {
-                'id': 'wf123',
-                'name': 'test_workflow',
-                'enabled': True
-            }
-        }
+        provider._remote_workflows_cache = {"test_workflow": {"id": "wf123", "name": "test_workflow", "enabled": True}}
 
-        change = provider.plan_delete('wf123', 'test_workflow')
+        change = provider.plan_delete("wf123", "test_workflow")
 
         assert change.action == ResourceAction.DELETE
-        assert change.resource_type == 'workflow'
-        assert change.resource_name == 'test_workflow'
-        assert change.resource_id == 'wf123'
+        assert change.resource_type == "workflow"
+        assert change.resource_name == "test_workflow"
+        assert change.resource_id == "wf123"
 
     def test_apply_create(self, provider, mock_workflows_client):
         """Test creating a workflow"""
-        template = {
-            'name': 'new_workflow',
-            'trigger': {'event': 'test', 'type': 'Signal'},
-            'actions': {'action1': {}}
-        }
+        template = {"name": "new_workflow", "trigger": {"event": "test", "type": "Signal"}, "actions": {"action1": {}}}
 
         mock_workflows_client.import_definition.return_value = {
-            'status_code': 200,
-            'body': {
-                'resources': [{
-                    'id': 'new123',
-                    'name': 'new_workflow',
-                    'enabled': True
-                }]
-            }
+            "status_code": 200,
+            "body": {"resources": [{"id": "new123", "name": "new_workflow", "enabled": True}]},
         }
 
         result = provider.apply_create(template)
 
-        assert result['id'] == 'new123'
-        assert result['name'] == 'new_workflow'
-        assert result['enabled'] is True
-        assert 'created_at' in result
+        assert result["id"] == "new123"
+        assert result["name"] == "new_workflow"
+        assert result["enabled"] is True
+        assert "created_at" in result
         mock_workflows_client.import_definition.assert_called_once()
 
     def test_apply_update_raises_not_implemented(self, provider):
@@ -268,15 +228,15 @@ class TestWorkflowProvider:
         mock_workflows_client.delete_definition.return_value = {"status_code": 200}
         result = provider.apply_delete("wf123")
         assert isinstance(result, dict)
-        assert result['id'] == "wf123"
+        assert result["id"] == "wf123"
 
     def test_compute_content_hash_identical(self, provider):
         """Test hash computation produces identical results for same content"""
         template1 = {
-            'name': 'test',
-            'enabled': True,
-            'trigger': {'event': 'test', 'type': 'Signal'},
-            'actions': {'action1': {}}
+            "name": "test",
+            "enabled": True,
+            "trigger": {"event": "test", "type": "Signal"},
+            "actions": {"action1": {}},
         }
 
         template2 = template1.copy()
@@ -288,17 +248,9 @@ class TestWorkflowProvider:
 
     def test_compute_content_hash_different(self, provider):
         """Test hash computation produces different results for different content"""
-        template1 = {
-            'name': 'test',
-            'trigger': {'event': 'test', 'type': 'Signal'},
-            'actions': {'action1': {}}
-        }
+        template1 = {"name": "test", "trigger": {"event": "test", "type": "Signal"}, "actions": {"action1": {}}}
 
-        template2 = {
-            'name': 'test',
-            'trigger': {'event': 'different', 'type': 'Signal'},
-            'actions': {'action1': {}}
-        }
+        template2 = {"name": "test", "trigger": {"event": "different", "type": "Signal"}, "actions": {"action1": {}}}
 
         hash1 = provider.compute_content_hash(template1)
         hash2 = provider.compute_content_hash(template2)
@@ -307,55 +259,47 @@ class TestWorkflowProvider:
 
     def test_extract_dependencies_from_workflow_name(self, provider):
         """Test extracting detection dependency from workflow name"""
-        template = {
-            'name': 'abc123_response_workflow',
-            'trigger': {'event': 'test', 'type': 'Signal'},
-            'actions': {}
-        }
+        template = {"name": "abc123_response_workflow", "trigger": {"event": "test", "type": "Signal"}, "actions": {}}
 
         deps = provider.extract_dependencies(template)
 
-        assert 'detection.abc123' in deps
+        assert "detection.abc123" in deps
 
     def test_extract_dependencies_from_conditions(self, provider):
         """Test extracting detection dependency from trigger conditions"""
         template = {
-            'name': 'test_workflow',
-            'trigger': {'event': 'test', 'type': 'Signal'},
-            'actions': {},
-            'conditions': {
-                'check_name': {
-                    'expression': "Trigger.Category.Investigatable.Name:'AWS Root Login'"
-                }
-            }
+            "name": "test_workflow",
+            "trigger": {"event": "test", "type": "Signal"},
+            "actions": {},
+            "conditions": {"check_name": {"expression": "Trigger.Category.Investigatable.Name:'AWS Root Login'"}},
         }
 
         deps = provider.extract_dependencies(template)
 
-        assert 'detection.aws_root_login' in deps
+        assert "detection.aws_root_login" in deps
 
     def test_extract_dependencies_multiple(self, provider):
         """Test extracting multiple dependencies"""
         template = {
-            'name': 'rule123_response_workflow',
-            'trigger': {'event': 'test', 'type': 'Signal'},
-            'actions': {},
-            'conditions': {
-                'check_name': {
-                    'expression': "Trigger.Category.Investigatable.Name:'Test Detection'"
-                }
-            }
+            "name": "rule123_response_workflow",
+            "trigger": {"event": "test", "type": "Signal"},
+            "actions": {},
+            "conditions": {"check_name": {"expression": "Trigger.Category.Investigatable.Name:'Test Detection'"}},
         }
 
         deps = provider.extract_dependencies(template)
 
         # Should have at least the one from workflow name
-        assert 'detection.rule123' in deps
-
+        assert "detection.rule123" in deps
 
     def test_requires_replacement_always_returns_reason(self, provider):
         """WorkflowProvider always requires replacement since API doesn't support updates."""
-        template = {"resource_id": "test___workflow", "name": "test", "trigger": {"event": "Investigatable/NGSIEM", "type": "Signal"}, "actions": {"A": {}}}
+        template = {
+            "resource_id": "test___workflow",
+            "name": "test",
+            "trigger": {"event": "Investigatable/NGSIEM", "type": "Signal"},
+            "actions": {"A": {}},
+        }
         current_state = {"name": "test"}
         reason = provider.requires_replacement(template, current_state)
         assert reason is not None
@@ -366,7 +310,7 @@ class TestWorkflowProvider:
         template = {
             "name": "Test Workflow",
             "trigger": {"event": "Investigatable/NGSIEM", "type": "Signal"},
-            "actions": {"Notify": {"id": "abc123", "name": "Notify"}}
+            "actions": {"Notify": {"id": "abc123", "name": "Notify"}},
         }
         errors = provider.validate_template(template)
         assert any("resource_id" in e.lower() for e in errors)

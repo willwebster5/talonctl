@@ -5,15 +5,10 @@ Unit tests for StateManager v3.0
 import pytest
 import json
 import tempfile
-import sys
 from pathlib import Path
 from datetime import datetime, timezone
 
-# Add scripts directory to path
-SCRIPTS_DIR = Path(__file__).parent.parent.parent / "scripts"
-sys.path.insert(0, str(SCRIPTS_DIR))
-
-from core.state_manager import StateManager, ResourceState
+from talonctl.core.state_manager import StateManager, ResourceState
 
 
 class TestStateManager:
@@ -22,7 +17,7 @@ class TestStateManager:
     @pytest.fixture
     def temp_state_file(self):
         """Create a temporary state file"""
-        with tempfile.NamedTemporaryFile(mode='w', suffix='.json', delete=False) as f:
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False) as f:
             temp_path = Path(f.name)
         yield temp_path
         if temp_path.exists():
@@ -52,7 +47,7 @@ class TestStateManager:
             deployed_at=datetime.now(timezone.utc).isoformat(),
             last_modified=datetime.now(timezone.utc).isoformat(),
             provider_metadata={"rule_id": "rule123"},
-            dependencies=[]
+            dependencies=[],
         )
 
         manager.set_resource("detection", "test_rule", resource)
@@ -74,7 +69,7 @@ class TestStateManager:
             deployed_at=datetime.now(timezone.utc).isoformat(),
             last_modified=datetime.now(timezone.utc).isoformat(),
             provider_metadata={},
-            dependencies=[]
+            dependencies=[],
         )
 
         manager.set_resource("detection", "test_rule", resource)
@@ -101,7 +96,7 @@ class TestStateManager:
                 deployed_at=datetime.now(timezone.utc).isoformat(),
                 last_modified=datetime.now(timezone.utc).isoformat(),
                 provider_metadata={},
-                dependencies=[]
+                dependencies=[],
             )
             manager.set_resource("detection", f"test_rule_{i}", resource)
 
@@ -114,7 +109,7 @@ class TestStateManager:
                 deployed_at=datetime.now(timezone.utc).isoformat(),
                 last_modified=datetime.now(timezone.utc).isoformat(),
                 provider_metadata={},
-                dependencies=[]
+                dependencies=[],
             )
             manager.set_resource("workflow", f"test_workflow_{i}", resource)
 
@@ -141,7 +136,7 @@ class TestStateManager:
             deployed_at=datetime.now(timezone.utc).isoformat(),
             last_modified=datetime.now(timezone.utc).isoformat(),
             provider_metadata={"rule_id": "rule123"},
-            dependencies=[]
+            dependencies=[],
         )
 
         manager.set_resource("detection", "test_rule", resource)
@@ -159,7 +154,7 @@ class TestStateManager:
         """Test managing resource dependency graph"""
         manager = StateManager(temp_state_file)
 
-        from core.resource_graph import ResourceGraph
+        from talonctl.core.resource_graph import ResourceGraph
 
         graph = ResourceGraph()
         graph.add_dependency("workflow.notify", "detection.alert")
@@ -184,11 +179,7 @@ class TestStateManager:
         """Test deployment metadata management"""
         manager = StateManager(temp_state_file)
 
-        metadata = {
-            "deployed_by": "test@example.com",
-            "deployment_id": "deploy123",
-            "environment": "test"
-        }
+        metadata = {"deployed_by": "test@example.com", "deployment_id": "deploy123", "environment": "test"}
 
         manager.set_metadata(metadata)
         manager.save()
@@ -203,7 +194,6 @@ class TestStateManager:
 
     def test_atomic_state_write(self, temp_state_file):
         """Test that state writes are atomic and durable"""
-        import os
 
         manager = StateManager(temp_state_file)
 
@@ -216,7 +206,7 @@ class TestStateManager:
             deployed_at=datetime.now(timezone.utc).isoformat(),
             last_modified=datetime.now(timezone.utc).isoformat(),
             provider_metadata={"rule_id": "rule123"},
-            dependencies=[]
+            dependencies=[],
         )
         manager.set_resource("detection", "test_rule", resource)
 
@@ -224,12 +214,12 @@ class TestStateManager:
         manager.save()
 
         # Verify no temp file left behind
-        temp_path = temp_state_file.with_suffix('.tmp')
+        temp_path = temp_state_file.with_suffix(".tmp")
         assert not temp_path.exists(), "Temp file should be cleaned up after save"
 
         # Verify state file exists and is valid JSON
         assert temp_state_file.exists()
-        with open(temp_state_file, 'r') as f:
+        with open(temp_state_file, "r") as f:
             state = json.load(f)
             assert state["version"] == "3.0"
             assert "detection" in state["resources"]
