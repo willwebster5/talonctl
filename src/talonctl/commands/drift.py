@@ -33,12 +33,15 @@ def drift(ctx, resources, tags, names, state_file):
         formatter.format_drift_report(report)
 
         # Exit code 1 if drift detected (useful for CI)
-        ctx.exit(1 if report.has_drift else 0)
+        if report.has_drift:
+            raise SystemExit(1)
 
+    except SystemExit:
+        raise
     except Exception as e:
         console.print(f"[red]✗ Error during drift detection: {e}[/red]")
         if verbose:
             import traceback
 
             traceback.print_exc()
-        ctx.exit(1)
+        raise SystemExit(1)

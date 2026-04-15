@@ -76,12 +76,14 @@ def publish(ctx, resources, tags, names, state_file, auto_approve):
             console.print()
 
         if failed:
-            ctx.exit(1)
+            raise SystemExit(1)
 
+    except SystemExit:
+        raise
     except Exception as e:
         console.print(f"[red]✗ Error during publish: {e}[/red]")
         if verbose:
             import traceback
 
             traceback.print_exc()
-        ctx.exit(1)
+        raise SystemExit(1)

@@ -55,10 +55,12 @@ def show(ctx, resources, tags, names, state_file, output_format):
             formatter = PlanFormatter(console, verbose=verbose)
             formatter.format_state_view(formatted_state)
 
+    except SystemExit:
+        raise
     except Exception as e:
         console.print(f"[red]✗ Error showing state: {e}[/red]")
         if verbose:
             import traceback
 
             traceback.print_exc()
-        ctx.exit(1)
+        raise SystemExit(1)

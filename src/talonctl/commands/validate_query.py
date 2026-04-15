@@ -26,14 +26,14 @@ def validate_query(ctx, query, query_file, template):
         file_path = Path(query_file)
         if not file_path.exists():
             console.print(f"INVALID: File not found: {query_file}")
-            ctx.exit(1)
+            raise SystemExit(1)
             return
         resolved_query = file_path.read_text()
     elif template:
         template_path = Path(template)
         if not template_path.exists():
             console.print(f"INVALID: Template not found: {template}")
-            ctx.exit(1)
+            raise SystemExit(1)
             return
         try:
             with open(template_path) as f:
@@ -44,15 +44,15 @@ def validate_query(ctx, query, query_file, template):
                 resolved_query = template_data.get("queryString")
             if not resolved_query:
                 console.print("INVALID: No search.filter, search.query, or queryString found in template")
-                ctx.exit(1)
+                raise SystemExit(1)
                 return
         except yaml.YAMLError as e:
             console.print(f"INVALID: YAML parse error: {e}")
-            ctx.exit(1)
+            raise SystemExit(1)
             return
     else:
         console.print("INVALID: Must specify --query, --file, or --template")
-        ctx.exit(1)
+        raise SystemExit(1)
         return
 
     # Initialize NGSIEM client and validate
@@ -66,8 +66,10 @@ def validate_query(ctx, query, query_file, template):
             console.print("VALID")
         else:
             console.print(f"INVALID: {result.get('message', 'Unknown error')}")
-            ctx.exit(1)
+            raise SystemExit(1)
 
+    except SystemExit:
+        raise
     except Exception as e:
         console.print(f"INVALID: {e}")
-        ctx.exit(1)
+        raise SystemExit(1)

@@ -61,7 +61,7 @@ def apply(
             invalid = sum(1 for r in plan_result.query_validation_results if not r.is_valid)
             if invalid > 0:
                 console.print("[red]✗ Apply blocked due to invalid queries[/red]\n")
-                ctx.exit(1)
+                raise SystemExit(1)
                 return
 
         changes_to_apply = [c for c in plan_result.changes if c.action != ResourceAction.NO_CHANGE]
@@ -93,11 +93,13 @@ def apply(
                 for resource_id, error in result.failed:
                     console.print(f"  • {resource_id}: {error}")
                 console.print()
-            ctx.exit(1)
+            raise SystemExit(1)
+    except SystemExit:
+        raise
     except Exception as e:
         console.print(f"[red]✗ Error during apply: {e}[/red]")
         if verbose:
             import traceback
 
             traceback.print_exc()
-        ctx.exit(1)
+        raise SystemExit(1)

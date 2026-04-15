@@ -1,6 +1,7 @@
 """Authentication utilities for FalconPy."""
 
 import json
+import logging
 import os
 from falconpy import APIHarnessV2, Hosts, Detects
 
@@ -23,7 +24,7 @@ def load_credentials(config_path=None):
             config = json.load(f)
         return config
     except Exception as e:
-        print(f"Error loading credentials from {config_path}: {e}")
+        logging.getLogger(__name__).debug(f"Could not load credentials from {config_path}: {e}")
         return None
 
 

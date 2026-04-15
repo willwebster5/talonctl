@@ -30,11 +30,14 @@ def validate(ctx, resources, tags, names, state_file):
         formatter = PlanFormatter(console, verbose=verbose)
         formatter.format_validation_results(results)
         has_errors = any(errors for errors in results.values() if errors)
-        ctx.exit(1 if has_errors else 0)
+        if has_errors:
+            raise SystemExit(1)
+    except SystemExit:
+        raise
     except Exception as e:
         console.print(f"[red]✗ Error during validation: {e}[/red]")
         if verbose:
             import traceback
 
             traceback.print_exc()
-        ctx.exit(1)
+        raise SystemExit(1)

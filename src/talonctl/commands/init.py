@@ -30,7 +30,7 @@ def init(ctx, path):
     # Refuse if already initialized
     if (project_dir / ".crowdstrike").exists():
         console.print("[red]✗ Directory already contains a talonctl project (.crowdstrike/ exists)[/red]")
-        ctx.exit(1)
+        raise SystemExit(1)
         return
 
     project_dir.mkdir(parents=True, exist_ok=True)

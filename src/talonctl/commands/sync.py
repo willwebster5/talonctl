@@ -71,10 +71,12 @@ def sync(ctx, resources, tags, names, state_file):
                 "[yellow]No resources synced - check filters or verify resources exist in CrowdStrike[/yellow]\n"
             )
 
+    except SystemExit:
+        raise
     except Exception as e:
         console.print(f"[red]✗ Error during sync: {e}[/red]")
         if verbose:
             import traceback
 
             traceback.print_exc()
-        ctx.exit(1)
+        raise SystemExit(1)

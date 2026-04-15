@@ -69,12 +69,14 @@ def import_cmd(ctx, resources, tags, names, state_file, import_plan):
             console.print("[yellow]No resources found to import[/yellow]\n")
 
         if stats["errors"]:
-            ctx.exit(1)
+            raise SystemExit(1)
 
+    except SystemExit:
+        raise
     except Exception as e:
         console.print(f"[red]✗ Error during import: {e}[/red]")
         if verbose:
             import traceback
 
             traceback.print_exc()
-        ctx.exit(1)
+        raise SystemExit(1)
