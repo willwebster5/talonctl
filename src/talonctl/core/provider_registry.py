@@ -8,7 +8,7 @@ Enables dynamic provider loading and configuration.
 from typing import Dict, Type, Optional, Any
 import logging
 
-from core.base_provider import BaseResourceProvider
+from talonctl.core.base_provider import BaseResourceProvider
 
 logger = logging.getLogger(__name__)
 

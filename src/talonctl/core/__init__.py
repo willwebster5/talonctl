@@ -11,44 +11,44 @@ This package provides the foundational components for the unified resource manag
 - PlanFormatter: Terraform-style output formatting
 """
 
-from core.base_provider import (
+from talonctl.core.base_provider import (
     BaseResourceProvider,
     ResourceAction,
     ResourceChange
 )
-from core.resource_graph import (
+from talonctl.core.resource_graph import (
     ResourceGraph,
     DependencyCycle
 )
-from core.state_manager import (
+from talonctl.core.state_manager import (
     StateManager,
     ResourceState
 )
-from core.provider_registry import (
+from talonctl.core.provider_registry import (
     ProviderRegistry
 )
-from core.provider_adapter import (
+from talonctl.core.provider_adapter import (
     ProviderAdapter
 )
-from core.deployment_orchestrator import (
+from talonctl.core.deployment_orchestrator import (
     DeploymentOrchestrator,
     DeploymentPlan,
     DeploymentResult,
     ResourceChange as OrchestratorResourceChange
 )
-from core.template_discovery import (
+from talonctl.core.template_discovery import (
     TemplateDiscovery,
     DiscoveredTemplate
 )
-from core.plan_formatter import (
+from talonctl.core.plan_formatter import (
     PlanFormatter
 )
-from core.drift_detector import (
+from talonctl.core.drift_detector import (
     DriftDetector,
     DriftReport,
     DriftItem
 )
-from core.dependency_validator import (
+from talonctl.core.dependency_validator import (
     DependencyValidator,
     DependencyIssue
 )

@@ -13,7 +13,7 @@ from pathlib import Path
 from typing import Dict, List, Any, Optional
 from datetime import datetime, timezone
 
-from core import ResourceChange, ResourceAction
+from talonctl.core.base_provider import ResourceChange, ResourceAction
 
 logger = logging.getLogger(__name__)
 

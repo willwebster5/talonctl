@@ -11,12 +11,12 @@ from pathlib import Path
 from typing import Dict, List, Optional, Any
 from datetime import datetime, timezone
 
-from core import (
+from talonctl.core.base_provider import (
     BaseResourceProvider,
     ResourceAction,
     ResourceChange
 )
-from core.state_manager import StateManager, ResourceState
+from talonctl.core.state_manager import StateManager, ResourceState
 
 logger = logging.getLogger(__name__)
 

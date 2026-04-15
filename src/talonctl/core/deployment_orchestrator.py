@@ -13,17 +13,17 @@ from dataclasses import dataclass, field
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timezone
 
-from core.template_discovery import TemplateDiscovery, DiscoveredTemplate
-from core.resource_graph import ResourceGraph
-from core.state_manager import StateManager, ResourceState
-from core.provider_adapter import ProviderAdapter
-from core.state_synchronizer import StateSynchronizer
-from core.drift_detector import DriftDetector, DriftReport
-from core import ResourceAction, ResourceChange
+from talonctl.core.template_discovery import TemplateDiscovery, DiscoveredTemplate
+from talonctl.core.resource_graph import ResourceGraph
+from talonctl.core.state_manager import StateManager, ResourceState
+from talonctl.core.provider_adapter import ProviderAdapter
+from talonctl.core.state_synchronizer import StateSynchronizer
+from talonctl.core.drift_detector import DriftDetector, DriftReport
+from talonctl.core.base_provider import ResourceAction, ResourceChange
 
 # Try to import NGSIEMClient for query validation
 try:
-    from utils.ngsiem_client import NGSIEMClient
+    from talonctl.utils.ngsiem_client import NGSIEMClient
     NGSIEM_CLIENT_AVAILABLE = True
 except ImportError:
     NGSIEM_CLIENT_AVAILABLE = False
@@ -1344,7 +1344,7 @@ class DeploymentOrchestrator:
     @staticmethod
     def _name_to_resource_id(name: str) -> str:
         """Convert display name to snake_case resource_id (delegated to BaseResourceProvider)."""
-        from core.base_provider import BaseResourceProvider
+        from talonctl.core.base_provider import BaseResourceProvider
         return BaseResourceProvider._name_to_resource_id(name)
 
     def _verify_state_entries(

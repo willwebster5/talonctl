@@ -13,7 +13,7 @@ from typing import Dict, List, Optional, Any, Set
 from dataclasses import dataclass, asdict
 import logging
 
-from core.resource_graph import ResourceGraph
+from talonctl.core.resource_graph import ResourceGraph
 
 logger = logging.getLogger(__name__)
 
