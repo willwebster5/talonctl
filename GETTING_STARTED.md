@@ -16,26 +16,34 @@ You need:
 ## 2. Installation
 
 ```bash
-# Clone the repo
+# Install from GitHub
+pip install git+https://github.com/willwebster5/talonctl.git
+
+# Or install for development
 git clone https://github.com/willwebster5/talonctl.git
 cd talonctl
-
-# Create a virtual environment
-python -m venv .venv
-source .venv/bin/activate
-
-# Install dependencies
-pip install -r requirements.txt
+pip install -e .[dev]
 ```
 
-Dependencies:
+Dependencies (installed automatically):
 - `crowdstrike-falconpy` — CrowdStrike API SDK
 - `pyyaml` — YAML template parsing
 - `rich` — terminal output formatting
+- `click` — CLI framework
 - `requests` — HTTP calls
-- `pytest` — testing
 
 ## 3. Setup
+
+### Scaffold a New Project
+
+```bash
+talonctl init myproject
+cd myproject
+```
+
+This creates the full project directory structure with resource directories, knowledge base templates, state file, and `.gitignore`.
+
+### Configure Credentials
 
 Run the setup wizard:
 
@@ -76,7 +84,7 @@ If you already have detections, saved searches, or other resources in your Crowd
 ### Preview the Import
 
 ```bash
-python scripts/resource_deploy.py import --plan
+talonctl import --plan
 ```
 
 This connects to your tenant, discovers existing resources, and shows what would be imported — without changing anything.
@@ -85,16 +93,16 @@ This connects to your tenant, discovers existing resources, and shows what would
 
 ```bash
 # Import detection rules
-python scripts/resource_deploy.py import --resources=detection
+talonctl import --resources=detection
 
 # Import saved searches
-python scripts/resource_deploy.py import --resources=saved_search
+talonctl import --resources=saved_search
 
 # Import multiple types at once
-python scripts/resource_deploy.py import --resources=detection,saved_search,workflow
+talonctl import --resources=detection,saved_search,workflow
 
 # Import everything
-python scripts/resource_deploy.py import
+talonctl import
 ```
 
 What happens:
@@ -109,20 +117,20 @@ What happens:
 ls resources/detections/
 
 # Validate all templates parse correctly
-python scripts/resource_deploy.py validate
+talonctl validate
 
 # Show current state
-python scripts/resource_deploy.py show
+talonctl show
 ```
 
 ## 5. Plan and Deploy
 
 ```bash
 # See what would change
-python scripts/resource_deploy.py plan
+talonctl plan
 
 # Deploy (after reviewing the plan)
-python scripts/resource_deploy.py apply
+talonctl apply
 ```
 
 ## 6. CI/CD Setup
@@ -178,7 +186,7 @@ No resources found for type: detection
 
 - Confirm your API client has the required scopes (Custom IOA Rules: Read)
 - Check that you're pointing at the right tenant/region
-- Try `python scripts/resource_deploy.py import --plan` to see the full discovery output
+- Try `talonctl import --plan` to see the full discovery output
 
 ### Plan Shows Unexpected Changes
 
@@ -187,8 +195,8 @@ No resources found for type: detection
 ```
 
 - Someone may have edited the detection in the Falcon Console directly
-- Run `python scripts/resource_deploy.py drift` to see what changed
-- Run `python scripts/resource_deploy.py sync` to pull the live version into state
+- Run `talonctl drift` to see what changed
+- Run `talonctl sync` to pull the live version into state
 - Decide whether to keep the console change (update template) or revert it (apply)
 
 ### Saved Search Description Too Long

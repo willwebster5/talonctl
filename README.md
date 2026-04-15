@@ -30,9 +30,18 @@ What you get:
 
 ```
 talonctl/
-├── .crowdstrike/              # State files (deployed_state.json)
-├── .github/workflows/         # CI/CD: plan on PR, apply on merge
-├── resources/                 # IaC templates
+├── pyproject.toml              # Package configuration
+├── src/talonctl/               # Package source
+│   ├── cli.py                  # Click CLI entry point
+│   ├── project.py              # Project root finder
+│   ├── commands/               # CLI command modules
+│   ├── core/                   # Orchestrator, state, plan, drift
+│   ├── providers/              # Per-resource-type API adapters
+│   ├── utils/                  # Auth, NGSIEM client, MITRE processor
+│   └── templates/              # Scaffolding templates for init
+├── .crowdstrike/               # State files (deployed_state.json)
+├── .github/workflows/          # CI/CD: plan on PR, apply on merge
+├── resources/                  # IaC templates
 │   ├── detections/
 │   ├── saved_searches/
 │   ├── dashboards/
@@ -40,14 +49,12 @@ talonctl/
 │   ├── lookup_files/
 │   ├── rtr_scripts/
 │   └── rtr_put_files/
-├── scripts/                   # Deployment engine
-│   ├── resource_deploy.py     # Main CLI
-│   ├── setup.py               # Credential setup wizard
-│   ├── core/                  # Orchestrator, state, plan, drift
-│   ├── providers/             # Per-resource-type API adapters
-│   └── utils/                 # Auth, NGSIEM client, MITRE processor
-├── tests/                     # Unit tests
-└── examples/                  # Dashboards, parsers, lookup file templates
+├── scripts/                    # Standalone utilities
+│   ├── setup.py                # Credential setup wizard
+│   ├── detection_health.py     # Detection health checker
+│   └── soc_metrics.py          # SOC metrics aggregator
+├── tests/                      # Unit tests
+└── examples/                   # Dashboards, parsers, lookup file templates
 ```
 
 ## Prerequisites
@@ -59,38 +66,39 @@ talonctl/
 ## Quick Start
 
 ```bash
-# Clone
-git clone https://github.com/willwebster5/talonctl.git
-cd talonctl
+# Install
+pip install git+https://github.com/willwebster5/talonctl.git
 
-# Install dependencies
-python -m venv .venv
-source .venv/bin/activate
-pip install -r requirements.txt
+# Scaffold a new project
+talonctl init myproject
+cd myproject
 
 # Configure credentials
-python scripts/setup.py
+python -m talonctl.utils.auth  # or use scripts/setup.py
 
 # Import your existing detections
-python scripts/resource_deploy.py import --plan              # preview what would be imported
-python scripts/resource_deploy.py import --resources=detection  # import detection rules
+talonctl import --plan              # preview what would be imported
+talonctl import --resources=detection  # import detection rules
 
 # Plan and deploy
-python scripts/resource_deploy.py plan    # preview changes
-python scripts/resource_deploy.py apply   # deploy
+talonctl plan    # preview changes
+talonctl apply   # deploy
 ```
 
 ## Commands
 
 ```bash
-python scripts/resource_deploy.py validate       # check templates (no API calls)
-python scripts/resource_deploy.py plan            # preview changes
-python scripts/resource_deploy.py apply           # deploy changes
-python scripts/resource_deploy.py import          # onboard existing resources
-python scripts/resource_deploy.py import --plan   # preview import
-python scripts/resource_deploy.py sync            # reconcile state with tenant
-python scripts/resource_deploy.py drift           # detect manual console changes
-python scripts/resource_deploy.py show            # display current state
+talonctl validate       # check templates (no API calls)
+talonctl plan            # preview changes
+talonctl apply           # deploy changes
+talonctl import          # onboard existing resources
+talonctl import --plan   # preview import
+talonctl sync            # reconcile state with tenant
+talonctl drift           # detect manual console changes
+talonctl show            # display current state
+talonctl init            # scaffold a new project
+talonctl validate-query  # validate CQL syntax
+talonctl publish         # activate inactive detection rules
 ```
 
 ## Import
@@ -99,14 +107,14 @@ Already have detections in your tenant? Import them:
 
 ```bash
 # Preview what would be imported
-python scripts/resource_deploy.py import --plan
+talonctl import --plan
 
 # Import specific resource types
-python scripts/resource_deploy.py import --resources=detection
-python scripts/resource_deploy.py import --resources=saved_search,detection
+talonctl import --resources=detection
+talonctl import --resources=saved_search,detection
 
 # Import everything
-python scripts/resource_deploy.py import
+talonctl import
 ```
 
 This generates YAML templates in `resources/` and updates the state file, bringing existing resources under IaC management.

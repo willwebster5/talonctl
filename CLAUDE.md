@@ -30,26 +30,29 @@ Every IaC-managed resource has two identifiers:
 
 ```bash
 # Validate all templates (no API calls)
-python scripts/resource_deploy.py validate
+talonctl validate
 
 # Preview what would change
-python scripts/resource_deploy.py plan
+talonctl plan
 
 # Deploy changes (requires plan first)
-python scripts/resource_deploy.py apply
+talonctl apply
 
 # Import existing tenant resources into IaC
-python scripts/resource_deploy.py import --plan          # preview
-python scripts/resource_deploy.py import --resources=detection  # execute
+talonctl import --plan          # preview
+talonctl import --resources=detection  # execute
 
 # Sync state with live tenant
-python scripts/resource_deploy.py sync
+talonctl sync
 
 # Detect manual console changes
-python scripts/resource_deploy.py drift
+talonctl drift
 
 # Show current state
-python scripts/resource_deploy.py show
+talonctl show
+
+# Scaffold a new project
+talonctl init myproject
 ```
 
 ## Production Rules
@@ -57,7 +60,7 @@ python scripts/resource_deploy.py show
 1. **Always plan before apply.** Never blind-deploy. CI/CD enforces this on PRs.
 2. **Never change `resource_id` after deploy.** It destroys and recreates the resource.
 3. **Saved search description limit: 2000 characters.** The API silently truncates beyond this.
-4. **Validate CQL syntax** before committing detection changes: `python scripts/resource_deploy.py validate-query --template <path>`
+4. **Validate CQL syntax** before committing detection changes: `talonctl validate-query --template <path>`
 
 ## Resource Types
 
@@ -89,10 +92,19 @@ python scripts/resource_deploy.py show
 
 ```
 talonctl/
-├── .crowdstrike/              # State files (deployed_state.json)
-├── .github/workflows/         # CI/CD: plan on PR, apply on merge
-├── knowledge/                 # Living operational knowledge base
-├── resources/                 # IaC templates
+├── pyproject.toml              # Package configuration
+├── src/talonctl/               # Package source
+│   ├── cli.py                  # Click CLI entry point
+│   ├── project.py              # Project root finder
+│   ├── commands/               # CLI command modules
+│   ├── core/                   # Orchestrator, state, plan, drift
+│   ├── providers/              # Per-resource-type API adapters
+│   ├── utils/                  # Auth, NGSIEM client, MITRE processor
+│   └── templates/              # Scaffolding templates for init
+├── .crowdstrike/               # State files (deployed_state.json)
+├── .github/workflows/          # CI/CD: plan on PR, apply on merge
+├── knowledge/                  # Living operational knowledge base
+├── resources/                  # IaC templates
 │   ├── detections/
 │   ├── saved_searches/
 │   ├── dashboards/
@@ -100,14 +112,12 @@ talonctl/
 │   ├── lookup_files/
 │   ├── rtr_scripts/
 │   └── rtr_put_files/
-├── scripts/                   # Deployment engine
-│   ├── resource_deploy.py     # Main CLI
-│   ├── setup.py               # Credential setup wizard
-│   ├── core/                  # Orchestrator, state, plan, drift
-│   ├── providers/             # Per-resource-type API adapters
-│   └── utils/                 # Auth, NGSIEM client, MITRE processor
-├── tests/                     # Unit tests
-└── examples/                  # Dashboards, parsers, lookup file templates
+├── scripts/                    # Standalone utilities
+│   ├── setup.py                # Credential setup wizard
+│   ├── detection_health.py     # Detection health checker
+│   └── soc_metrics.py          # SOC metrics aggregator
+├── tests/                      # Unit tests
+└── examples/                   # Dashboards, parsers, lookup file templates
 ```
 
 ## Knowledge Base
