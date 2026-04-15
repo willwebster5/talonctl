@@ -95,5 +95,3 @@ __all__ = [
     'DependencyValidator',
     'DependencyIssue',
 ]
-
-__version__ = '3.0.0'

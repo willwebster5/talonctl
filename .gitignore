@@ -40,3 +40,6 @@ docs/superpowers/
 # Handoff docs (ephemeral working artifacts between skills)
 docs/handoffs/
 !docs/handoffs/.gitkeep
+
+# hatch-vcs generated version file
+src/talonctl/_version.py
