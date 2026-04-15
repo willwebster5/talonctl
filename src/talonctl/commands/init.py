@@ -24,7 +24,7 @@ def init(ctx, path):
 
     # Refuse if already initialized
     if (project_dir / '.crowdstrike').exists():
-        console.print(f"[red]✗ Directory already contains a talonctl project (.crowdstrike/ exists)[/red]")
+        console.print("[red]✗ Directory already contains a talonctl project (.crowdstrike/ exists)[/red]")
         ctx.exit(1)
         return
 

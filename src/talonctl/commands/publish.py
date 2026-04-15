@@ -4,7 +4,7 @@ import click
 from rich.prompt import Confirm
 
 from talonctl.commands._common import (
-    console, filter_options, state_options, parse_filters, init_orchestrator,
+    console, filter_options, state_options, parse_filters,
 )
 
 
@@ -18,7 +18,6 @@ def publish(ctx, resources, tags, names, state_file, auto_approve):
     console.print("[bold blue]Publishing detection rules...[/bold blue]\n")
     verbose = ctx.obj.get('verbose', False)
 
-    orchestrator = init_orchestrator(state_file=state_file)
     filters = parse_filters(resources, tags, names)
 
     try:

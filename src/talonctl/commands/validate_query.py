@@ -14,8 +14,6 @@ def validate_query(ctx, query, query_file, template):
     """Validate a single LogScale/NGSIEM query."""
     import yaml
     from pathlib import Path
-    verbose = ctx.obj.get('verbose', False)
-
     # Determine query source
     resolved_query = None
 
