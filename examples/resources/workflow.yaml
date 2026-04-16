@@ -10,20 +10,20 @@ description: |
   Sends a notification when a critical-severity detection fires.
   Trigger: detection with severity >= 70.
   Action: Posts to a webhook endpoint.
-definition:
-  # The definition field contains the Falcon Fusion workflow JSON.
-  # Export an existing workflow from the Falcon console to get the full structure,
-  # or use the fusion-workflows skill to build one from scratch.
-  #
-  # Example structure (simplified):
-  # {
-  #   "trigger": { "type": "detection", "conditions": { "severity": { "gte": 70 } } },
-  #   "actions": [
-  #     { "type": "webhook", "config": { "url": "https://hooks.example.com/alerts" } }
-  #   ]
-  # }
+enabled: true
 trigger:
-  type: detection
+  event: Investigatable/NGSIEM
+  type: Signal
+  conditions:
+    severity:
+      gte: 70
+actions:
+  webhook_notify:
+    id: generic_webhook
+    name: Post to webhook
+    properties:
+      url: https://hooks.example.com/alerts
+conditions: {}
 tags:
   - notification
   - critical
