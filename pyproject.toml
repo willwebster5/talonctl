@@ -28,7 +28,7 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-dev = ["pytest>=7.0.0", "ruff>=0.8.0"]
+dev = ["pre-commit>=3.7", "pytest>=7.0.0", "ruff>=0.8.0"]
 
 [project.scripts]
 talonctl = "talonctl.cli:cli"

@@ -69,8 +69,7 @@ class DetectionProvider(BaseResourceProvider):
         unknown = set(ref.keys()) - self.ADS_REF_ALLOWED_KEYS
         if unknown:
             errs.append(
-                f"Unknown ref dict key(s) in {field_path}: {', '.join(sorted(unknown))}. "
-                f"Known keys: path, label"
+                f"Unknown ref dict key(s) in {field_path}: {', '.join(sorted(unknown))}. Known keys: path, label"
             )
         if "path" not in ref:
             errs.append(f"{field_path} ref dict missing required 'path' key")
@@ -236,8 +235,7 @@ class DetectionProvider(BaseResourceProvider):
                                     )
                         else:
                             errors.append(
-                                f"{path_tag} must be a string, inline FP dict, or "
-                                f"ref dict ({{path, label?}})"
+                                f"{path_tag} must be a string, inline FP dict, or ref dict ({{path, label?}})"
                             )
 
                 # Per-entry validation for validation (list of string | ref-dict; no inline-dict form).
@@ -253,9 +251,7 @@ class DetectionProvider(BaseResourceProvider):
                             # defined for this field, so those errors are sufficient.
                             errors.extend(self._validate_ads_ref_dict(entry, path_tag))
                         else:
-                            errors.append(
-                                f"{path_tag} must be a string or ref dict ({{path, label?}})"
-                            )
+                            errors.append(f"{path_tag} must be a string or ref dict ({{path, label?}})")
 
                 # Type-union validation for response (string | ref-dict).
                 if "response" in ads:
@@ -265,9 +261,7 @@ class DetectionProvider(BaseResourceProvider):
                     elif isinstance(response, dict):
                         errors.extend(self._validate_ads_ref_dict(response, "ads.response"))
                     else:
-                        errors.append(
-                            "ads.response must be a string or ref dict ({path, label?})"
-                        )
+                        errors.append("ads.response must be a string or ref dict ({path, label?})")
 
         # Validate metadata: block if present (optional block, strict when present).
         # See docs/superpowers/specs/2026-04-16-metadata-schema-and-ads-refs-design.md §1.
@@ -280,10 +274,7 @@ class DetectionProvider(BaseResourceProvider):
                 unknown = set(metadata.keys()) - self.METADATA_ALLOWED_FIELDS
                 if unknown:
                     known = ", ".join(sorted(self.METADATA_ALLOWED_FIELDS))
-                    errors.append(
-                        f"Unknown metadata key(s): {', '.join(sorted(unknown))}. "
-                        f"Known keys: {known}"
-                    )
+                    errors.append(f"Unknown metadata key(s): {', '.join(sorted(unknown))}. Known keys: {known}")
 
                 # Validate date fields (YYYY-MM-DD; last_tuned additionally allows null).
                 for field in self.METADATA_DATE_FIELDS:
@@ -302,18 +293,14 @@ class DetectionProvider(BaseResourceProvider):
                 if "tune_count" in metadata:
                     val = metadata["tune_count"]
                     if isinstance(val, bool) or not isinstance(val, int) or val < 0:
-                        errors.append(
-                            f"metadata.tune_count must be a non-negative integer (got {val!r})"
-                        )
+                        errors.append(f"metadata.tune_count must be a non-negative integer (got {val!r})")
 
                 # Validate confidence enum.
                 if "confidence" in metadata:
                     val = metadata["confidence"]
                     if val not in self.METADATA_CONFIDENCE_VALUES:
                         allowed = ", ".join(sorted(self.METADATA_CONFIDENCE_VALUES))
-                        errors.append(
-                            f"metadata.confidence must be one of: {allowed} (got {val!r})"
-                        )
+                        errors.append(f"metadata.confidence must be one of: {allowed} (got {val!r})")
 
         return errors
 

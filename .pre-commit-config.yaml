@@ -1,0 +1,12 @@
+# talonctl pre-commit hooks. Mirrors the CI lint gate so formatting drift
+# cannot slip through to the ci.yml check. Install once with:
+#     pre-commit install
+# After that, every `git commit` runs the hooks automatically.
+repos:
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.15.10   # keep in sync with the ruff pin used by .github/workflows/ci.yml
+    hooks:
+      - id: ruff-format
+        args: [--exclude, src/talonctl/_version.py]
+      - id: ruff
+        args: [--exclude, src/talonctl/_version.py]
