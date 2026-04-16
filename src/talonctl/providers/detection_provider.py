@@ -801,6 +801,21 @@ class DetectionProvider(BaseResourceProvider):
         "ads_author",
     }
 
+    # Detection maturity metadata — optional block on detection templates.
+    # Strict validation when present (mirrors the ads: pattern). Ignored by
+    # the CrowdStrike API and excluded from compute_content_hash because the
+    # hash uses CONTENT_FIELDS/SEARCH_FIELDS allowlists.
+    METADATA_ALLOWED_FIELDS = {"created", "last_tuned", "tune_count", "confidence"}
+    METADATA_CONFIDENCE_VALUES = {"low", "medium", "high", "validated"}
+    METADATA_DATE_FIELDS = {"created", "last_tuned"}
+
+    # Ref-dict shape accepted by ads.false_positives / ads.response / ads.validation.
+    # See docs/superpowers/specs/2026-04-16-metadata-schema-and-ads-refs-design.md §2.
+    ADS_REF_ALLOWED_KEYS = {"path", "label"}
+
+    # Inline false_positives dict keys (existing convention — now strictly enforced).
+    ADS_FP_INLINE_ALLOWED_KEYS = {"pattern", "characteristics", "tuning", "status"}
+
     def compute_content_hash(self, template: Dict[str, Any]) -> str:
         """
         Calculate deterministic hash of rule content.
