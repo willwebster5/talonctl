@@ -7,13 +7,14 @@ CrowdStrike NGSIEM detection rules as Infrastructure as Code resources.
 
 import json
 import hashlib
-import re
 import logging
 from typing import Dict, List, Optional, Any, Tuple
 from datetime import datetime, timezone
 
 from talonctl.core.base_provider import BaseResourceProvider, ResourceAction, ResourceChange
 from talonctl.core.deployment_strategies import DeploymentStrategyFactory
+from talonctl.core.metadata_validators import reject_old_shape, validate_maturity
+from talonctl.core.template_sanitizer import strip_for_api, strip_for_hash
 from talonctl.utils.mitre_processor import MitreProcessor
 
 logger = logging.getLogger(__name__)
@@ -105,6 +106,13 @@ class DetectionProvider(BaseResourceProvider):
         """
         errors = []
 
+        # v0.3.0: reject pre-v0.3.0 shapes before running relocated validators so users
+        # see the migration pointer instead of a cascade of format errors.
+        errors.extend(reject_old_shape(template))
+
+        # v0.3.0: universal maturity validation (reads template["metadata"]["maturity"]).
+        errors.extend(validate_maturity(template))
+
         # Required fields
         required_fields = ["name", "description", "severity", "search"]
         for field in required_fields:
@@ -180,12 +188,14 @@ class DetectionProvider(BaseResourceProvider):
         # Legacy format: top-level tactic/technique fields are also valid
         # No validation needed - these are optional
 
-        # Validate ADS metadata if present (optional block, strict when present).
-        # Schema: docs/superpowers/specs/2026-04-16-metadata-schema-and-ads-refs-design.md §2.
-        ads = template.get("ads")
+        # v0.3.0: ADS metadata relocated to template["metadata"]["ads"] (was top-level ads:).
+        # Internal shape rules (goal required, ref-dict vs inline-FP, etc.) unchanged.
+        # Schema: docs/superpowers/specs/2026-04-16-metadata-namespace-redesign-design.md.
+        metadata_block = template.get("metadata")
+        ads = metadata_block.get("ads") if isinstance(metadata_block, dict) else None
         if ads is not None:
             if not isinstance(ads, dict):
-                errors.append("'ads' must be a dictionary")
+                errors.append("'metadata.ads' must be a dictionary")
             else:
                 # Required fields (goal) when ads: is present.
                 for field in self.ADS_REQUIRED_FIELDS:
@@ -262,45 +272,6 @@ class DetectionProvider(BaseResourceProvider):
                         errors.extend(self._validate_ads_ref_dict(response, "ads.response"))
                     else:
                         errors.append("ads.response must be a string or ref dict ({path, label?})")
-
-        # Validate metadata: block if present (optional block, strict when present).
-        # See docs/superpowers/specs/2026-04-16-metadata-schema-and-ads-refs-design.md §1.
-        metadata = template.get("metadata")
-        if metadata is not None:
-            if not isinstance(metadata, dict):
-                errors.append("'metadata' must be a dictionary")
-            else:
-                # Reject unknown keys with typo-friendly error listing known keys.
-                unknown = set(metadata.keys()) - self.METADATA_ALLOWED_FIELDS
-                if unknown:
-                    known = ", ".join(sorted(self.METADATA_ALLOWED_FIELDS))
-                    errors.append(f"Unknown metadata key(s): {', '.join(sorted(unknown))}. Known keys: {known}")
-
-                # Validate date fields (YYYY-MM-DD; last_tuned additionally allows null).
-                for field in self.METADATA_DATE_FIELDS:
-                    if field not in metadata:
-                        continue
-                    val = metadata[field]
-                    if field == "last_tuned" and val is None:
-                        continue
-                    if not isinstance(val, str) or not self._DATE_PATTERN.match(val):
-                        errors.append(
-                            f"metadata.{field} must be YYYY-MM-DD date"
-                            f"{' or null' if field == 'last_tuned' else ''} (got {val!r})"
-                        )
-
-                # Validate tune_count (non-negative int; bool explicitly rejected).
-                if "tune_count" in metadata:
-                    val = metadata["tune_count"]
-                    if isinstance(val, bool) or not isinstance(val, int) or val < 0:
-                        errors.append(f"metadata.tune_count must be a non-negative integer (got {val!r})")
-
-                # Validate confidence enum.
-                if "confidence" in metadata:
-                    val = metadata["confidence"]
-                    if val not in self.METADATA_CONFIDENCE_VALUES:
-                        allowed = ", ".join(sorted(self.METADATA_CONFIDENCE_VALUES))
-                        errors.append(f"metadata.confidence must be one of: {allowed} (got {val!r})")
 
         return errors
 
@@ -823,6 +794,8 @@ class DetectionProvider(BaseResourceProvider):
         Supports both legacy and new template formats.
         The CrowdStrike API accepts the search config as-is, so we pass it through.
         """
+        # v0.3.0: single source of truth for reserved/internal key stripping.
+        template = strip_for_api(template)
         payload = {
             "name": template["name"],
             "description": template.get("description", ""),
@@ -872,6 +845,8 @@ class DetectionProvider(BaseResourceProvider):
 
         This method creates a payload suitable for entities_rules_patch_v1 endpoint.
         """
+        # v0.3.0: single source of truth for reserved/internal key stripping.
+        template = strip_for_api(template)
         payload = {
             "description": template.get("description", ""),
             "severity": template.get("severity", 50),
@@ -932,15 +907,7 @@ class DetectionProvider(BaseResourceProvider):
         "ads_author",
     }
 
-    # Detection maturity metadata — optional block on detection templates.
-    # Strict validation when present (mirrors the ads: pattern). Ignored by
-    # the CrowdStrike API and excluded from compute_content_hash because the
-    # hash uses CONTENT_FIELDS/SEARCH_FIELDS allowlists.
-    METADATA_ALLOWED_FIELDS = {"created", "last_tuned", "tune_count", "confidence"}
-    METADATA_REQUIRED_FIELDS: set = set()  # All fields optional when block present.
-    METADATA_CONFIDENCE_VALUES = {"low", "medium", "high", "validated"}
-    METADATA_DATE_FIELDS = {"created", "last_tuned"}
-    _DATE_PATTERN = re.compile(r"^\d{4}-\d{2}-\d{2}$")
+    # v0.3.0: METADATA_* constants removed — now owned by core/metadata_validators.py.
 
     # Ref-dict shape accepted by ads.false_positives / ads.response / ads.validation.
     # See docs/superpowers/specs/2026-04-16-metadata-schema-and-ads-refs-design.md §2.
@@ -957,6 +924,10 @@ class DetectionProvider(BaseResourceProvider):
         Works on both template data and raw API response data by
         extracting the same canonical set of fields from either format.
         """
+        # v0.3.0: strip universal IaC-only + internal fields first for consistency
+        # with other providers. The allowlist build below is the effective filter,
+        # but this call locks in the single-source-of-truth for reserved keys.
+        template = strip_for_hash(template)
         # Extract only the fields we care about
         normalized_content = {
             "name": template.get("name", ""),
