@@ -824,6 +824,97 @@ class TestDetectionProvider:
         errors = provider.validate_template(minimal_detection)
         assert any("ads.response" in err for err in errors)
 
+    # --- Allowlist regression: metadata: and ads: never leak to API or hash ---
+
+    @pytest.fixture
+    def rich_template(self):
+        """Template populated with both metadata: and ads: blocks, for leak tests."""
+        return {
+            "resource_id": "test___test___rich",
+            "name": "Rich Template",
+            "description": "Template with both metadata: and ads: populated",
+            "severity": 50,
+            "status": "active",
+            "search": {
+                "filter": '#Vendor="test"',
+                "lookback": "5m",
+                "trigger_mode": "summary",
+                "outcome": "detection",
+            },
+            "mitre_attack": ["TA0005:T1562"],
+            "metadata": {
+                "created": "2026-01-15",
+                "last_tuned": "2026-04-10",
+                "tune_count": 3,
+                "confidence": "high",
+            },
+            "ads": {
+                "goal": "Detect the thing",
+                "blind_spots": ["blind to X"],
+                "priority_rationale": "Medium — commodity technique",
+                "false_positives": [
+                    {"path": "knowledge/patterns/aws.md#ci-cd", "label": "CI/CD"},
+                ],
+                "response": {"path": "playbooks/aws.md#sg-anomaly"},
+            },
+        }
+
+    def test_create_payload_excludes_metadata_and_ads(self, provider, rich_template):
+        """POST (create) payload must not contain metadata: or ads: keys."""
+        payload = provider._prepare_rule_payload(rich_template)
+        assert "metadata" not in payload, f"metadata: leaked into create payload: {payload}"
+        assert "ads" not in payload, f"ads: leaked into create payload: {payload}"
+
+    def test_patch_payload_excludes_metadata_and_ads(self, provider, rich_template):
+        """PATCH (update) payload must not contain metadata: or ads: keys."""
+        payload = provider._prepare_patch_payload(rich_template)
+        assert "metadata" not in payload, f"metadata: leaked into patch payload: {payload}"
+        assert "ads" not in payload, f"ads: leaked into patch payload: {payload}"
+
+    def test_hash_unchanged_when_metadata_mutates(self, provider, rich_template):
+        """Editing any metadata: field must not change the content hash."""
+        baseline = provider.compute_content_hash(rich_template)
+        mutated = {
+            **rich_template,
+            "metadata": {
+                "created": "2026-01-15",
+                "last_tuned": "2026-04-16",  # changed
+                "tune_count": 4,  # changed
+                "confidence": "validated",  # changed
+            },
+        }
+        assert provider.compute_content_hash(mutated) == baseline, (
+            "metadata: mutation must not change content hash"
+        )
+
+    def test_hash_unchanged_when_ads_mutates(self, provider, rich_template):
+        """Editing any ads: field (including ref dicts) must not change the content hash."""
+        baseline = provider.compute_content_hash(rich_template)
+        mutated = {
+            **rich_template,
+            "ads": {
+                "goal": "Detect the thing (revised)",
+                "strategy_abstract": "New abstract",
+                "blind_spots": ["blind to X", "also blind to Y"],
+                "false_positives": [
+                    {"path": "knowledge/patterns/aws.md#ci-cd", "label": "CI/CD"},
+                    {"path": "knowledge/patterns/aws.md#new", "label": "New pattern"},
+                ],
+                "response": "Inline response now",
+            },
+        }
+        assert provider.compute_content_hash(mutated) == baseline, (
+            "ads: mutation must not change content hash"
+        )
+
+    def test_hash_changes_when_real_field_mutates(self, provider, rich_template):
+        """Sanity: content hash MUST change when a real CONTENT_FIELDS member mutates."""
+        baseline = provider.compute_content_hash(rich_template)
+        mutated = {**rich_template, "severity": 70}
+        assert provider.compute_content_hash(mutated) != baseline, (
+            "severity change must produce a different hash (sanity check)"
+        )
+
 
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])
