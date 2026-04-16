@@ -19,6 +19,8 @@ from datetime import datetime, timezone
 from falconpy import RealTimeResponseAdmin
 
 from talonctl.core.base_provider import BaseResourceProvider, ResourceAction, ResourceChange
+from talonctl.core.metadata_validators import reject_old_shape, validate_maturity
+from talonctl.core.template_sanitizer import strip_for_hash
 
 logger = logging.getLogger(__name__)
 
@@ -109,6 +111,15 @@ class RTRScriptProvider(BaseResourceProvider):
             List of validation error messages (empty if valid)
         """
         errors = []
+
+        # v0.3.0: reject pre-v0.3.0 shapes and validate metadata.maturity universally.
+        errors.extend(reject_old_shape(template))
+        errors.extend(validate_maturity(template))
+
+        # metadata.ads is detection-only; flag on this provider.
+        metadata_block = template.get("metadata")
+        if isinstance(metadata_block, dict) and "ads" in metadata_block:
+            errors.append("metadata.ads is only supported on detection resources (this is a rtr_script template)")
 
         # Required fields
         required_fields = ["name", "description", "platform"]
@@ -505,13 +516,18 @@ class RTRScriptProvider(BaseResourceProvider):
         Returns:
             SHA256 hash as hex string
         """
+        # v0.3.0: _template_path is consumed here to resolve file-relative script
+        # paths, so it MUST be read before strip_for_hash removes it.
+        template_path = template.get("_template_path", ".")
+        template = strip_for_hash(template)
+
         # Load content if file_path is used
         content = template.get("content", "")
         file_path = template.get("file_path")
 
         if file_path and not content:
             try:
-                template_dir = Path(template.get("_template_path", ".")).parent
+                template_dir = Path(template_path).parent
                 full_path = template_dir / file_path
                 if full_path.exists():
                     with open(full_path, "r", encoding="utf-8") as f:

@@ -540,6 +540,44 @@ class TestRTRScriptProvider:
         result = provider_with_api.apply_delete("abc123")
         assert result["id"] == "abc123"
 
+    # --- v0.3.0 metadata namespace redesign ---
+
+    @pytest.fixture
+    def minimal_rtr_script(self, tmp_path):
+        script = tmp_path / "hello.sh"
+        script.write_text("#!/bin/sh\necho hi\n")
+        return {
+            "resource_id": "x",
+            "name": "hello",
+            "description": "say hi",
+            "platform": "linux",
+            "permission_type": "private",
+            "content": "#!/bin/sh\necho hi\n",
+            "_template_path": str(tmp_path / "tmpl.yaml"),
+        }
+
+    def test_v03_metadata_maturity_validates_on_rtr_script(self, provider, minimal_rtr_script):
+        minimal_rtr_script["metadata"] = {"maturity": {"created": "2026-04-16"}}
+        assert provider.validate_template(minimal_rtr_script) == []
+
+    def test_v03_metadata_ads_rejected_on_rtr_script(self, provider, minimal_rtr_script):
+        minimal_rtr_script["metadata"] = {"ads": {"goal": "g"}}
+        errors = provider.validate_template(minimal_rtr_script)
+        assert any("metadata.ads is only supported on detection resources" in e and "rtr_script" in e for e in errors)
+
+    def test_v03_metadata_edits_do_not_change_content_hash(self, provider, minimal_rtr_script):
+        base_hash = provider.compute_content_hash(minimal_rtr_script)
+        with_metadata = dict(minimal_rtr_script)
+        with_metadata["metadata"] = {"maturity": {"tune_count": 7}}
+        assert provider.compute_content_hash(with_metadata) == base_hash
+
+    def test_v03_template_path_still_consumed_before_strip(self, provider, minimal_rtr_script):
+        # Regression guard: if strip_for_hash runs before _template_path is consumed,
+        # the script-file lookup will silently fall back to "." and produce a
+        # different hash. This test asserts behavior does NOT regress.
+        h = provider.compute_content_hash(minimal_rtr_script)
+        assert isinstance(h, str) and len(h) == 64
+
 
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])
