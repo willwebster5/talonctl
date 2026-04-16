@@ -219,8 +219,11 @@ class DetectionProvider(BaseResourceProvider):
                             continue
                         if isinstance(entry, dict):
                             if "path" in entry or (entry.keys() & self.ADS_REF_ALLOWED_KEYS):
-                                # Ref-dict form (has 'path', or has ref-dict keys like 'label'
-                                # indicating a ref-dict with a missing 'path').
+                                # Ref-dict form: has 'path', or uses any ref-dict key
+                                # (e.g. {'label': 'orphan'} — missing 'path'). This is
+                                # safe because ADS_REF_ALLOWED_KEYS {path, label} and
+                                # ADS_FP_INLINE_ALLOWED_KEYS {pattern, characteristics,
+                                # tuning, status} are disjoint, so no dict is ambiguous.
                                 errors.extend(self._validate_ads_ref_dict(entry, path_tag))
                             else:
                                 # Inline FP dict form — strict key set.
