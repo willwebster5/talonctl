@@ -89,6 +89,16 @@ pip install -e .[dev]
 pytest tests/ -v
 ```
 
+### Installing pre-commit hooks
+
+Once, after `pip install -e .[dev]`:
+
+```bash
+pre-commit install
+```
+
+After that, `git commit` auto-runs `ruff format` and `ruff check`. The config in `.pre-commit-config.yaml` mirrors the CI lint gate — keeping both green locally means CI stays green.
+
 ### Adding a New CLI Command
 
 1. Create `src/talonctl/commands/mycommand.py` with a Click command or group
