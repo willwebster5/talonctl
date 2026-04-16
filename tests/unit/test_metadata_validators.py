@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import pytest
 
-from talonctl.core.metadata_validators import validate_maturity
+from talonctl.core.metadata_validators import reject_old_shape, validate_maturity
 
 
 class TestValidateMaturityAbsent:
@@ -110,3 +110,33 @@ class TestValidateMaturityAccumulatesErrors:
         )
         # Should surface three distinct errors in one pass.
         assert len(errors) == 3
+
+
+class TestRejectOldShape:
+    def test_clean_template_no_errors(self):
+        assert reject_old_shape({"name": "x", "metadata": {"maturity": {}}}) == []
+
+    def test_top_level_ads_rejected(self):
+        errors = reject_old_shape({"name": "x", "ads": {"goal": "g"}})
+        assert len(errors) == 1
+        assert "Top-level 'ads:' is removed in v0.3.0" in errors[0]
+        assert "metadata.ads" in errors[0]
+        assert "CHANGELOG.md" in errors[0]
+
+    def test_flat_metadata_maturity_field_at_root_rejected(self):
+        # Old-style top-level metadata: {created: ..., tune_count: ...}
+        errors = reject_old_shape({"metadata": {"created": "2026-04-16", "tune_count": 2}})
+        assert len(errors) == 1
+        assert "Top-level 'metadata:' now reserves sub-namespaces" in errors[0]
+        assert "metadata.maturity" in errors[0]
+
+    def test_new_shape_with_maturity_nested_not_rejected(self):
+        # metadata.maturity.created is the new correct shape.
+        assert reject_old_shape({"metadata": {"maturity": {"created": "2026-04-16"}}}) == []
+
+    def test_metadata_with_only_third_party_namespace_not_rejected(self):
+        assert reject_old_shape({"metadata": {"acme_corp": {"anything": True}}}) == []
+
+    def test_both_old_ads_and_flat_metadata_both_reported(self):
+        errors = reject_old_shape({"ads": {}, "metadata": {"created": "2026-04-16"}})
+        assert len(errors) == 2

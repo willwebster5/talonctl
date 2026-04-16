@@ -69,3 +69,38 @@ def validate_maturity(template: Dict[str, Any]) -> List[str]:
             errors.append(f"metadata.maturity.confidence must be one of: {allowed} (got {val!r})")
 
     return errors
+
+
+def reject_old_shape(template: Dict[str, Any]) -> List[str]:
+    """Return errors for pre-v0.3.0 top-level shapes.
+
+    Old shapes rejected:
+      - top-level `ads:` (use metadata.ads instead)
+      - top-level flat `metadata:` with maturity fields as direct children
+        (use metadata.maturity.<field> instead)
+
+    Empty list on clean (new-shape) input. Called FIRST in every provider's
+    validate_template so users see the migration pointer rather than a cascade
+    of format errors from the relocated validators.
+    """
+    errors: List[str] = []
+
+    if "ads" in template:
+        errors.append(
+            "Top-level 'ads:' is removed in v0.3.0. Move it under 'metadata.ads' "
+            "in your YAML template. See CHANGELOG.md (v0.3.0) for a before/after example."
+        )
+
+    metadata = template.get("metadata")
+    if isinstance(metadata, dict):
+        flat_fields_at_root = set(metadata.keys()) & MATURITY_ALLOWED_FIELDS
+        if flat_fields_at_root:
+            errors.append(
+                "Top-level 'metadata:' now reserves sub-namespaces; maturity fields "
+                "must be nested. Move "
+                f"{', '.join(repr(f) for f in sorted(flat_fields_at_root))} "
+                "under 'metadata.maturity'. See CHANGELOG.md (v0.3.0) for a "
+                "before/after example."
+            )
+
+    return errors
