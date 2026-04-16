@@ -53,6 +53,43 @@ class DetectionProvider(BaseResourceProvider):
         """Return resource type identifier"""
         return "detection"
 
+    def _validate_ads_ref_dict(self, ref: Dict[str, Any], field_path: str) -> List[str]:
+        """
+        Validate a {path, label?} ref dict used inside ads.false_positives,
+        ads.validation, and ads.response.
+
+        Args:
+            ref: The dict to validate.
+            field_path: Breadcrumb for error messages (e.g. "ads.false_positives[2]").
+
+        Returns:
+            List of error message strings (empty if valid).
+        """
+        errs: List[str] = []
+        unknown = set(ref.keys()) - self.ADS_REF_ALLOWED_KEYS
+        if unknown:
+            errs.append(
+                f"Unknown ref dict key(s) in {field_path}: {', '.join(sorted(unknown))}. "
+                f"Known keys: path, label"
+            )
+        if "path" not in ref:
+            errs.append(f"{field_path} ref dict missing required 'path' key")
+        else:
+            path = ref["path"]
+            if not isinstance(path, str):
+                errs.append(f"{field_path}.path must be a string (got {type(path).__name__})")
+            elif not path.strip():
+                errs.append(f"{field_path}.path must be a non-empty string")
+            elif any(c.isspace() for c in path):
+                errs.append(f"{field_path}.path must not contain whitespace (got {path!r})")
+        if "label" in ref:
+            label = ref["label"]
+            if not isinstance(label, str):
+                errs.append(f"{field_path}.label must be a string (got {type(label).__name__})")
+            elif not label.strip():
+                errs.append(f"{field_path}.label must be a non-empty string")
+        return errs
+
     def validate_template(self, template: Dict[str, Any]) -> List[str]:
         """
         Validate detection rule template
@@ -144,32 +181,95 @@ class DetectionProvider(BaseResourceProvider):
         # Legacy format: top-level tactic/technique fields are also valid
         # No validation needed - these are optional
 
-        # Validate ADS metadata if present (optional block, strict when present)
+        # Validate ADS metadata if present (optional block, strict when present).
+        # Schema: docs/superpowers/specs/2026-04-16-metadata-schema-and-ads-refs-design.md §2.
         ads = template.get("ads")
         if ads is not None:
             if not isinstance(ads, dict):
                 errors.append("'ads' must be a dictionary")
             else:
-                # Required fields when ads block is present
+                # Required fields (goal) when ads: is present.
                 for field in self.ADS_REQUIRED_FIELDS:
                     val = ads.get(field)
                     if not val or (isinstance(val, str) and not val.strip()):
                         errors.append(f"ads.{field} is required when ads block is present")
 
-                # Reject unknown fields
+                # Reject unknown top-level ads keys.
                 unknown = set(ads.keys()) - self.ADS_ALLOWED_FIELDS
                 if unknown:
                     errors.append(f"Unknown ads fields: {', '.join(sorted(unknown))}")
 
-                # Type-check list fields
+                # Type-check pure list fields (must be lists).
                 for field in self.ADS_LIST_FIELDS:
                     if field in ads and not isinstance(ads[field], list):
                         errors.append(f"ads.{field} must be a list")
 
-                # Type-check string fields
+                # Type-check pure string fields.
                 for field in self.ADS_STRING_FIELDS:
                     if field in ads and not isinstance(ads[field], str):
                         errors.append(f"ads.{field} must be a string")
+
+                # Per-entry validation for false_positives (list of string | inline-FP-dict | ref-dict).
+                fp_list = ads.get("false_positives")
+                if isinstance(fp_list, list):
+                    for idx, entry in enumerate(fp_list):
+                        path_tag = f"ads.false_positives[{idx}]"
+                        if isinstance(entry, str):
+                            # Legacy/current inline-string ref form; accepted.
+                            continue
+                        if isinstance(entry, dict):
+                            if "path" in entry or (entry.keys() & self.ADS_REF_ALLOWED_KEYS):
+                                # Ref-dict form (has 'path', or has ref-dict keys like 'label'
+                                # indicating a ref-dict with a missing 'path').
+                                errors.extend(self._validate_ads_ref_dict(entry, path_tag))
+                            else:
+                                # Inline FP dict form — strict key set.
+                                unknown_inline = set(entry.keys()) - self.ADS_FP_INLINE_ALLOWED_KEYS
+                                if unknown_inline:
+                                    known = ", ".join(sorted(self.ADS_FP_INLINE_ALLOWED_KEYS))
+                                    errors.append(
+                                        f"Unknown inline FP dict key(s) in {path_tag}: "
+                                        f"{', '.join(sorted(unknown_inline))}. Known keys: {known}"
+                                    )
+                        else:
+                            errors.append(
+                                f"{path_tag} must be a string, inline FP dict, or "
+                                f"ref dict ({{path, label?}})"
+                            )
+
+                # Per-entry validation for validation (list of string | ref-dict; no inline-dict form).
+                val_list = ads.get("validation")
+                if isinstance(val_list, list):
+                    for idx, entry in enumerate(val_list):
+                        path_tag = f"ads.validation[{idx}]"
+                        if isinstance(entry, str):
+                            continue
+                        if isinstance(entry, dict):
+                            # Only ref-dict form allowed.
+                            errors.extend(self._validate_ads_ref_dict(entry, path_tag))
+                            if "path" not in entry:
+                                # _validate_ads_ref_dict already reported missing path;
+                                # also flag that inline-dicts aren't a thing for this field.
+                                errors.append(
+                                    f"ads.validation entries must be strings or ref dicts "
+                                    f"({{path, label?}}); inline dicts are not defined for this field"
+                                )
+                        else:
+                            errors.append(
+                                f"{path_tag} must be a string or ref dict ({{path, label?}})"
+                            )
+
+                # Type-union validation for response (string | ref-dict).
+                if "response" in ads:
+                    response = ads["response"]
+                    if isinstance(response, str):
+                        pass  # string form is fine
+                    elif isinstance(response, dict):
+                        errors.extend(self._validate_ads_ref_dict(response, "ads.response"))
+                    else:
+                        errors.append(
+                            "ads.response must be a string or ref dict ({path, label?})"
+                        )
 
         # Validate metadata: block if present (optional block, strict when present).
         # See docs/superpowers/specs/2026-04-16-metadata-schema-and-ads-refs-design.md §1.
@@ -843,7 +943,6 @@ class DetectionProvider(BaseResourceProvider):
         "strategy_abstract",
         "technical_context",
         "priority_rationale",
-        "response",
         "ads_created",
         "ads_updated",
         "ads_author",
