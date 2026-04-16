@@ -2,16 +2,19 @@
 # Detects TOR traffic from internal networks to the internet.
 # This is a real, deployable detection — 100% generic, no tenant-specific content.
 #
-# Optional top-level blocks demonstrated below:
-#   - metadata: detection maturity tracking (created, last_tuned, tune_count, confidence).
-#     All four fields optional when the block is present. Ignored by the CrowdStrike
-#     API and excluded from compute_content_hash — editing any metadata field produces
-#     zero output in `talonctl plan`.
-#   - ads: Alerting & Detection Strategy documentation. Optional; when present, `goal`
-#     is required. The fields `false_positives`, `response`, and `validation` each
-#     accept either inline content or a `{path, label?}` ref dict pointing at a
-#     knowledge file (e.g. knowledge/patterns/<platform>.md#anchor). Both the inline
-#     and ref-dict forms are shown below.
+# The top-level `metadata:` block (new in v0.3.0) is reserved, stripped from API
+# payloads, and excluded from compute_content_hash. Editing anything under
+# `metadata:` produces zero output in `talonctl plan`. Two sub-namespaces are
+# validated out-of-the-box:
+#   - metadata.maturity: detection maturity tracking — created, last_tuned,
+#     tune_count, confidence. All four fields optional.
+#   - metadata.ads: Alerting & Detection Strategy documentation (detection-only).
+#     When present, `goal` is required. The fields `false_positives`, `response`,
+#     and `validation` each accept either inline content or a `{path, label?}` ref
+#     dict pointing at a knowledge file (e.g. knowledge/patterns/<platform>.md#anchor).
+#     Both the inline and ref-dict forms are shown below.
+# Third-party frameworks may add their own sub-namespaces under `metadata.` —
+# talonctl will strip them from the API and ignore them.
 
 resource_id: generic___network___tor_traffic_to_the_internet
 name: Generic - Network - TOR Traffic to the Internet
@@ -22,48 +25,49 @@ severity: 50
 status: active
 mitre_attack: ["TA0011:T1090.003"]
 metadata:
-  created: "2026-04-14"
-  last_tuned: "2026-04-16"
-  tune_count: 2
-  confidence: high
-ads:
-  goal: >
-    Detect traffic associated with TOR anonymization network from internal
-    networks, which may indicate an adversary attempting to evade network
-    monitoring or exfiltrate data through encrypted channels.
-  mitre_attack:
-    - "Command and Control / Proxy: Multi-hop Proxy (T1090.003)"
-  strategy_abstract: >
-    Monitors network flow logs for TCP connections to known TOR ports
-    (9001, 9030, 9040, 9050, 9051, 9150) from internal RFC1918 addresses,
-    plus port 443 with TOR application identification.
-  technical_context: >
-    Requires network flow logs from supported vendors (Akamai, AWS, Cisco,
-    Cloudflare, Corelight, etc.) with destination port and application fields.
-    Uses CIDR matching to identify internal-to-external traffic only.
-  blind_spots:
-    - "TOR over non-standard ports not covered"
-    - "TOR bridges using obfs4 transport may not be identified"
-    - "Vendors not in the filter list are excluded"
-  false_positives:
-    - pattern: "Security tool TOR exit node scanning"
-      characteristics: "Automated security scanner source IPs"
-      tuning: "Add scanner IPs to exclusion list"
-      status: "open"
-    # Ref-form alternative — points at the canonical pattern doc in the user
-    # project's knowledge/ directory. Useful when the same FP pattern applies
-    # across multiple detections and lives in a shared pattern file.
-    - path: "knowledge/patterns/network.md#tor-bridges-obfs4"
-      label: "TOR bridge traffic via obfs4 transport"
-  validation:
-    - "Generate TOR traffic from an internal IP to port 9050"
-    - "Verify alert fires with correct source/destination fields"
-  priority_rationale: >
-    Medium severity (50) — TOR usage is suspicious but may have legitimate
-    privacy use cases. Requires analyst investigation to determine intent.
-  response: "Investigate user, check for data exfiltration, review browsing history"
-  ads_created: "2026-04-14"
-  ads_author: "talonctl example"
+  maturity:
+    created: "2026-04-14"
+    last_tuned: "2026-04-16"
+    tune_count: 2
+    confidence: high
+  ads:
+    goal: >
+      Detect traffic associated with TOR anonymization network from internal
+      networks, which may indicate an adversary attempting to evade network
+      monitoring or exfiltrate data through encrypted channels.
+    mitre_attack:
+      - "Command and Control / Proxy: Multi-hop Proxy (T1090.003)"
+    strategy_abstract: >
+      Monitors network flow logs for TCP connections to known TOR ports
+      (9001, 9030, 9040, 9050, 9051, 9150) from internal RFC1918 addresses,
+      plus port 443 with TOR application identification.
+    technical_context: >
+      Requires network flow logs from supported vendors (Akamai, AWS, Cisco,
+      Cloudflare, Corelight, etc.) with destination port and application fields.
+      Uses CIDR matching to identify internal-to-external traffic only.
+    blind_spots:
+      - "TOR over non-standard ports not covered"
+      - "TOR bridges using obfs4 transport may not be identified"
+      - "Vendors not in the filter list are excluded"
+    false_positives:
+      - pattern: "Security tool TOR exit node scanning"
+        characteristics: "Automated security scanner source IPs"
+        tuning: "Add scanner IPs to exclusion list"
+        status: "open"
+      # Ref-form alternative — points at the canonical pattern doc in the user
+      # project's knowledge/ directory. Useful when the same FP pattern applies
+      # across multiple detections and lives in a shared pattern file.
+      - path: "knowledge/patterns/network.md#tor-bridges-obfs4"
+        label: "TOR bridge traffic via obfs4 transport"
+    validation:
+      - "Generate TOR traffic from an internal IP to port 9050"
+      - "Verify alert fires with correct source/destination fields"
+    priority_rationale: >
+      Medium severity (50) — TOR usage is suspicious but may have legitimate
+      privacy use cases. Requires analyst investigation to determine intent.
+    response: "Investigate user, check for data exfiltration, review browsing history"
+    ads_created: "2026-04-14"
+    ads_author: "talonctl example"
 search:
   filter: |
     #repo!=xdr_*
