@@ -17,11 +17,9 @@ from typing import Any, Dict, List, Optional
 import yaml
 
 from talonctl.core.base_provider import BaseResourceProvider, ResourceChange, ResourceAction
+from talonctl.core.template_sanitizer import strip_for_api, strip_for_hash
 
 logger = logging.getLogger(__name__)
-
-# IaC-only fields stripped before API calls and content hashing
-IAC_ONLY_FIELDS = {"resource_id", "type", "description", "tags", "_search_domain", "dependencies"}
 
 # Widget types that do NOT require a queryString
 NON_QUERY_WIDGET_TYPES = {"note", "parameterPanel"}
@@ -85,34 +83,37 @@ class DashboardProvider(BaseResourceProvider):
     def _normalize_for_hash(template: Dict[str, Any]) -> Dict[str, Any]:
         """Normalize dashboard YAML for deterministic hashing.
 
-        1. Strip IaC-only fields
-        2. Re-key widgets by (section_order, position) to remove UUID sensitivity
-        3. Update section widgetIds to match
+        1. Strip universally-IaC and `_`-prefixed fields via template_sanitizer.
+        2. Strip dashboard-specific IaC fields (`description` is not in the Humio
+           dashboard schema at top level).
+        3. Re-key widgets by (section_order, position) to remove UUID sensitivity.
+        4. Update section widgetIds to match.
         """
-        data = copy.deepcopy(template)
+        data = copy.deepcopy(strip_for_hash(template))
 
-        # Strip IaC-only fields
-        for field in IAC_ONLY_FIELDS:
-            data.pop(field, None)
+        # Dashboard-specific: preserve pre-helper behavior. The previous
+        # IAC_ONLY_FIELDS set excluded both `description` and `tags` from the hash
+        # input; keep doing that here to avoid a silent hash-behavior change when
+        # routing through the helper. (Whether tags *should* affect the hash is
+        # a separate design question — out of scope for this hotfix.)
+        data.pop("description", None)
+        data.pop("tags", None)
 
         sections = data.get("sections", {})
         widgets = data.get("widgets", {})
 
-        # Build ordered widget list: sort sections by order, then iterate widgetIds
-        ordered_widget_ids = []
+        ordered_widget_ids: list[str] = []
         for _section_id, section in sorted(sections.items(), key=lambda s: s[1].get("order", 0)):
             for wid in section.get("widgetIds", []):
                 if wid not in ordered_widget_ids:
                     ordered_widget_ids.append(wid)
 
-        # Include widgets not referenced by any section (append at end)
         for wid in widgets:
             if wid not in ordered_widget_ids:
                 ordered_widget_ids.append(wid)
 
-        # Re-key widgets as widget-0, widget-1, ...
-        new_widgets = {}
-        id_map = {}
+        new_widgets: Dict[str, Any] = {}
+        id_map: Dict[str, str] = {}
         for i, old_id in enumerate(ordered_widget_ids):
             new_id = f"widget-{i}"
             id_map[old_id] = new_id
@@ -121,7 +122,6 @@ class DashboardProvider(BaseResourceProvider):
 
         data["widgets"] = new_widgets
 
-        # Update section widgetIds
         for section in sections.values():
             section["widgetIds"] = [id_map.get(wid, wid) for wid in section.get("widgetIds", [])]
 
@@ -138,18 +138,22 @@ class DashboardProvider(BaseResourceProvider):
     def _prepare_yaml_payload(template: Dict[str, Any]) -> str:
         """Prepare dashboard YAML for API upload.
 
-        Strips IaC-only fields, converts tags->labels, preserves everything else.
+        Strips universally-IaC + `_`-prefixed fields via template_sanitizer, then
+        applies dashboard-specific transforms: tags→labels rename, description
+        strip (not in Humio dashboard schema).
         """
-        data = copy.deepcopy(template)
+        data = strip_for_api(template)
+        # strip_for_api returns a shallow copy; we're about to mutate sub-keys,
+        # so deepcopy to avoid touching the caller's dict.
+        data = copy.deepcopy(data)
 
-        # Convert tags -> labels
+        # Dashboard-specific: tags -> labels rename.
         tags = data.pop("tags", [])
         if tags:
             data["labels"] = tags
 
-        # Strip IaC-only fields (except tags, already handled)
-        for field in IAC_ONLY_FIELDS - {"tags"}:
-            data.pop(field, None)
+        # Dashboard-specific: description is IaC-only for dashboards.
+        data.pop("description", None)
 
         return yaml.dump(data, default_flow_style=False, sort_keys=False, allow_unicode=True)
 

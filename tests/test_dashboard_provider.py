@@ -546,3 +546,64 @@ class TestRegistration:
         from talonctl.providers import DashboardProvider
 
         assert DashboardProvider is not None
+
+
+# --- Issue #7 regression: _template_path must not leak into Humio payload ---
+
+
+class TestIssue7Regression:
+    """Direct regression for github.com/willwebster5/talonctl#7."""
+
+    def test_template_path_does_not_leak_into_yaml_payload(self, provider, valid_template):
+        tmpl = copy.deepcopy(valid_template)
+        tmpl["_template_path"] = "/home/user/project/resources/dashboards/my.yaml"
+
+        yaml_str = provider._prepare_yaml_payload(tmpl)
+
+        assert "_template_path" not in yaml_str, (
+            "issue #7: _template_path leaked into dashboard YAML payload — "
+            "Humio schema validation will reject the upload."
+        )
+
+    def test_resource_id_and_type_and_dependencies_stripped_from_payload(self, provider, valid_template):
+        tmpl = copy.deepcopy(valid_template)
+        tmpl["dependencies"] = []
+        yaml_str = provider._prepare_yaml_payload(tmpl)
+
+        # Universally-IaC fields must not reach Humio.
+        assert "resource_id:" not in yaml_str
+        assert "dependencies:" not in yaml_str
+        # `type:` is a valid YAML key inside widgets (e.g. type: query), so only
+        # assert that top-level `type: dashboard` is absent. Parse to verify.
+        data = yaml.safe_load(yaml_str)
+        assert "type" not in data
+        assert "resource_id" not in data
+        assert "dependencies" not in data
+
+    def test_description_still_stripped_for_dashboard_specifically(self, provider, valid_template):
+        # Dashboard-specific behavior preserved: Humio dashboard YAML schema
+        # does not carry `description` at the top level.
+        data = yaml.safe_load(provider._prepare_yaml_payload(valid_template))
+        assert "description" not in data
+
+    def test_tags_renamed_to_labels(self, provider, valid_template):
+        data = yaml.safe_load(provider._prepare_yaml_payload(valid_template))
+        assert "tags" not in data
+        assert data.get("labels") == ["test"]
+
+    def test_future_internal_field_stripped(self, provider, valid_template):
+        # Bug-class coverage: any future _-prefixed tool-internal field is
+        # stripped without needing a code change.
+        tmpl = copy.deepcopy(valid_template)
+        tmpl["_some_future_internal"] = "should-not-leak"
+        yaml_str = provider._prepare_yaml_payload(tmpl)
+        assert "_some_future_internal" not in yaml_str
+
+    def test_normalize_for_hash_ignores_template_path(self, provider, valid_template):
+        hash_without = provider.compute_content_hash(valid_template)
+
+        tmpl_with_path = copy.deepcopy(valid_template)
+        tmpl_with_path["_template_path"] = "/tmp/different/path.yaml"
+        hash_with = provider.compute_content_hash(tmpl_with_path)
+
+        assert hash_without == hash_with
