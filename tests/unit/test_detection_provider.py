@@ -621,10 +621,7 @@ class TestDetectionProvider:
         """Confidence value not in enum rejected, error names all allowed values."""
         minimal_detection["metadata"] = {"confidence": "mature"}
         errors = provider.validate_template(minimal_detection)
-        assert any(
-            "metadata.confidence" in err and "low" in err and "validated" in err
-            for err in errors
-        )
+        assert any("metadata.confidence" in err and "low" in err and "validated" in err for err in errors)
 
     def test_validate_metadata_errors_accumulate(self, provider, minimal_detection):
         """Multiple metadata errors produce multiple distinct errors (no short-circuit)."""
@@ -784,10 +781,7 @@ class TestDetectionProvider:
             "validation": [{"characteristics": "oops"}],
         }
         errors = provider.validate_template(minimal_detection)
-        assert any(
-            "ads.validation" in err and ("strings" in err or "ref" in err)
-            for err in errors
-        )
+        assert any("ads.validation" in err and ("strings" in err or "ref" in err) for err in errors)
 
     def test_validate_ads_response_dict_unknown_key_rejected(self, provider, minimal_detection):
         """response dict treated as ref dict — unknown keys rejected."""
@@ -883,9 +877,7 @@ class TestDetectionProvider:
                 "confidence": "validated",  # changed
             },
         }
-        assert provider.compute_content_hash(mutated) == baseline, (
-            "metadata: mutation must not change content hash"
-        )
+        assert provider.compute_content_hash(mutated) == baseline, "metadata: mutation must not change content hash"
 
     def test_hash_unchanged_when_ads_mutates(self, provider, rich_template):
         """Editing any ads: field (including ref dicts) must not change the content hash."""
@@ -903,9 +895,7 @@ class TestDetectionProvider:
                 "response": "Inline response now",
             },
         }
-        assert provider.compute_content_hash(mutated) == baseline, (
-            "ads: mutation must not change content hash"
-        )
+        assert provider.compute_content_hash(mutated) == baseline, "ads: mutation must not change content hash"
 
     def test_hash_changes_when_real_field_mutates(self, provider, rich_template):
         """Sanity: content hash MUST change when a real CONTENT_FIELDS member mutates."""
