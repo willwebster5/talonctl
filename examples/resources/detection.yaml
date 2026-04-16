@@ -1,6 +1,17 @@
 # Example: Detection Rule
 # Detects TOR traffic from internal networks to the internet.
 # This is a real, deployable detection — 100% generic, no tenant-specific content.
+#
+# Optional top-level blocks demonstrated below:
+#   - metadata: detection maturity tracking (created, last_tuned, tune_count, confidence).
+#     All four fields optional when the block is present. Ignored by the CrowdStrike
+#     API and excluded from compute_content_hash — editing any metadata field produces
+#     zero output in `talonctl plan`.
+#   - ads: Alerting & Detection Strategy documentation. Optional; when present, `goal`
+#     is required. The fields `false_positives`, `response`, and `validation` each
+#     accept either inline content or a `{path, label?}` ref dict pointing at a
+#     knowledge file (e.g. knowledge/patterns/<platform>.md#anchor). Both the inline
+#     and ref-dict forms are shown below.
 
 resource_id: generic___network___tor_traffic_to_the_internet
 name: Generic - Network - TOR Traffic to the Internet
@@ -10,6 +21,11 @@ description: |
 severity: 50
 status: active
 mitre_attack: ["TA0011:T1090.003"]
+metadata:
+  created: "2026-04-14"
+  last_tuned: "2026-04-16"
+  tune_count: 2
+  confidence: high
 ads:
   goal: >
     Detect traffic associated with TOR anonymization network from internal
@@ -34,6 +50,11 @@ ads:
       characteristics: "Automated security scanner source IPs"
       tuning: "Add scanner IPs to exclusion list"
       status: "open"
+    # Ref-form alternative — points at the canonical pattern doc in the user
+    # project's knowledge/ directory. Useful when the same FP pattern applies
+    # across multiple detections and lives in a shared pattern file.
+    - path: "knowledge/patterns/network.md#tor-bridges-obfs4"
+      label: "TOR bridge traffic via obfs4 transport"
   validation:
     - "Generate TOR traffic from an internal IP to port 9050"
     - "Verify alert fires with correct source/destination fields"
