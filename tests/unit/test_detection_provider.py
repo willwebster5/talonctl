@@ -637,6 +637,193 @@ class TestDetectionProvider:
         metadata_errors = [e for e in errors if "metadata." in e]
         assert len(metadata_errors) >= 3, f"expected 3+ metadata errors, got {metadata_errors}"
 
+    # --- ads: path-ref extension (false_positives / response / validation) ---
+
+    def test_validate_ads_fp_ref_dict_valid(self, provider, minimal_detection):
+        """false_positives entry can be {path, label}."""
+        minimal_detection["ads"] = {
+            "goal": "Detect X",
+            "false_positives": [
+                {"path": "knowledge/patterns/aws.md#ci-cd", "label": "CI/CD Terraform"},
+            ],
+        }
+        errors = provider.validate_template(minimal_detection)
+        assert errors == []
+
+    def test_validate_ads_fp_ref_dict_label_optional(self, provider, minimal_detection):
+        """label is optional in ref dict."""
+        minimal_detection["ads"] = {
+            "goal": "Detect X",
+            "false_positives": [{"path": "knowledge/patterns/aws.md#ci-cd"}],
+        }
+        errors = provider.validate_template(minimal_detection)
+        assert errors == []
+
+    def test_validate_ads_fp_mixed_forms(self, provider, minimal_detection):
+        """false_positives can mix string refs, inline FP dicts, and ref dicts."""
+        minimal_detection["ads"] = {
+            "goal": "Detect X",
+            "false_positives": [
+                "-> knowledge/patterns/aws.md#legacy",
+                {"pattern": "P", "characteristics": "C", "tuning": "T", "status": "tuned"},
+                {"path": "knowledge/patterns/aws.md#new", "label": "New pattern"},
+            ],
+        }
+        errors = provider.validate_template(minimal_detection)
+        assert errors == []
+
+    def test_validate_ads_validation_ref_dict(self, provider, minimal_detection):
+        """validation entry can be a ref dict."""
+        minimal_detection["ads"] = {
+            "goal": "Detect X",
+            "validation": [{"path": "knowledge/validations/foo.md"}],
+        }
+        errors = provider.validate_template(minimal_detection)
+        assert errors == []
+
+    def test_validate_ads_validation_mixed_forms(self, provider, minimal_detection):
+        """validation can mix strings and ref dicts."""
+        minimal_detection["ads"] = {
+            "goal": "Detect X",
+            "validation": ["Step 1: do thing", {"path": "knowledge/validations/foo.md"}],
+        }
+        errors = provider.validate_template(minimal_detection)
+        assert errors == []
+
+    def test_validate_ads_response_ref_dict(self, provider, minimal_detection):
+        """response can be a ref dict instead of a string."""
+        minimal_detection["ads"] = {
+            "goal": "Detect X",
+            "response": {"path": "playbooks/aws.md#sg-anomaly", "label": "SG anomaly playbook"},
+        }
+        errors = provider.validate_template(minimal_detection)
+        assert errors == []
+
+    def test_validate_ads_response_string_still_valid(self, provider, minimal_detection):
+        """response: '...' string form still valid (backward compat)."""
+        minimal_detection["ads"] = {"goal": "Detect X", "response": "Investigate user"}
+        errors = provider.validate_template(minimal_detection)
+        assert errors == []
+
+    def test_validate_ads_ref_dict_missing_path(self, provider, minimal_detection):
+        """Ref dict without 'path' key rejected."""
+        minimal_detection["ads"] = {
+            "goal": "Detect X",
+            "false_positives": [{"label": "orphan"}],
+        }
+        errors = provider.validate_template(minimal_detection)
+        assert any("ads.false_positives" in err and "path" in err for err in errors)
+
+    def test_validate_ads_ref_dict_unknown_key(self, provider, minimal_detection):
+        """Ref dict with unknown keys rejected."""
+        minimal_detection["ads"] = {
+            "goal": "Detect X",
+            "false_positives": [{"path": "x", "labol": "typo"}],
+        }
+        errors = provider.validate_template(minimal_detection)
+        assert any("labol" in err for err in errors)
+
+    def test_validate_ads_ref_dict_empty_path(self, provider, minimal_detection):
+        """Ref dict with empty path rejected."""
+        minimal_detection["ads"] = {
+            "goal": "Detect X",
+            "false_positives": [{"path": ""}],
+        }
+        errors = provider.validate_template(minimal_detection)
+        assert any("path" in err and "non-empty" in err for err in errors)
+
+    def test_validate_ads_ref_dict_whitespace_path(self, provider, minimal_detection):
+        """Ref dict with whitespace-only path rejected."""
+        minimal_detection["ads"] = {
+            "goal": "Detect X",
+            "false_positives": [{"path": "   "}],
+        }
+        errors = provider.validate_template(minimal_detection)
+        assert any("path" in err for err in errors)
+
+    def test_validate_ads_ref_dict_path_with_space(self, provider, minimal_detection):
+        """Ref dict path containing whitespace rejected."""
+        minimal_detection["ads"] = {
+            "goal": "Detect X",
+            "false_positives": [{"path": "has space"}],
+        }
+        errors = provider.validate_template(minimal_detection)
+        assert any("path" in err and "whitespace" in err for err in errors)
+
+    def test_validate_ads_ref_dict_path_non_string(self, provider, minimal_detection):
+        """Ref dict path must be a string."""
+        minimal_detection["ads"] = {
+            "goal": "Detect X",
+            "false_positives": [{"path": 123}],
+        }
+        errors = provider.validate_template(minimal_detection)
+        assert any("path" in err and "string" in err for err in errors)
+
+    def test_validate_ads_ref_dict_label_non_string(self, provider, minimal_detection):
+        """Ref dict label must be a string when present."""
+        minimal_detection["ads"] = {
+            "goal": "Detect X",
+            "false_positives": [{"path": "x", "label": 123}],
+        }
+        errors = provider.validate_template(minimal_detection)
+        assert any("label" in err and "string" in err for err in errors)
+
+    def test_validate_ads_ref_dict_label_empty(self, provider, minimal_detection):
+        """Ref dict label must be non-empty when present."""
+        minimal_detection["ads"] = {
+            "goal": "Detect X",
+            "false_positives": [{"path": "x", "label": ""}],
+        }
+        errors = provider.validate_template(minimal_detection)
+        assert any("label" in err and "non-empty" in err for err in errors)
+
+    def test_validate_ads_validation_inline_dict_rejected(self, provider, minimal_detection):
+        """validation has no inline-dict form — a non-ref dict is rejected."""
+        minimal_detection["ads"] = {
+            "goal": "Detect X",
+            "validation": [{"characteristics": "oops"}],
+        }
+        errors = provider.validate_template(minimal_detection)
+        assert any(
+            "ads.validation" in err and ("strings" in err or "ref" in err)
+            for err in errors
+        )
+
+    def test_validate_ads_response_dict_unknown_key_rejected(self, provider, minimal_detection):
+        """response dict treated as ref dict — unknown keys rejected."""
+        minimal_detection["ads"] = {
+            "goal": "Detect X",
+            "response": {"path": "x", "note": "extra"},
+        }
+        errors = provider.validate_template(minimal_detection)
+        assert any("note" in err for err in errors)
+
+    def test_validate_ads_fp_inline_dict_strict_keys(self, provider, minimal_detection):
+        """Inline FP dict keys must be in {pattern, characteristics, tuning, status}."""
+        minimal_detection["ads"] = {
+            "goal": "Detect X",
+            "false_positives": [
+                {"pattern": "P", "charactaristics": "typo", "tuning": "T", "status": "tuned"},
+            ],
+        }
+        errors = provider.validate_template(minimal_detection)
+        assert any("charactaristics" in err for err in errors)
+
+    def test_validate_ads_fp_entry_wrong_type(self, provider, minimal_detection):
+        """false_positives entries must be string or dict."""
+        minimal_detection["ads"] = {
+            "goal": "Detect X",
+            "false_positives": [123],
+        }
+        errors = provider.validate_template(minimal_detection)
+        assert any("ads.false_positives" in err for err in errors)
+
+    def test_validate_ads_response_wrong_type(self, provider, minimal_detection):
+        """response must be string or ref dict, not list."""
+        minimal_detection["ads"] = {"goal": "Detect X", "response": ["bad"]}
+        errors = provider.validate_template(minimal_detection)
+        assert any("ads.response" in err for err in errors)
+
 
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])
