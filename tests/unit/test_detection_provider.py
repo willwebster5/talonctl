@@ -514,6 +514,129 @@ class TestDetectionProvider:
         errors = provider.validate_template(template)
         assert errors == []
 
+    # --- metadata: block validation ---
+
+    @pytest.fixture
+    def minimal_detection(self):
+        """Minimal valid detection template — used for metadata/ADS test permutations."""
+        return {
+            "name": "Test Rule",
+            "description": "Test",
+            "severity": 50,
+            "search": {"query": "test"},
+        }
+
+    def test_validate_metadata_absent_passes(self, provider, minimal_detection):
+        """metadata: block is optional — absence should not cause errors."""
+        errors = provider.validate_template(minimal_detection)
+        assert errors == []
+
+    def test_validate_metadata_empty_dict_passes(self, provider, minimal_detection):
+        """Empty metadata: {} is valid (all fields optional when block present)."""
+        minimal_detection["metadata"] = {}
+        errors = provider.validate_template(minimal_detection)
+        assert errors == []
+
+    def test_validate_metadata_full_valid_block(self, provider, minimal_detection):
+        """All four fields populated with valid values passes."""
+        minimal_detection["metadata"] = {
+            "created": "2026-01-15",
+            "last_tuned": "2026-04-10",
+            "tune_count": 3,
+            "confidence": "high",
+        }
+        errors = provider.validate_template(minimal_detection)
+        assert errors == []
+
+    def test_validate_metadata_not_dict(self, provider, minimal_detection):
+        """metadata: must be a dictionary when present."""
+        minimal_detection["metadata"] = "not a dict"
+        errors = provider.validate_template(minimal_detection)
+        assert any("'metadata' must be a dictionary" in err for err in errors)
+
+    def test_validate_metadata_unknown_key(self, provider, minimal_detection):
+        """Unknown keys in metadata: are rejected with typo-friendly error."""
+        minimal_detection["metadata"] = {"created": "2026-01-15", "confidance": "high"}
+        errors = provider.validate_template(minimal_detection)
+        assert any("confidance" in err for err in errors)
+        # Error should list known keys for user guidance
+        assert any("confidence" in err and "created" in err for err in errors)
+
+    def test_validate_metadata_last_tuned_null(self, provider, minimal_detection):
+        """last_tuned: null is valid (means never tuned)."""
+        minimal_detection["metadata"] = {"last_tuned": None, "tune_count": 0}
+        errors = provider.validate_template(minimal_detection)
+        assert errors == []
+
+    def test_validate_metadata_bad_date_format(self, provider, minimal_detection):
+        """created/last_tuned must match YYYY-MM-DD."""
+        minimal_detection["metadata"] = {"created": "2026-4-14"}  # missing zero pad
+        errors = provider.validate_template(minimal_detection)
+        assert any("metadata.created" in err and "YYYY-MM-DD" in err for err in errors)
+
+    def test_validate_metadata_non_date_string(self, provider, minimal_detection):
+        """Non-date strings rejected for date fields."""
+        minimal_detection["metadata"] = {"last_tuned": "yesterday"}
+        errors = provider.validate_template(minimal_detection)
+        assert any("metadata.last_tuned" in err for err in errors)
+
+    def test_validate_metadata_tune_count_negative(self, provider, minimal_detection):
+        """tune_count must be >= 0."""
+        minimal_detection["metadata"] = {"tune_count": -1}
+        errors = provider.validate_template(minimal_detection)
+        assert any("metadata.tune_count" in err and "non-negative" in err for err in errors)
+
+    def test_validate_metadata_tune_count_string(self, provider, minimal_detection):
+        """tune_count must be an int, not a string."""
+        minimal_detection["metadata"] = {"tune_count": "3"}
+        errors = provider.validate_template(minimal_detection)
+        assert any("metadata.tune_count" in err for err in errors)
+
+    def test_validate_metadata_tune_count_bool_rejected(self, provider, minimal_detection):
+        """Python bool is technically int — must be explicitly rejected."""
+        minimal_detection["metadata"] = {"tune_count": True}
+        errors = provider.validate_template(minimal_detection)
+        assert any("metadata.tune_count" in err for err in errors)
+
+    def test_validate_metadata_tune_count_float(self, provider, minimal_detection):
+        """tune_count must be int, not float."""
+        minimal_detection["metadata"] = {"tune_count": 1.5}
+        errors = provider.validate_template(minimal_detection)
+        assert any("metadata.tune_count" in err for err in errors)
+
+    def test_validate_metadata_tune_count_zero(self, provider, minimal_detection):
+        """tune_count: 0 is valid (boundary)."""
+        minimal_detection["metadata"] = {"tune_count": 0}
+        errors = provider.validate_template(minimal_detection)
+        assert errors == []
+
+    def test_validate_metadata_confidence_valid_values(self, provider, minimal_detection):
+        """Each of the four confidence values must pass."""
+        for value in ("low", "medium", "high", "validated"):
+            minimal_detection["metadata"] = {"confidence": value}
+            errors = provider.validate_template(minimal_detection)
+            assert errors == [], f"confidence={value} should pass, got {errors}"
+
+    def test_validate_metadata_confidence_invalid(self, provider, minimal_detection):
+        """Confidence value not in enum rejected, error names all allowed values."""
+        minimal_detection["metadata"] = {"confidence": "mature"}
+        errors = provider.validate_template(minimal_detection)
+        assert any(
+            "metadata.confidence" in err and "low" in err and "validated" in err
+            for err in errors
+        )
+
+    def test_validate_metadata_errors_accumulate(self, provider, minimal_detection):
+        """Multiple metadata errors produce multiple distinct errors (no short-circuit)."""
+        minimal_detection["metadata"] = {
+            "created": "bad-date",
+            "tune_count": -1,
+            "confidence": "not-in-enum",
+        }
+        errors = provider.validate_template(minimal_detection)
+        metadata_errors = [e for e in errors if "metadata." in e]
+        assert len(metadata_errors) >= 3, f"expected 3+ metadata errors, got {metadata_errors}"
+
 
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])
