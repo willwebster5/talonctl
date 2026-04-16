@@ -21,5 +21,7 @@
 
 - **v0.2.0** was never released to PyPI. Its git tag was pushed malformed
   (`v.0.2.0` with an extra dot) and the release job's VCS-versioning could
-  not parse it. The tag has been deleted; v0.2.1 is the first working
-  0.2.x release.
+  not parse it. The malformed tag remains on the remote — a GitHub
+  repository rule blocks tag deletion — but it is orphaned: hatchling's
+  VCS versioning cannot parse it, so no release will ever be cut from
+  it. v0.2.1 is the first working 0.2.x release.
