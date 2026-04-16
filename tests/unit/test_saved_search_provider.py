@@ -446,3 +446,57 @@ description: Test query
 
         with pytest.raises(RuntimeError, match="Failed to update saved query"):
             provider.update_resource("query-123", template, current_state)
+
+    # --- v0.3.0 metadata namespace redesign ---
+
+    @pytest.fixture
+    def minimal_saved_search(self):
+        """Minimal valid saved_search template (v0.3.0 shape)."""
+        return {
+            "resource_id": "x",
+            "$schema": "https://schemas.humio.com/query/v0.5.0",
+            "name": "test_query",
+            "queryString": "#repo=test",
+            "_search_domain": "falcon",
+        }
+
+    def test_v03_metadata_maturity_validates_on_saved_search(self, provider, minimal_saved_search):
+        minimal_saved_search["metadata"] = {"maturity": {"created": "2026-04-16", "confidence": "high"}}
+        assert provider.validate_template(minimal_saved_search) == []
+
+    def test_v03_metadata_ads_rejected_on_non_detection(self, provider, minimal_saved_search):
+        minimal_saved_search["metadata"] = {"ads": {"goal": "g"}}
+        errors = provider.validate_template(minimal_saved_search)
+        assert any("metadata.ads is only supported on detection resources" in e and "saved_search" in e for e in errors)
+
+    def test_v03_old_top_level_ads_rejected_on_saved_search(self, provider, minimal_saved_search):
+        minimal_saved_search["ads"] = {"goal": "g"}
+        errors = provider.validate_template(minimal_saved_search)
+        assert any("Top-level 'ads:' is removed in v0.3.0" in e for e in errors)
+
+    def test_v03_metadata_edits_do_not_change_content_hash(self, provider, minimal_saved_search):
+        base_hash = provider.compute_content_hash(minimal_saved_search)
+        with_metadata = dict(minimal_saved_search)
+        with_metadata["metadata"] = {
+            "maturity": {"created": "2026-04-16", "tune_count": 3},
+            "acme_corp": {"x": 1},
+        }
+        assert provider.compute_content_hash(with_metadata) == base_hash
+
+    def test_v03_payload_strips_metadata_and_internal_fields(self, provider, minimal_saved_search):
+        tmpl = dict(minimal_saved_search)
+        tmpl["metadata"] = {"maturity": {"created": "2026-04-16"}, "acme_corp": {"a": 1}}
+        tmpl["_template_path"] = "/tmp/x.yaml"
+        tmpl["_probe_internal"] = "should-not-leak"
+        # Saved-search provider builds clean_template inline in create/update.
+        # Verify the helper strips the reserved/internal keys BEFORE the API call.
+        from talonctl.core.template_sanitizer import strip_for_api
+
+        cleaned = strip_for_api(tmpl)
+        assert "metadata" not in cleaned
+        assert "_template_path" not in cleaned
+        assert "_probe_internal" not in cleaned
+        assert "resource_id" not in cleaned
+        # Provider-owned fields must survive.
+        assert cleaned["name"] == "test_query"
+        assert cleaned["queryString"] == "#repo=test"
