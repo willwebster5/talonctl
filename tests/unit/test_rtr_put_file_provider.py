@@ -404,6 +404,35 @@ class TestRTRPutFileProvider:
         result = provider_with_api.apply_delete("abc123")
         assert result["id"] == "abc123"
 
+    # --- v0.3.0 metadata namespace redesign ---
+
+    @pytest.fixture
+    def minimal_rtr_put(self, tmp_path):
+        bin_file = tmp_path / "payload.bin"
+        bin_file.write_bytes(b"\x00\x01\x02")
+        return {
+            "resource_id": "x",
+            "name": "payload",
+            "description": "test put file",
+            "file_path": "payload.bin",
+            "_template_path": str(tmp_path / "tmpl.yaml"),
+        }
+
+    def test_v03_metadata_maturity_validates_on_rtr_put(self, provider, minimal_rtr_put):
+        minimal_rtr_put["metadata"] = {"maturity": {"created": "2026-04-16"}}
+        assert provider.validate_template(minimal_rtr_put) == []
+
+    def test_v03_metadata_ads_rejected_on_rtr_put(self, provider, minimal_rtr_put):
+        minimal_rtr_put["metadata"] = {"ads": {"goal": "g"}}
+        errors = provider.validate_template(minimal_rtr_put)
+        assert any("metadata.ads is only supported on detection resources" in e and "rtr_put_file" in e for e in errors)
+
+    def test_v03_metadata_edits_do_not_change_content_hash(self, provider, minimal_rtr_put):
+        base_hash = provider.compute_content_hash(minimal_rtr_put)
+        with_metadata = dict(minimal_rtr_put)
+        with_metadata["metadata"] = {"maturity": {"tune_count": 2}}
+        assert provider.compute_content_hash(with_metadata) == base_hash
+
 
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])
