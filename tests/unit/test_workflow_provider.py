@@ -315,6 +315,39 @@ class TestWorkflowProvider:
         errors = provider.validate_template(template)
         assert any("resource_id" in e.lower() for e in errors)
 
+    # --- v0.3.0 metadata namespace redesign ---
+
+    @pytest.fixture
+    def minimal_workflow(self):
+        return {
+            "resource_id": "x",
+            "name": "Test Workflow",
+            "enabled": True,
+            "trigger": {"event": "Investigatable/NGSIEM", "type": "Signal"},
+            "actions": {"a": {}},
+            "conditions": {},
+        }
+
+    def test_v03_metadata_maturity_validates_on_workflow(self, provider, minimal_workflow):
+        minimal_workflow["metadata"] = {"maturity": {"created": "2026-04-16"}}
+        assert provider.validate_template(minimal_workflow) == []
+
+    def test_v03_metadata_ads_rejected_on_workflow(self, provider, minimal_workflow):
+        minimal_workflow["metadata"] = {"ads": {"goal": "g"}}
+        errors = provider.validate_template(minimal_workflow)
+        assert any("metadata.ads is only supported on detection resources" in e and "workflow" in e for e in errors)
+
+    def test_v03_old_top_level_ads_rejected_on_workflow(self, provider, minimal_workflow):
+        minimal_workflow["ads"] = {"goal": "g"}
+        errors = provider.validate_template(minimal_workflow)
+        assert any("Top-level 'ads:' is removed in v0.3.0" in e for e in errors)
+
+    def test_v03_metadata_edits_do_not_change_content_hash(self, provider, minimal_workflow):
+        base_hash = provider.compute_content_hash(minimal_workflow)
+        with_metadata = dict(minimal_workflow)
+        with_metadata["metadata"] = {"maturity": {"tune_count": 5}, "acme": {"x": 1}}
+        assert provider.compute_content_hash(with_metadata) == base_hash
+
 
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])
