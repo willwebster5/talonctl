@@ -7,6 +7,7 @@ CrowdStrike NGSIEM detection rules as Infrastructure as Code resources.
 
 import json
 import hashlib
+import re
 import logging
 from typing import Dict, List, Optional, Any, Tuple
 from datetime import datetime, timezone
@@ -169,6 +170,53 @@ class DetectionProvider(BaseResourceProvider):
                 for field in self.ADS_STRING_FIELDS:
                     if field in ads and not isinstance(ads[field], str):
                         errors.append(f"ads.{field} must be a string")
+
+        # Validate metadata: block if present (optional block, strict when present).
+        # See docs/superpowers/specs/2026-04-16-metadata-schema-and-ads-refs-design.md §1.
+        metadata = template.get("metadata")
+        if metadata is not None:
+            if not isinstance(metadata, dict):
+                errors.append("'metadata' must be a dictionary")
+            else:
+                # Reject unknown keys with typo-friendly error listing known keys.
+                unknown = set(metadata.keys()) - self.METADATA_ALLOWED_FIELDS
+                if unknown:
+                    known = ", ".join(sorted(self.METADATA_ALLOWED_FIELDS))
+                    errors.append(
+                        f"Unknown metadata key(s): {', '.join(sorted(unknown))}. "
+                        f"Known keys: {known}"
+                    )
+
+                # Validate date fields (YYYY-MM-DD; last_tuned additionally allows null).
+                date_pattern = re.compile(r"^\d{4}-\d{2}-\d{2}$")
+                for field in self.METADATA_DATE_FIELDS:
+                    if field not in metadata:
+                        continue
+                    val = metadata[field]
+                    if field == "last_tuned" and val is None:
+                        continue
+                    if not isinstance(val, str) or not date_pattern.match(val):
+                        errors.append(
+                            f"metadata.{field} must be YYYY-MM-DD date"
+                            f"{' or null' if field == 'last_tuned' else ''} (got {val!r})"
+                        )
+
+                # Validate tune_count (non-negative int; bool explicitly rejected).
+                if "tune_count" in metadata:
+                    val = metadata["tune_count"]
+                    if isinstance(val, bool) or not isinstance(val, int) or val < 0:
+                        errors.append(
+                            f"metadata.tune_count must be a non-negative integer (got {val!r})"
+                        )
+
+                # Validate confidence enum.
+                if "confidence" in metadata:
+                    val = metadata["confidence"]
+                    if val not in self.METADATA_CONFIDENCE_VALUES:
+                        allowed = ", ".join(sorted(self.METADATA_CONFIDENCE_VALUES))
+                        errors.append(
+                            f"metadata.confidence must be one of: {allowed} (got {val!r})"
+                        )
 
         return errors
 
