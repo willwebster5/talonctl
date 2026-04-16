@@ -43,3 +43,6 @@ docs/handoffs/
 
 # hatch-vcs generated version file
 src/talonctl/_version.py
+
+# Git worktrees (isolated workspaces, not checked in)
+.worktrees/
