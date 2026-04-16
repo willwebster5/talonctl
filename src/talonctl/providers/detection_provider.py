@@ -248,15 +248,10 @@ class DetectionProvider(BaseResourceProvider):
                         if isinstance(entry, str):
                             continue
                         if isinstance(entry, dict):
-                            # Only ref-dict form allowed.
+                            # Only ref-dict form allowed. _validate_ads_ref_dict reports
+                            # missing-path and unknown-key errors; no inline-dict form is
+                            # defined for this field, so those errors are sufficient.
                             errors.extend(self._validate_ads_ref_dict(entry, path_tag))
-                            if "path" not in entry:
-                                # _validate_ads_ref_dict already reported missing path;
-                                # also flag that inline-dicts aren't a thing for this field.
-                                errors.append(
-                                    f"ads.validation entries must be strings or ref dicts "
-                                    f"({{path, label?}}); inline dicts are not defined for this field"
-                                )
                         else:
                             errors.append(
                                 f"{path_tag} must be a string or ref dict ({{path, label?}})"
@@ -291,14 +286,13 @@ class DetectionProvider(BaseResourceProvider):
                     )
 
                 # Validate date fields (YYYY-MM-DD; last_tuned additionally allows null).
-                date_pattern = re.compile(r"^\d{4}-\d{2}-\d{2}$")
                 for field in self.METADATA_DATE_FIELDS:
                     if field not in metadata:
                         continue
                     val = metadata[field]
                     if field == "last_tuned" and val is None:
                         continue
-                    if not isinstance(val, str) or not date_pattern.match(val):
+                    if not isinstance(val, str) or not self._DATE_PATTERN.match(val):
                         errors.append(
                             f"metadata.{field} must be YYYY-MM-DD date"
                             f"{' or null' if field == 'last_tuned' else ''} (got {val!r})"
@@ -956,8 +950,10 @@ class DetectionProvider(BaseResourceProvider):
     # the CrowdStrike API and excluded from compute_content_hash because the
     # hash uses CONTENT_FIELDS/SEARCH_FIELDS allowlists.
     METADATA_ALLOWED_FIELDS = {"created", "last_tuned", "tune_count", "confidence"}
+    METADATA_REQUIRED_FIELDS: set = set()  # All fields optional when block present.
     METADATA_CONFIDENCE_VALUES = {"low", "medium", "high", "validated"}
     METADATA_DATE_FIELDS = {"created", "last_tuned"}
+    _DATE_PATTERN = re.compile(r"^\d{4}-\d{2}-\d{2}$")
 
     # Ref-dict shape accepted by ads.false_positives / ads.response / ads.validation.
     # See docs/superpowers/specs/2026-04-16-metadata-schema-and-ads-refs-design.md §2.
