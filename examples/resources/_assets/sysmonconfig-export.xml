@@ -1,0 +1,5 @@
+<!-- Stub Sysmon config for example reference. Real configs available from
+     https://github.com/SwiftOnSecurity/sysmon-config (MIT-licensed) or similar. -->
+<Sysmon schemaversion="4.90">
+  <EventFiltering/>
+</Sysmon>

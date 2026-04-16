@@ -9,5 +9,4 @@ name: sysmonconfig-export.xml
 description: |
   Sysmon configuration file for enhanced endpoint telemetry.
   Pushed to endpoints during IR setup or baseline hardening.
-source: resources/rtr_put_files/sysmonconfig-export.xml
-file_type: config
+file_path: _assets/sysmonconfig-export.xml

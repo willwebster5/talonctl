@@ -14,6 +14,8 @@ from typing import Dict, List, Optional, Any
 from datetime import datetime, timezone
 
 from talonctl.core.base_provider import BaseResourceProvider, ResourceAction, ResourceChange
+from talonctl.core.metadata_validators import reject_old_shape, validate_maturity
+from talonctl.core.template_sanitizer import strip_for_hash
 
 try:
     from falconpy import Workflows
@@ -78,6 +80,15 @@ class WorkflowProvider(BaseResourceProvider):
             List of validation error messages (empty if valid)
         """
         errors = []
+
+        # v0.3.0: reject pre-v0.3.0 shapes and validate metadata.maturity universally.
+        errors.extend(reject_old_shape(template))
+        errors.extend(validate_maturity(template))
+
+        # metadata.ads is detection-only; flag on this provider.
+        metadata_block = template.get("metadata")
+        if isinstance(metadata_block, dict) and "ads" in metadata_block:
+            errors.append("metadata.ads is only supported on detection resources (this is a workflow template)")
 
         # Required fields
         required_fields = ["resource_id", "name", "trigger", "actions"]
@@ -405,6 +416,8 @@ class WorkflowProvider(BaseResourceProvider):
 
         Only includes fields that affect workflow behavior
         """
+        # v0.3.0: strip universal IaC-only + internal + metadata fields first.
+        template = strip_for_hash(template)
         # Normalize content for consistent hashing
         normalized_content = {
             "name": template.get("name", ""),

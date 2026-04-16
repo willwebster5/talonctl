@@ -15,6 +15,8 @@ from typing import Dict, List, Optional, Any
 from datetime import datetime, timezone
 
 from talonctl.core.base_provider import BaseResourceProvider, ResourceAction, ResourceChange
+from talonctl.core.metadata_validators import reject_old_shape, validate_maturity
+from talonctl.core.template_sanitizer import strip_for_api, strip_for_hash
 
 logger = logging.getLogger(__name__)
 
@@ -69,6 +71,15 @@ class SavedSearchProvider(BaseResourceProvider):
             List of validation error messages (empty if valid)
         """
         errors = []
+
+        # v0.3.0: reject pre-v0.3.0 shapes and validate metadata.maturity universally.
+        errors.extend(reject_old_shape(template))
+        errors.extend(validate_maturity(template))
+
+        # metadata.ads is detection-only; flag on this provider.
+        metadata_block = template.get("metadata")
+        if isinstance(metadata_block, dict) and "ads" in metadata_block:
+            errors.append("metadata.ads is only supported on detection resources (this is a saved_search template)")
 
         # Required fields for LogScale saved query schema
         required_fields = ["$schema", "name", "queryString"]
@@ -284,11 +295,8 @@ class SavedSearchProvider(BaseResourceProvider):
             logger.debug(f"[DEBUG] Original template keys: {list(template.keys())}")
             logger.debug(f"[DEBUG] Template name: '{template.get('name')}'")
 
-            # Create clean template without API parameters and IaC-only metadata fields
-            # Exclude: fields starting with '_' (e.g., _search_domain), 'type' (added by template discovery),
-            # and IaC-only fields that are not part of the LogScale saved query schema
-            IAC_ONLY_FIELDS = {"type", "resource_id", "dependencies"}
-            clean_template = {k: v for k, v in template.items() if not k.startswith("_") and k not in IAC_ONLY_FIELDS}
+            # v0.3.0: strip universal IaC-only + internal + metadata fields.
+            clean_template = strip_for_api(template)
 
             # DEBUG: Log cleaned template
             logger.debug(f"[DEBUG] Cleaned template keys: {list(clean_template.keys())}")
@@ -386,11 +394,8 @@ class SavedSearchProvider(BaseResourceProvider):
             logger.debug(f"[DEBUG] UPDATE - Original template keys: {list(template.keys())}")
             logger.debug(f"[DEBUG] UPDATE - Template name: '{template.get('name')}'")
 
-            # Create clean template without API parameters and IaC-only metadata fields
-            # Exclude: fields starting with '_' (e.g., _search_domain), 'type' (added by template discovery),
-            # and IaC-only fields that are not part of the LogScale saved query schema
-            IAC_ONLY_FIELDS = {"type", "resource_id", "dependencies"}
-            clean_template = {k: v for k, v in template.items() if not k.startswith("_") and k not in IAC_ONLY_FIELDS}
+            # v0.3.0: strip universal IaC-only + internal + metadata fields.
+            clean_template = strip_for_api(template)
 
             # DEBUG: Log cleaned template
             logger.debug(f"[DEBUG] UPDATE - Cleaned template keys: {list(clean_template.keys())}")
@@ -561,6 +566,9 @@ class SavedSearchProvider(BaseResourceProvider):
         Returns:
             SHA256 hash as hex string
         """
+        # v0.3.0: strip universal IaC-only + internal + metadata fields first.
+        template = strip_for_hash(template)
+
         # Normalize content for consistent hashing
         # Only hash the LogScale schema fields (exclude API parameters like _search_domain)
         normalized_content = {

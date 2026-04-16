@@ -12,5 +12,5 @@ description: |
     | match(file="tor_exit_nodes.csv", field=RemoteAddressIP4, column="ip", strict=false)
   Source: Query-Hub (open-source review)
 format: csv
-source: resources/lookup_files/crowdstrike/tor_exit_nodes.csv
+source: examples/resources/_assets/tor_exit_nodes.csv
 _search_domain: all
