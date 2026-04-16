@@ -17,6 +17,7 @@ from typing import Any, Dict, List, Optional
 import yaml
 
 from talonctl.core.base_provider import BaseResourceProvider, ResourceChange, ResourceAction
+from talonctl.core.metadata_validators import reject_old_shape, validate_maturity
 from talonctl.core.template_sanitizer import strip_for_api, strip_for_hash
 
 logger = logging.getLogger(__name__)
@@ -48,6 +49,15 @@ class DashboardProvider(BaseResourceProvider):
 
     def validate_template(self, template: Dict[str, Any]) -> List[str]:
         errors = []
+
+        # v0.3.0: reject pre-v0.3.0 shapes and validate metadata.maturity universally.
+        errors.extend(reject_old_shape(template))
+        errors.extend(validate_maturity(template))
+
+        # metadata.ads is detection-only; flag on this provider.
+        metadata_block = template.get("metadata")
+        if isinstance(metadata_block, dict) and "ads" in metadata_block:
+            errors.append("metadata.ads is only supported on detection resources (this is a dashboard template)")
 
         for field in ("resource_id", "name", "sections", "widgets"):
             if field not in template or not template[field]:

@@ -607,3 +607,56 @@ class TestIssue7Regression:
         hash_with = provider.compute_content_hash(tmpl_with_path)
 
         assert hash_without == hash_with
+
+
+# --- v0.3.0 metadata namespace redesign ---
+
+
+@pytest.fixture
+def minimal_dashboard():
+    return {
+        "resource_id": "x",
+        "name": "Test Dashboard",
+        "sections": {"s0": {"order": 0, "widgetIds": ["w0"]}},
+        "widgets": {"w0": {"type": "note", "text": "hi"}},
+    }
+
+
+class TestV03MetadataNamespace:
+    def test_metadata_maturity_validates(self, provider, minimal_dashboard):
+        minimal_dashboard["metadata"] = {"maturity": {"created": "2026-04-16", "confidence": "medium"}}
+        assert provider.validate_template(minimal_dashboard) == []
+
+    def test_metadata_ads_rejected(self, provider, minimal_dashboard):
+        minimal_dashboard["metadata"] = {"ads": {"goal": "g"}}
+        errors = provider.validate_template(minimal_dashboard)
+        assert any("metadata.ads is only supported on detection resources" in e and "dashboard" in e for e in errors)
+
+    def test_old_top_level_ads_rejected(self, provider, minimal_dashboard):
+        minimal_dashboard["ads"] = {"goal": "g"}
+        errors = provider.validate_template(minimal_dashboard)
+        assert any("Top-level 'ads:' is removed in v0.3.0" in e for e in errors)
+
+    def test_metadata_edits_do_not_change_content_hash(self, provider, minimal_dashboard):
+        base_hash = provider.compute_content_hash(minimal_dashboard)
+        with_metadata = copy.deepcopy(minimal_dashboard)
+        with_metadata["metadata"] = {
+            "maturity": {"created": "2026-04-16", "tune_count": 1},
+            "acme_corp": {"any": "thing"},
+        }
+        assert provider.compute_content_hash(with_metadata) == base_hash
+
+    def test_payload_strips_metadata_and_template_path(self, provider, minimal_dashboard):
+        # Direct regression test for issue #7 — _template_path must not leak into
+        # the Humio YAML upload, and neither should the new metadata: block.
+        tmpl = copy.deepcopy(minimal_dashboard)
+        tmpl["metadata"] = {"maturity": {"created": "2026-04-16"}, "acme_corp": {"a": 1}}
+        tmpl["_template_path"] = "/tmp/x.yaml"
+        yaml_str = provider._prepare_yaml_payload(tmpl)
+        assert "_template_path" not in yaml_str
+        assert "metadata:" not in yaml_str
+        assert "acme_corp" not in yaml_str
+        assert "resource_id" not in yaml_str
+        # Provider-owned fields preserved (or transformed).
+        assert "sections:" in yaml_str
+        assert "widgets:" in yaml_str
