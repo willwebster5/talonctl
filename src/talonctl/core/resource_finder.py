@@ -86,6 +86,7 @@ class ResourceFinder:
             self._try_rule_id,
             self._try_resource_id,
             self._try_composite_id,
+            self._try_substring,
         ):
             result = strategy(query, resource_type)
             if result is not None:
@@ -187,3 +188,18 @@ class ResourceFinder:
             )
 
         return None
+
+    def _try_substring(self, query: str, resource_type: Optional[str]) -> Optional[FindOutput]:
+        if "*" in query or "?" in query:
+            return None
+        q = query.lower()
+        matches: List[FindResult] = []
+        for rtype in self._iter_types(resource_type):
+            for key, entry in (self._resources.get(rtype) or {}).items():
+                display = (entry.get("display_name") or "").lower()
+                if q in display:
+                    matches.append(self._build_result(rtype, key, entry))
+        if not matches:
+            return None
+        matches.sort(key=lambda m: (m.resource_type, m.resource_id))
+        return FindOutput(query=query, strategy_used="name_substring", matches=matches)

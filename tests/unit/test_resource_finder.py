@@ -278,3 +278,41 @@ class TestStrategyCompositeId:
         # "weird" is not a known non-IaC prefix -> fall through -> resource_id hits
         assert out.strategy_used == "resource_id"
         assert len(out.matches) == 1
+
+
+class TestStrategySubstring:
+    def test_case_insensitive_display_name_substring(self):
+        finder = ResourceFinder(_fixture_state())
+        out = finder.find("root login")
+        assert out.strategy_used == "name_substring"
+        assert len(out.matches) == 1
+        assert out.matches[0].resource_id == "aws_root_login"
+
+    def test_multiple_matches_sorted_deterministically(self):
+        finder = ResourceFinder(_fixture_state())
+        out = finder.find("aws")
+        assert out.strategy_used == "name_substring"
+        assert len(out.matches) == 3
+        assert [m.resource_id for m in out.matches] == [
+            "aws_root_login",
+            "aws_user_login",
+            "aws_service_accounts",
+        ]
+
+    def test_type_filter_narrows(self):
+        finder = ResourceFinder(_fixture_state())
+        out = finder.find("aws", resource_type="saved_search")
+        assert out.strategy_used == "name_substring"
+        assert len(out.matches) == 1
+        assert out.matches[0].resource_type == "saved_search"
+
+    def test_no_substring_match_falls_through(self):
+        finder = ResourceFinder(_fixture_state())
+        out = finder.find("zzz_no_match_zzz")
+        assert out.strategy_used == "none"
+
+    def test_substring_only_runs_without_wildcards(self):
+        finder = ResourceFinder(_fixture_state())
+        out = finder.find("aws*login")
+        # Glob not implemented yet — expect fallthrough, NOT substring.
+        assert out.strategy_used != "name_substring"
