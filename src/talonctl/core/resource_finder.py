@@ -120,6 +120,31 @@ class ResourceFinder:
             deployed=True,
         )
 
+    def _build_template_result(self, template: Any) -> FindResult:
+        return FindResult(
+            resource_type=template.resource_type,
+            resource_id=template.name,
+            display_name=getattr(template, "display_name", None) or template.name,
+            rule_id=None,
+            status=None,
+            severity=None,
+            template_path=str(template.file_path) if getattr(template, "file_path", None) else None,
+            deployed_at=None,
+            dependencies=[],
+            iac_tunable=True,
+            deployed=False,
+        )
+
+    def _undeployed_templates(self, resource_type: Optional[str]):
+        """Yield templates whose (resource_type, name) is NOT already in state."""
+        for t in self._templates:
+            if resource_type and t.resource_type != resource_type:
+                continue
+            state_bucket = self._resources.get(t.resource_type) or {}
+            if t.name in state_bucket:
+                continue
+            yield t
+
     def _try_rule_id(self, query: str, resource_type: Optional[str]) -> Optional[FindOutput]:
         if not RULE_ID_RE.fullmatch(query):
             return None
@@ -154,6 +179,11 @@ class ResourceFinder:
                 entry = (self._resources.get(rtype) or {}).get(query)
                 if entry is not None:
                     matches.append(self._build_result(rtype, query, entry))
+
+        # Undeployed templates
+        for t in self._undeployed_templates(resource_type):
+            if t.name == query or f"{t.resource_type}.{t.name}" == query:
+                matches.append(self._build_template_result(t))
 
         if not matches:
             return None
@@ -201,6 +231,9 @@ class ResourceFinder:
                 display = (entry.get("display_name") or "").lower()
                 if q in display:
                     matches.append(self._build_result(rtype, key, entry))
+        for t in self._undeployed_templates(resource_type):
+            if q in (t.display_name or "").lower():
+                matches.append(self._build_template_result(t))
         if not matches:
             return None
         matches.sort(key=lambda m: (m.resource_type, m.resource_id))
@@ -214,6 +247,9 @@ class ResourceFinder:
             for key, entry in (self._resources.get(rtype) or {}).items():
                 if fnmatch.fnmatchcase(key, query):
                     matches.append(self._build_result(rtype, key, entry))
+        for t in self._undeployed_templates(resource_type):
+            if fnmatch.fnmatchcase(t.name, query):
+                matches.append(self._build_template_result(t))
         if not matches:
             return None
         matches.sort(key=lambda m: (m.resource_type, m.resource_id))

@@ -1,6 +1,7 @@
 """Unit tests for ResourceFinder (pure, no I/O)."""
 
-from dataclasses import asdict
+from dataclasses import asdict, dataclass as _dc
+from pathlib import Path as _Path
 
 from talonctl.core.resource_finder import (
     FindOutput,
@@ -348,4 +349,79 @@ class TestStrategyGlob:
     def test_glob_is_case_sensitive_on_resource_id(self):
         finder = ResourceFinder(_fixture_state())
         out = finder.find("AWS_*")
+        assert out.strategy_used == "none"
+
+
+@_dc
+class _FakeTemplate:
+    """Minimal stand-in for TemplateDiscovery.DiscoveredTemplate."""
+
+    resource_type: str
+    name: str
+    display_name: str
+    file_path: _Path
+    tags: list
+    template_data: dict
+
+
+def _fixture_templates():
+    return [
+        # Deployed; dedup should suppress this so it doesn't double up with state
+        _FakeTemplate(
+            resource_type="detection",
+            name="aws_root_login",
+            display_name="AWS - Root Login via Console",
+            file_path=_Path("resources/detections/aws/aws_root_login.yaml"),
+            tags=["aws"],
+            template_data={},
+        ),
+        # Undeployed — only present on disk
+        _FakeTemplate(
+            resource_type="detection",
+            name="aws_iam_key_created",
+            display_name="AWS - IAM Access Key Created",
+            file_path=_Path("resources/detections/aws/aws_iam_key_created.yaml"),
+            tags=["aws"],
+            template_data={},
+        ),
+    ]
+
+
+class TestIncludeUndeployed:
+    def test_undeployed_template_match_by_resource_id(self):
+        finder = ResourceFinder(_fixture_state(), templates=_fixture_templates())
+        out = finder.find("aws_iam_key_created")
+        assert out.strategy_used == "resource_id"
+        assert len(out.matches) == 1
+        m = out.matches[0]
+        assert m.deployed is False
+        assert m.rule_id is None
+        assert m.deployed_at is None
+        assert "aws_iam_key_created.yaml" in (m.template_path or "")
+
+    def test_dedup_prefers_state_over_template(self):
+        finder = ResourceFinder(_fixture_state(), templates=_fixture_templates())
+        out = finder.find("aws_root_login")
+        assert len(out.matches) == 1
+        assert out.matches[0].deployed is True  # state wins
+
+    def test_undeployed_substring(self):
+        finder = ResourceFinder(_fixture_state(), templates=_fixture_templates())
+        out = finder.find("IAM Access")
+        assert out.strategy_used == "name_substring"
+        assert len(out.matches) == 1
+        assert out.matches[0].resource_id == "aws_iam_key_created"
+        assert out.matches[0].deployed is False
+
+    def test_undeployed_glob(self):
+        finder = ResourceFinder(_fixture_state(), templates=_fixture_templates())
+        out = finder.find("aws_iam_*")
+        assert out.strategy_used == "glob"
+        assert len(out.matches) == 1
+        assert out.matches[0].deployed is False
+
+    def test_rule_id_noop_for_undeployed(self):
+        # Templates have no rule_id; rule_id strategy must skip them entirely.
+        finder = ResourceFinder({"resources": {}}, templates=_fixture_templates())
+        out = finder.find("c1d430691e8b42e7b336956f6a3af6fc")
         assert out.strategy_used == "none"
