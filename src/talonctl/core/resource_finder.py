@@ -82,4 +82,51 @@ class ResourceFinder:
         self._templates = templates or []
 
     def find(self, query: str, resource_type: Optional[str] = None) -> FindOutput:
+        for strategy in (self._try_rule_id,):
+            result = strategy(query, resource_type)
+            if result is not None:
+                return result
         return FindOutput(query=query, strategy_used="none", matches=[])
+
+    def _iter_types(self, resource_type: Optional[str]):
+        if resource_type:
+            if resource_type in self._resources:
+                yield resource_type
+            return
+        yield from self._resources.keys()
+
+    def _build_result(self, rtype: str, key: str, entry: Dict[str, Any]) -> FindResult:
+        pm = entry.get("provider_metadata") or {}
+        if not isinstance(pm, dict):
+            pm = {}
+        return FindResult(
+            resource_type=rtype,
+            resource_id=key,
+            display_name=entry.get("display_name") or key,
+            rule_id=pm.get("rule_id"),
+            status=pm.get("status"),
+            severity=pm.get("severity"),
+            template_path=entry.get("template_path"),
+            deployed_at=entry.get("deployed_at"),
+            dependencies=list(entry.get("dependencies") or []),
+            iac_tunable=True,
+            deployed=True,
+        )
+
+    def _try_rule_id(self, query: str, resource_type: Optional[str]) -> Optional[FindOutput]:
+        if not RULE_ID_RE.fullmatch(query):
+            return None
+        q = query.lower()
+        matches: List[FindResult] = []
+        for rtype in self._iter_types(resource_type):
+            for key, entry in (self._resources.get(rtype) or {}).items():
+                pm = entry.get("provider_metadata") or {}
+                if not isinstance(pm, dict):
+                    continue
+                rid = pm.get("rule_id")
+                if isinstance(rid, str) and rid.lower() == q:
+                    matches.append(self._build_result(rtype, key, entry))
+        if not matches:
+            return None
+        matches.sort(key=lambda m: (m.resource_type, m.resource_id))
+        return FindOutput(query=query, strategy_used="rule_id", matches=matches)

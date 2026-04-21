@@ -71,3 +71,100 @@ class TestResourceFinderScaffold:
         assert isinstance(out, FindOutput)
         assert out.strategy_used == "none"
         assert out.matches == []
+
+
+def _fixture_state():
+    """Canonical minimal state dict used across strategy tests."""
+    return {
+        "version": "3.0",
+        "resources": {
+            "detection": {
+                "aws_root_login": {
+                    "type": "detection",
+                    "id": "det-id-1",
+                    "content_hash": "abc",
+                    "template_path": "resources/detections/aws/aws_root_login.yaml",
+                    "deployed_at": "2026-03-14T19:22:03Z",
+                    "last_modified": "2026-03-14T19:22:03Z",
+                    "provider_metadata": {
+                        "rule_id": "c1d430691e8b42e7b336956f6a3af6fc",
+                        "status": "active",
+                        "severity": 70,
+                    },
+                    "dependencies": ["saved_search.aws_service_accounts"],
+                    "display_name": "AWS - Root Login via Console",
+                },
+                "aws_user_login": {
+                    "type": "detection",
+                    "id": "det-id-2",
+                    "content_hash": "def",
+                    "template_path": "resources/detections/aws/aws_user_login.yaml",
+                    "deployed_at": "2026-03-15T00:00:00Z",
+                    "last_modified": "2026-03-15T00:00:00Z",
+                    "provider_metadata": {
+                        "rule_id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                        "status": "active",
+                        "severity": 40,
+                    },
+                    "dependencies": [],
+                    "display_name": "AWS - User Login",
+                },
+            },
+            "saved_search": {
+                "aws_service_accounts": {
+                    "type": "saved_search",
+                    "id": "ss-id-1",
+                    "content_hash": "ghi",
+                    "template_path": "resources/saved_searches/aws_service_accounts.yaml",
+                    "deployed_at": "2026-03-10T00:00:00Z",
+                    "last_modified": "2026-03-10T00:00:00Z",
+                    "provider_metadata": {},
+                    "dependencies": [],
+                    "display_name": "AWS Service Accounts",
+                },
+            },
+        },
+    }
+
+
+class TestStrategyRuleId:
+    def test_exact_rule_id_returns_single_match(self):
+        finder = ResourceFinder(_fixture_state())
+        out = finder.find("c1d430691e8b42e7b336956f6a3af6fc")
+        assert out.strategy_used == "rule_id"
+        assert len(out.matches) == 1
+        m = out.matches[0]
+        assert m.resource_type == "detection"
+        assert m.resource_id == "aws_root_login"
+        assert m.rule_id == "c1d430691e8b42e7b336956f6a3af6fc"
+        assert m.status == "active"
+        assert m.severity == 70
+        assert m.iac_tunable is True
+        assert m.deployed is True
+
+    def test_rule_id_case_insensitive(self):
+        finder = ResourceFinder(_fixture_state())
+        out = finder.find("C1D430691E8B42E7B336956F6A3AF6FC")
+        assert out.strategy_used == "rule_id"
+        assert len(out.matches) == 1
+
+    def test_rule_id_with_type_filter(self):
+        finder = ResourceFinder(_fixture_state())
+        out = finder.find("c1d430691e8b42e7b336956f6a3af6fc", resource_type="saved_search")
+        # UUID looks like a rule_id but no match under saved_search -> fall through
+        assert out.strategy_used != "rule_id"
+
+    def test_rule_id_no_match_falls_through(self):
+        finder = ResourceFinder(_fixture_state())
+        out = finder.find("ffffffffffffffffffffffffffffffff")
+        assert out.strategy_used == "none"
+        assert out.matches == []
+
+    def test_rule_id_tolerates_missing_provider_metadata(self):
+        state = _fixture_state()
+        state["resources"]["detection"]["aws_root_login"]["provider_metadata"] = None
+        finder = ResourceFinder(state)
+        out = finder.find("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")
+        assert out.strategy_used == "rule_id"
+        assert len(out.matches) == 1
+        assert out.matches[0].resource_id == "aws_user_login"
