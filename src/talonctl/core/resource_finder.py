@@ -7,6 +7,7 @@ credentials, no falcon client. Intended to be wrapped by
 `talonctl.commands.find`.
 """
 
+import fnmatch
 import re
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional
@@ -87,6 +88,7 @@ class ResourceFinder:
             self._try_resource_id,
             self._try_composite_id,
             self._try_substring,
+            self._try_glob,
         ):
             result = strategy(query, resource_type)
             if result is not None:
@@ -203,3 +205,16 @@ class ResourceFinder:
             return None
         matches.sort(key=lambda m: (m.resource_type, m.resource_id))
         return FindOutput(query=query, strategy_used="name_substring", matches=matches)
+
+    def _try_glob(self, query: str, resource_type: Optional[str]) -> Optional[FindOutput]:
+        if "*" not in query and "?" not in query:
+            return None
+        matches: List[FindResult] = []
+        for rtype in self._iter_types(resource_type):
+            for key, entry in (self._resources.get(rtype) or {}).items():
+                if fnmatch.fnmatchcase(key, query):
+                    matches.append(self._build_result(rtype, key, entry))
+        if not matches:
+            return None
+        matches.sort(key=lambda m: (m.resource_type, m.resource_id))
+        return FindOutput(query=query, strategy_used="glob", matches=matches)

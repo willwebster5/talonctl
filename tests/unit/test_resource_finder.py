@@ -316,3 +316,36 @@ class TestStrategySubstring:
         out = finder.find("aws*login")
         # Glob not implemented yet — expect fallthrough, NOT substring.
         assert out.strategy_used != "name_substring"
+
+
+class TestStrategyGlob:
+    def test_glob_star_matches_resource_id(self):
+        finder = ResourceFinder(_fixture_state())
+        out = finder.find("aws_*_login")
+        assert out.strategy_used == "glob"
+        assert [m.resource_id for m in out.matches] == [
+            "aws_root_login",
+            "aws_user_login",
+        ]
+
+    def test_glob_question_matches_single_char(self):
+        finder = ResourceFinder(_fixture_state())
+        out = finder.find("aws_?oot_login")
+        assert out.strategy_used == "glob"
+        assert [m.resource_id for m in out.matches] == ["aws_root_login"]
+
+    def test_glob_with_type_filter(self):
+        finder = ResourceFinder(_fixture_state())
+        out = finder.find("aws_*", resource_type="detection")
+        assert out.strategy_used == "glob"
+        assert all(m.resource_type == "detection" for m in out.matches)
+
+    def test_glob_no_match_falls_through(self):
+        finder = ResourceFinder(_fixture_state())
+        out = finder.find("nothing_*_matches")
+        assert out.strategy_used == "none"
+
+    def test_glob_is_case_sensitive_on_resource_id(self):
+        finder = ResourceFinder(_fixture_state())
+        out = finder.find("AWS_*")
+        assert out.strategy_used == "none"
