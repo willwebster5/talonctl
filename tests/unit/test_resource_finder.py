@@ -216,3 +216,65 @@ class TestStrategyResourceId:
         finder = ResourceFinder(_fixture_state())
         out = finder.find("nonexistent_resource")
         assert out.strategy_used == "none"
+
+
+class TestStrategyCompositeId:
+    def test_ngsiem_prefix_delegates_to_rule_id(self):
+        finder = ResourceFinder(_fixture_state())
+        out = finder.find("ngsiem:c1d430691e8b42e7b336956f6a3af6fc")
+        assert out.strategy_used == "composite_id_ngsiem"
+        assert len(out.matches) == 1
+        assert out.matches[0].resource_id == "aws_root_login"
+
+    def test_ngsiem_prefix_with_unknown_uuid_returns_empty_match_set(self):
+        finder = ResourceFinder(_fixture_state())
+        out = finder.find("ngsiem:ffffffffffffffffffffffffffffffff")
+        assert out.strategy_used == "composite_id_ngsiem"
+        assert out.matches == []
+
+    def test_fcs_prefix_returns_non_iac_info(self):
+        finder = ResourceFinder(_fixture_state())
+        out = finder.find("fcs:abc123")
+        assert out.strategy_used == "composite_id_non_iac"
+        assert out.matches == []
+        assert out.non_iac_info is not None
+        assert out.non_iac_info.prefix == "fcs"
+        assert "Cloud Security" in out.non_iac_info.label
+
+    def test_thirdparty_prefix_returns_non_iac_info(self):
+        finder = ResourceFinder(_fixture_state())
+        out = finder.find("thirdparty:xyz")
+        assert out.strategy_used == "composite_id_non_iac"
+        assert out.non_iac_info.prefix == "thirdparty"
+
+    def test_cwpp_prefix_returns_non_iac_info(self):
+        finder = ResourceFinder(_fixture_state())
+        out = finder.find("cwpp:xyz")
+        assert out.strategy_used == "composite_id_non_iac"
+        assert out.non_iac_info.prefix == "cwpp"
+
+    def test_unknown_prefix_falls_through(self):
+        finder = ResourceFinder(_fixture_state())
+        out = finder.find("unknownprefix:something")
+        assert out.strategy_used == "none"
+
+    def test_colon_in_resource_id_key_still_falls_through_to_later_strategies(self):
+        # Edge case: a key that happens to contain a colon but isn't a
+        # known prefix should NOT be treated as composite_id.
+        state = _fixture_state()
+        state["resources"]["detection"]["weird:key"] = {
+            "type": "detection",
+            "id": "det-id-weird",
+            "content_hash": "",
+            "template_path": "",
+            "deployed_at": "",
+            "last_modified": "",
+            "provider_metadata": {},
+            "dependencies": [],
+            "display_name": "Weird",
+        }
+        finder = ResourceFinder(state)
+        out = finder.find("weird:key")
+        # "weird" is not a known non-IaC prefix -> fall through -> resource_id hits
+        assert out.strategy_used == "resource_id"
+        assert len(out.matches) == 1

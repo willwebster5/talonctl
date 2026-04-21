@@ -82,7 +82,11 @@ class ResourceFinder:
         self._templates = templates or []
 
     def find(self, query: str, resource_type: Optional[str] = None) -> FindOutput:
-        for strategy in (self._try_rule_id, self._try_resource_id):
+        for strategy in (
+            self._try_rule_id,
+            self._try_resource_id,
+            self._try_composite_id,
+        ):
             result = strategy(query, resource_type)
             if result is not None:
                 return result
@@ -152,3 +156,34 @@ class ResourceFinder:
             return None
         matches.sort(key=lambda m: (m.resource_type, m.resource_id))
         return FindOutput(query=query, strategy_used="resource_id", matches=matches)
+
+    def _try_composite_id(self, query: str, resource_type: Optional[str]) -> Optional[FindOutput]:
+        if ":" not in query:
+            return None
+        prefix, _, payload = query.partition(":")
+        if not prefix or not payload:
+            return None
+
+        if prefix == "ngsiem":
+            inner = self._try_rule_id(payload, resource_type)
+            if inner is None:
+                return FindOutput(
+                    query=query,
+                    strategy_used="composite_id_ngsiem",
+                    matches=[],
+                )
+            return FindOutput(
+                query=query,
+                strategy_used="composite_id_ngsiem",
+                matches=inner.matches,
+            )
+
+        if prefix in NON_IAC_PREFIXES:
+            return FindOutput(
+                query=query,
+                strategy_used="composite_id_non_iac",
+                matches=[],
+                non_iac_info=NON_IAC_PREFIXES[prefix],
+            )
+
+        return None
