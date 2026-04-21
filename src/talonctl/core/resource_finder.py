@@ -82,7 +82,7 @@ class ResourceFinder:
         self._templates = templates or []
 
     def find(self, query: str, resource_type: Optional[str] = None) -> FindOutput:
-        for strategy in (self._try_rule_id,):
+        for strategy in (self._try_rule_id, self._try_resource_id):
             result = strategy(query, resource_type)
             if result is not None:
                 return result
@@ -130,3 +130,25 @@ class ResourceFinder:
             return None
         matches.sort(key=lambda m: (m.resource_type, m.resource_id))
         return FindOutput(query=query, strategy_used="rule_id", matches=matches)
+
+    def _try_resource_id(self, query: str, resource_type: Optional[str]) -> Optional[FindOutput]:
+        matches: List[FindResult] = []
+
+        # Explicit type.name form
+        if "." in query and not resource_type:
+            rtype, _, name = query.partition(".")
+            entry = (self._resources.get(rtype) or {}).get(name)
+            if entry is not None:
+                matches.append(self._build_result(rtype, name, entry))
+
+        # Bare key lookup — scan each type bucket (constant-time per type)
+        if not matches:
+            for rtype in self._iter_types(resource_type):
+                entry = (self._resources.get(rtype) or {}).get(query)
+                if entry is not None:
+                    matches.append(self._build_result(rtype, query, entry))
+
+        if not matches:
+            return None
+        matches.sort(key=lambda m: (m.resource_type, m.resource_id))
+        return FindOutput(query=query, strategy_used="resource_id", matches=matches)

@@ -168,3 +168,51 @@ class TestStrategyRuleId:
         assert out.strategy_used == "rule_id"
         assert len(out.matches) == 1
         assert out.matches[0].resource_id == "aws_user_login"
+
+
+class TestStrategyResourceId:
+    def test_exact_key_match(self):
+        finder = ResourceFinder(_fixture_state())
+        out = finder.find("aws_root_login")
+        assert out.strategy_used == "resource_id"
+        assert len(out.matches) == 1
+        assert out.matches[0].resource_type == "detection"
+        assert out.matches[0].resource_id == "aws_root_login"
+
+    def test_type_dot_name_form(self):
+        finder = ResourceFinder(_fixture_state())
+        out = finder.find("saved_search.aws_service_accounts")
+        assert out.strategy_used == "resource_id"
+        assert len(out.matches) == 1
+        assert out.matches[0].resource_type == "saved_search"
+
+    def test_type_filter_narrows(self):
+        finder = ResourceFinder(_fixture_state())
+        out = finder.find("aws_root_login", resource_type="saved_search")
+        assert out.strategy_used == "none"
+
+    def test_same_key_across_types_returns_all(self):
+        state = _fixture_state()
+        # Create a saved_search with the same bare key as a detection
+        state["resources"]["saved_search"]["aws_root_login"] = {
+            "type": "saved_search",
+            "id": "ss-id-2",
+            "content_hash": "",
+            "template_path": "resources/saved_searches/aws_root_login.yaml",
+            "deployed_at": "",
+            "last_modified": "",
+            "provider_metadata": {},
+            "dependencies": [],
+            "display_name": "AWS Root Login (saved search)",
+        }
+        finder = ResourceFinder(state)
+        out = finder.find("aws_root_login")
+        assert out.strategy_used == "resource_id"
+        assert len(out.matches) == 2
+        # Sort is (resource_type, resource_id): detection before saved_search
+        assert [m.resource_type for m in out.matches] == ["detection", "saved_search"]
+
+    def test_missing_key_falls_through(self):
+        finder = ResourceFinder(_fixture_state())
+        out = finder.find("nonexistent_resource")
+        assert out.strategy_used == "none"
