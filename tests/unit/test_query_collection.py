@@ -1,6 +1,7 @@
 """Tests for talonctl.core.query_collection."""
 
 from talonctl.core.query_collection import QueryRef, collect_queries_from_templates
+from talonctl.core.template_discovery import DiscoveredTemplate
 
 
 def test_queryref_fields():
@@ -22,3 +23,58 @@ def test_queryref_fields():
 
 def test_collect_empty_returns_empty_list():
     assert collect_queries_from_templates({}) == []
+
+
+def _make(resource_type: str, name: str, data: dict) -> DiscoveredTemplate:
+    return DiscoveredTemplate(
+        resource_type=resource_type,
+        name=name,
+        file_path="/tmp/ignored.yaml",
+        template_data=data,
+        tags=[],
+    )
+
+
+def test_snippet_collapses_newlines_and_truncates():
+    from talonctl.core.query_collection import _make_snippet
+
+    short = _make_snippet("  foo\nbar  ")
+    assert short == "foo bar"
+
+    long_query = "a" * 150
+    snippet = _make_snippet(long_query)
+    assert len(snippet) == 103  # 100 chars + "..."
+    assert snippet.endswith("...")
+
+
+def test_detection_with_filter():
+    t = _make("detection", "box_new_device", {"search": {"filter": "#event.module=/box/"}})
+    refs = collect_queries_from_templates({"detection": [t]})
+    assert len(refs) == 1
+    assert refs[0].location == "search.filter"
+    assert refs[0].query == "#event.module=/box/"
+    assert refs[0].resource_id == "detection.box_new_device"
+    assert refs[0].resource_type == "detection"
+
+
+def test_detection_with_query_only():
+    t = _make("detection", "foo", {"search": {"query": "#vendor=aws"}})
+    refs = collect_queries_from_templates({"detection": [t]})
+    assert len(refs) == 1
+    assert refs[0].location == "search.query"
+
+
+def test_detection_prefers_filter_over_query():
+    t = _make("detection", "foo", {"search": {"filter": "A", "query": "B"}})
+    refs = collect_queries_from_templates({"detection": [t]})
+    assert len(refs) == 1
+    assert refs[0].query == "A"
+    assert refs[0].location == "search.filter"
+
+
+def test_detection_without_query_is_skipped():
+    t = _make("detection", "foo", {"search": {}})
+    assert collect_queries_from_templates({"detection": [t]}) == []
+
+    t2 = _make("detection", "foo", {"search": {"filter": "   "}})
+    assert collect_queries_from_templates({"detection": [t2]}) == []
