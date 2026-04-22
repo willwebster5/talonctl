@@ -46,9 +46,23 @@ def _extract_saved_search(template: dict) -> List[Tuple[str, str]]:
     return []
 
 
+def _extract_dashboard(template: dict) -> List[Tuple[str, str]]:
+    pairs: List[Tuple[str, str]] = []
+    for widget_id, widget in (template.get("widgets") or {}).items():
+        qs = widget.get("queryString")
+        if isinstance(qs, str) and qs.strip():
+            pairs.append((qs, f"widgets.{widget_id}.queryString"))
+    for param_id, param in (template.get("parameters") or {}).items():
+        q = param.get("query")
+        if isinstance(q, str) and q.strip():
+            pairs.append((q, f"parameters.{param_id}.query"))
+    return pairs
+
+
 _EXTRACTORS: Dict[str, Callable[[dict], List[Tuple[str, str]]]] = {
     "detection": _extract_detection,
     "saved_search": _extract_saved_search,
+    "dashboard": _extract_dashboard,
 }
 
 

@@ -95,3 +95,36 @@ def test_saved_search_without_query_skipped():
 
     t2 = _make("saved_search", "foo", {})
     assert collect_queries_from_templates({"saved_search": [t2]}) == []
+
+
+def test_dashboard_widgets_and_parameters_fan_out():
+    template_data = {
+        "widgets": {
+            "top_ips": {"type": "query", "queryString": "sourceIPAddress=* | groupBy(ip)"},
+            "top_users": {"type": "query", "queryString": "user=* | groupBy(user)"},
+            "header": {"type": "markdown", "queryString": ""},
+        },
+        "parameters": {
+            "region": {"query": "region=*"},
+            "empty": {"query": ""},
+        },
+    }
+    t = _make("dashboard", "threat_hunting", template_data)
+    refs = collect_queries_from_templates({"dashboard": [t]})
+    assert len(refs) == 3
+
+    locations = sorted(r.location for r in refs)
+    assert locations == [
+        "parameters.region.query",
+        "widgets.top_ips.queryString",
+        "widgets.top_users.queryString",
+    ]
+
+    for r in refs:
+        assert r.resource_type == "dashboard"
+        assert r.resource_id == "dashboard.threat_hunting"
+
+
+def test_dashboard_no_widgets_or_params():
+    t = _make("dashboard", "empty", {})
+    assert collect_queries_from_templates({"dashboard": [t]}) == []
