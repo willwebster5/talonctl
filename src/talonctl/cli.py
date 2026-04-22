@@ -8,8 +8,38 @@ import click
 from talonctl import __version__
 from talonctl.commands._common import console
 
+_BANNER_SUPPRESS_KEY = "talonctl.suppress_banner"
 
-@click.group()
+
+class _TalonGroup(click.Group):
+    """Click Group subclass that peeks at subcommand args to suppress the
+    banner when ``find`` is invoked with ``--format json`` or ``--format path``.
+    The peek happens in ``invoke()`` before the group callback fires so that
+    ``ctx.meta`` carries the flag by the time the callback checks it.
+    Works under ``CliRunner`` (does NOT use ``sys.argv``).
+    """
+
+    def invoke(self, ctx: click.Context) -> object:
+        # At invoke() time in Click 8, ctx.invoked_subcommand is not yet set.
+        # ctx.protected_args holds the subcommand name token; ctx.args holds
+        # the subcommand's remaining args (NOT sys.argv — works under CliRunner).
+        sub_cmd = (list(ctx.protected_args) + list(ctx.args))[:1]
+        sub_args = list(ctx.args) if ctx.protected_args else list(ctx.args[1:])
+        if sub_cmd and sub_cmd[0] == "find":
+            for i, token in enumerate(sub_args):
+                if token == "--format" and i + 1 < len(sub_args):
+                    if sub_args[i + 1] in ("json", "path"):
+                        ctx.meta[_BANNER_SUPPRESS_KEY] = True
+                    break
+                if token.startswith("--format="):
+                    val = token.split("=", 1)[1]
+                    if val in ("json", "path"):
+                        ctx.meta[_BANNER_SUPPRESS_KEY] = True
+                    break
+        return super().invoke(ctx)
+
+
+@click.group(cls=_TalonGroup)
 @click.version_option(version=__version__, prog_name="talonctl")
 @click.option("--verbose", "-v", is_flag=True, help="Enable verbose output")
 @click.pass_context
@@ -26,8 +56,13 @@ def cli(ctx, verbose):
         format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
     )
 
-    console.print(f"\n[bold cyan]talonctl[/bold cyan] [dim]v{__version__}[/dim]")
-    console.print(f"[dim]{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}[/dim]\n")
+    # Suppress banner for machine-readable `find` output so stdout pipes cleanly.
+    # The _TalonGroup.invoke() sets this flag via ctx.meta before this callback
+    # fires, so ctx.args is not needed here (it is empty by callback time in
+    # Click 8).
+    if not ctx.meta.get(_BANNER_SUPPRESS_KEY, False):
+        console.print(f"\n[bold cyan]talonctl[/bold cyan] [dim]v{__version__}[/dim]")
+        console.print(f"[dim]{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}[/dim]\n")
 
 
 # Import and register command modules
@@ -47,6 +82,7 @@ from talonctl.commands.backup import backup  # noqa: E402
 from talonctl.commands.auth import auth  # noqa: E402
 from talonctl.commands.health import health  # noqa: E402
 from talonctl.commands.metrics import metrics  # noqa: E402
+from talonctl.commands.find import find  # noqa: E402
 
 cli.add_command(validate)
 cli.add_command(plan)
@@ -64,3 +100,4 @@ cli.add_command(backup)
 cli.add_command(auth)
 cli.add_command(health)
 cli.add_command(metrics)
+cli.add_command(find)
