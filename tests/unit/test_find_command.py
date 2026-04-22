@@ -236,3 +236,11 @@ class TestFindCommandStateEdges:
             ["anything", "--state-file", str(missing), "--include-undeployed"],
         )
         assert result.exit_code == 1
+
+
+class TestFindCommandRegistration:
+    def test_find_is_registered_in_cli_group(self):
+        from talonctl.cli import cli
+
+        assert "find" in cli.commands
+        assert cli.commands["find"] is find
