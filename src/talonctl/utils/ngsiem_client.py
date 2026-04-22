@@ -163,7 +163,13 @@ class NGSIEMClient:
                 )
 
                 if response.get("status_code") != 200:
-                    error_msg = f"Start search failed: {response.get('status_code')} - {response.get('body', {}).get('errors', 'Unknown error')}"
+                    body = response.get("body") or {}
+                    errors = body.get("errors")
+                    status = response.get("status_code")
+                    detail = (
+                        (errors if isinstance(errors, str) else repr(errors)) if errors else "no detail returned by API"
+                    )
+                    error_msg = f"Start search failed (status={status}): {detail}"
                     logger.error(error_msg)
 
                     if attempt < config.max_retries:
