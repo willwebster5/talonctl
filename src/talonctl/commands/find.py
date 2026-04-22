@@ -2,6 +2,7 @@
 
 import json
 import sys
+from dataclasses import asdict
 from typing import Optional
 
 import click
@@ -89,6 +90,10 @@ def _render_table(output: FindOutput) -> None:
     console.print(table)
 
 
+def _render_json(output: FindOutput) -> None:
+    click.echo(json.dumps(asdict(output), indent=2))
+
+
 def _exit_code(output: FindOutput) -> int:
     if output.matches:
         return 0
@@ -137,5 +142,8 @@ def find(query, resource_type, output_format, include_undeployed, state_file):
     finder = ResourceFinder(state, templates=templates)
     output = finder.find(query, resource_type=resource_type)
 
-    _render_table(output)
+    if output_format == "json":
+        _render_json(output)
+    else:
+        _render_table(output)
     sys.exit(_exit_code(output))

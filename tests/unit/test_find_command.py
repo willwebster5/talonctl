@@ -55,3 +55,93 @@ class TestFindCommandTable:
         runner = CliRunner()
         result = runner.invoke(find, ["nonexistent_resource", "--state-file", str(state_file)])
         assert result.exit_code == 1
+
+
+class TestFindCommandJson:
+    def test_json_output_shape_stable(self, tmp_path):
+        state_file = _write_state(tmp_path)
+        runner = CliRunner()
+        result = runner.invoke(
+            find,
+            [
+                "c1d430691e8b42e7b336956f6a3af6fc",
+                "--format",
+                "json",
+                "--state-file",
+                str(state_file),
+            ],
+        )
+        assert result.exit_code == 0
+        output = result.output.strip()
+        assert output.startswith("{"), f"output must be JSON, got: {output[:80]!r}"
+        parsed = json.loads(output)
+        assert parsed["query"] == "c1d430691e8b42e7b336956f6a3af6fc"
+        assert parsed["strategy_used"] == "rule_id"
+        assert len(parsed["matches"]) == 1
+        assert parsed["non_iac_info"] is None
+        m = parsed["matches"][0]
+        assert m["resource_type"] == "detection"
+        assert m["resource_id"] == "aws_root_login"
+        assert m["iac_tunable"] is True
+        assert m["deployed"] is True
+
+    def test_json_zero_match_still_valid_json(self, tmp_path):
+        state_file = _write_state(tmp_path)
+        runner = CliRunner()
+        result = runner.invoke(
+            find,
+            ["nothing_matches", "--format", "json", "--state-file", str(state_file)],
+        )
+        assert result.exit_code == 1
+        output = result.output.strip()
+        assert output.startswith("{")
+        parsed = json.loads(output)
+        assert parsed["matches"] == []
+        assert parsed["strategy_used"] == "none"
+
+    def test_json_non_iac_prefix(self, tmp_path):
+        state_file = _write_state(tmp_path)
+        runner = CliRunner()
+        result = runner.invoke(
+            find,
+            ["fcs:abc", "--format", "json", "--state-file", str(state_file)],
+        )
+        assert result.exit_code == 0
+        parsed = json.loads(result.output.strip())
+        assert parsed["strategy_used"] == "composite_id_non_iac"
+        assert parsed["non_iac_info"]["prefix"] == "fcs"
+
+    def test_banner_suppressed_through_full_cli_group_for_json(self, tmp_path):
+        """Invoke the full cli group to exercise the banner-suppression path in cli.py."""
+        from talonctl.cli import cli
+
+        state_file = _write_state(tmp_path)
+        runner = CliRunner()
+        result = runner.invoke(
+            cli,
+            [
+                "find",
+                "c1d430691e8b42e7b336956f6a3af6fc",
+                "--format",
+                "json",
+                "--state-file",
+                str(state_file),
+            ],
+        )
+        assert result.exit_code == 0
+        # First non-empty line must be JSON — no banner preamble
+        first = next(ln for ln in result.output.splitlines() if ln.strip())
+        assert first.startswith("{"), f"banner leaked: {result.output[:200]!r}"
+
+    def test_banner_still_shown_for_table_format_through_cli_group(self, tmp_path):
+        """Sanity check: banner IS present when --format is table."""
+        from talonctl.cli import cli
+
+        state_file = _write_state(tmp_path)
+        runner = CliRunner()
+        result = runner.invoke(
+            cli,
+            ["find", "aws_root_login", "--state-file", str(state_file)],
+        )
+        assert result.exit_code == 0
+        assert "talonctl" in result.output  # banner present
