@@ -94,6 +94,14 @@ def _render_json(output: FindOutput) -> None:
     click.echo(json.dumps(asdict(output), indent=2))
 
 
+def _render_path(output: FindOutput) -> None:
+    for m in output.matches:
+        if not m.template_path:
+            click.echo(f"Warning: {m.resource_type}.{m.resource_id} has no template_path; skipping", err=True)
+            continue
+        click.echo(m.template_path)
+
+
 def _exit_code(output: FindOutput) -> int:
     if output.matches:
         return 0
@@ -144,6 +152,8 @@ def find(query, resource_type, output_format, include_undeployed, state_file):
 
     if output_format == "json":
         _render_json(output)
+    elif output_format == "path":
+        _render_path(output)
     else:
         _render_table(output)
     sys.exit(_exit_code(output))

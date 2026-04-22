@@ -145,3 +145,63 @@ class TestFindCommandJson:
         )
         assert result.exit_code == 0
         assert "talonctl" in result.output  # banner present
+
+
+class TestFindCommandPath:
+    def test_path_format_emits_bare_lines(self, tmp_path):
+        state_file = _write_state(tmp_path)
+        runner = CliRunner()
+        result = runner.invoke(
+            find,
+            [
+                "c1d430691e8b42e7b336956f6a3af6fc",
+                "--format",
+                "path",
+                "--state-file",
+                str(state_file),
+            ],
+        )
+        assert result.exit_code == 0
+        lines = [ln for ln in result.output.splitlines() if ln.strip()]
+        assert lines == ["resources/detections/aws/aws_root_login.yaml"]
+
+    def test_path_format_zero_match_empty_output_exit_1(self, tmp_path):
+        state_file = _write_state(tmp_path)
+        runner = CliRunner()
+        result = runner.invoke(
+            find,
+            ["nothing_matches", "--format", "path", "--state-file", str(state_file)],
+        )
+        assert result.exit_code == 1
+        assert result.output.strip() == ""
+
+    def test_path_format_skips_entries_without_template_path(self, tmp_path):
+        state_file = tmp_path / "s.json"
+        state_file.write_text(
+            json.dumps(
+                {
+                    "version": "3.0",
+                    "resources": {
+                        "detection": {
+                            "foo": {
+                                "type": "detection",
+                                "id": "x",
+                                "content_hash": "",
+                                "template_path": "",
+                                "deployed_at": "",
+                                "last_modified": "",
+                                "provider_metadata": {},
+                                "dependencies": [],
+                                "display_name": "Foo",
+                            }
+                        }
+                    },
+                }
+            )
+        )
+        runner = CliRunner()
+        result = runner.invoke(find, ["foo", "--format", "path", "--state-file", str(state_file)])
+        # Match is present, but path is empty → skipped, stderr warned → exit 0 still (match exists).
+        assert result.exit_code == 0
+        # No template paths should be printed to stdout, but warning goes to stderr (mixed in output)
+        assert "Warning: detection.foo has no template_path; skipping" in result.output
