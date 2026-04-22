@@ -375,8 +375,7 @@ class PlanFormatter:
             self.console.print(f"\n[red]✗ {invalid_templates} of {total_templates} templates have errors[/red]\n")
 
     def format_query_validation(self, results: List[QueryValidationResult]) -> None:
-        """
-        Format FQL query validation results
+        """Format CQL query validation results.
 
         Args:
             results: List of query validation results
@@ -389,7 +388,7 @@ class PlanFormatter:
         valid = total - invalid
 
         self.console.print()
-        self.console.print(Panel.fit("[bold]FQL Query Validation[/bold]", border_style="blue"))
+        self.console.print(Panel.fit("[bold]Query Validation[/bold]", border_style="blue"))
         self.console.print()
 
         # Show invalid queries first
@@ -413,7 +412,7 @@ class PlanFormatter:
             self.console.print(f"[green]✓ All {total} queries are valid[/green]\n")
         else:
             self.console.print(f"[red]✗ {invalid} of {total} queries rejected by LogScale[/red]\n")
-            self.console.print("[yellow]⚠[/yellow]  Deployment will be blocked until all queries are valid.\n")
+            self.console.print("[yellow]⚠[/yellow]  Fix the above queries before running plan or apply.\n")
 
     def format_drift_report(self, report: Any) -> None:
         """
