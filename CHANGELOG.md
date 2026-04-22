@@ -2,9 +2,23 @@
 
 ## [Unreleased]
 
+## v0.4.0 — `find` command + fleet-wide CQL validation
+
 ### Added
 
 - `talonctl find QUERY` — offline identifier resolution (rule_id UUID, resource_id, `ngsiem:` / `fcs:` / `thirdparty:` / `cwpp:` composite IDs, display-name substring, glob). Closes #10.
+- `talonctl validate --queries` (`-Q`) — after schema validation passes, CQL-parses every query across detections, saved searches, and dashboards against NGSIEM in parallel. Output anchors each failure at its exact location (`search.filter`, `widgets.<id>.queryString`, `parameters.<id>.query`, or `queryString`). Requires credentials; exits 1 with a documented message when missing. Closes #11.
+
+### Changed
+
+- `NGSIEMClient` error messages no longer emit misleading `"Unknown error"` fallbacks. Rejections now read `LogScale rejected query (status=<N>, no detail returned by API)` when the upstream API returns nothing structured, or pass the payload through verbatim when present.
+- Detection query-field precedence (`search.filter` wins over `search.query`) is now consistent across `validate`, `validate-query`, and the plan-path query validator.
+- `QueryValidationResult` now carries an optional `location` field used by the formatter to point at the exact widget or field path.
+
+### Internal
+
+- New `talonctl.core.query_collection` module (`QueryRef` + `collect_queries_from_templates`) centralises per-resource-type query-field knowledge.
+- New `DeploymentOrchestrator.validate_queries()` method. Plan-path detection validation (`_validate_detection_queries`) is unchanged; broadening it to saved searches and dashboards is tracked as a follow-up.
 
 ## v0.3.0 — Metadata Namespace Redesign (BREAKING)
 
