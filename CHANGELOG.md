@@ -1,5 +1,11 @@
 # Changelog
 
+## [Unreleased]
+
+### Added
+
+- `talonctl find QUERY` — offline identifier resolution (rule_id UUID, resource_id, `ngsiem:` / `fcs:` / `thirdparty:` / `cwpp:` composite IDs, display-name substring, glob). Closes #10.
+
 ## v0.3.0 — Metadata Namespace Redesign (BREAKING)
 
 ### Breaking changes

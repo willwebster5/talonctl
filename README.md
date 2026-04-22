@@ -53,6 +53,7 @@ talonctl import --plan               # Preview import
 talonctl sync                        # Reconcile state with tenant
 talonctl drift                       # Detect manual console changes
 talonctl show                        # Display current state
+talonctl find QUERY                  # Resolve UUID / resource_id / glob / composite ID
 talonctl init                        # Scaffold a new project
 talonctl validate-query              # Validate CQL syntax
 talonctl publish                     # Activate inactive detection rules
