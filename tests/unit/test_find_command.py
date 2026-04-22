@@ -205,3 +205,34 @@ class TestFindCommandPath:
         assert result.exit_code == 0
         # No template paths should be printed to stdout, but warning goes to stderr (mixed in output)
         assert "Warning: detection.foo has no template_path; skipping" in result.output
+
+
+class TestFindCommandStateEdges:
+    def test_missing_state_file_exit_1_with_stderr_note(self, tmp_path):
+        missing = tmp_path / "does-not-exist.json"
+        runner = CliRunner()
+        result = runner.invoke(find, ["anything", "--state-file", str(missing)])
+        assert result.exit_code == 1
+        # stderr note is merged into result.output by CliRunner when mix_stderr=True (default)
+        assert "No state file" in result.output or "No state file" in (result.stderr or "")
+
+    def test_corrupt_state_file_exit_2(self, tmp_path):
+        bad = tmp_path / "bad.json"
+        bad.write_text("{not valid json")
+        runner = CliRunner()
+        result = runner.invoke(find, ["anything", "--state-file", str(bad)])
+        assert result.exit_code == 2
+
+    def test_include_undeployed_with_no_state(self, tmp_path, monkeypatch):
+        # No state file + --include-undeployed + no templates → exit 1 cleanly
+        missing = tmp_path / "none.json"
+        # Stub template discovery to return empty
+        import talonctl.commands.find as find_mod
+
+        monkeypatch.setattr(find_mod, "_discover_templates", lambda: [])
+        runner = CliRunner()
+        result = runner.invoke(
+            find,
+            ["anything", "--state-file", str(missing), "--include-undeployed"],
+        )
+        assert result.exit_code == 1
