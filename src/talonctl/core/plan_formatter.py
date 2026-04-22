@@ -17,19 +17,9 @@ from rich.panel import Panel
 
 # Import ResourceChange and ResourceAction from the canonical definition in base_provider
 from .base_provider import ResourceChange, ResourceAction
+from .deployment_orchestrator import QueryValidationResult
 
 logger = logging.getLogger(__name__)
-
-
-@dataclass
-class QueryValidationResult:
-    """Result of FQL query validation"""
-
-    resource_id: str
-    resource_name: str
-    is_valid: bool
-    error_message: Optional[str] = None
-    query_snippet: Optional[str] = None
 
 
 @dataclass
