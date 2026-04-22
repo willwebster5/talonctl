@@ -65,7 +65,7 @@ def validate_query(ctx, query, query_file, template):
         if result["valid"]:
             console.print("VALID")
         else:
-            console.print(f"INVALID: {result.get('message', 'Unknown error')}")
+            console.print(f"INVALID: {result['message']}")
             raise SystemExit(1)
 
     except SystemExit:

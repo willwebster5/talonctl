@@ -1,0 +1,65 @@
+"""NGSIEMClient error-message honesty tests.
+
+The upstream parse endpoint returns a generic rejection without structured
+detail. These tests pin the client to: never say 'Unknown error', always
+include the status code, and pass any body.errors payload through verbatim.
+"""
+
+from unittest.mock import MagicMock
+
+from talonctl.utils.ngsiem_client import NGSIEMClient
+
+
+def _client_with_mock_falconpy(mock_response):
+    client = NGSIEMClient.__new__(NGSIEMClient)  # bypass __init__ / creds
+    client.config = {}
+    client.debug = False
+    mock_falconpy = MagicMock()
+    mock_falconpy.start_search.return_value = mock_response
+    mock_falconpy.stop_search.return_value = {"status_code": 200}
+    client._client = mock_falconpy
+    return client
+
+
+def test_valid_query_returns_valid():
+    client = _client_with_mock_falconpy(
+        {"status_code": 200, "body": {"id": "abc", "resources": {"id": "abc"}}, "resources": {"id": "abc"}}
+    )
+    result = client.test_query_syntax("| limit 1")
+    assert result["valid"] is True
+
+
+def test_rejection_with_errors_passes_payload_through():
+    errors_payload = [{"message": "unexpected token at column 17"}]
+    client = _client_with_mock_falconpy({"status_code": 400, "body": {"errors": errors_payload}})
+    result = client.test_query_syntax("bad |")
+    assert result["valid"] is False
+    assert "Unknown error" not in result["message"]
+    assert "status=400" in result["message"]
+    assert "column 17" in result["message"]
+
+
+def test_rejection_with_string_error_passes_through():
+    client = _client_with_mock_falconpy({"status_code": 400, "body": {"errors": "bad pipe"}})
+    result = client.test_query_syntax("bad |")
+    assert result["valid"] is False
+    assert "Unknown error" not in result["message"]
+    assert "bad pipe" in result["message"]
+    assert "status=400" in result["message"]
+
+
+def test_rejection_with_empty_body_says_no_detail():
+    client = _client_with_mock_falconpy({"status_code": 400, "body": {}})
+    result = client.test_query_syntax("bad |")
+    assert result["valid"] is False
+    assert "Unknown error" not in result["message"]
+    assert "no detail returned by API" in result["message"]
+    assert "status=400" in result["message"]
+
+
+def test_rejection_with_missing_body_says_no_detail():
+    client = _client_with_mock_falconpy({"status_code": 400})
+    result = client.test_query_syntax("bad |")
+    assert result["valid"] is False
+    assert "Unknown error" not in result["message"]
+    assert "no detail returned by API" in result["message"]

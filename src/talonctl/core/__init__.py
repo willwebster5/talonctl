@@ -26,6 +26,7 @@ from talonctl.core.template_discovery import TemplateDiscovery, DiscoveredTempla
 from talonctl.core.plan_formatter import PlanFormatter
 from talonctl.core.drift_detector import DriftDetector, DriftReport, DriftItem
 from talonctl.core.dependency_validator import DependencyValidator, DependencyIssue
+from talonctl.core.query_collection import QueryRef, collect_queries_from_templates
 
 __all__ = [
     # Base provider
@@ -59,4 +60,7 @@ __all__ = [
     # Dependency validation
     "DependencyValidator",
     "DependencyIssue",
+    # Query collection
+    "QueryRef",
+    "collect_queries_from_templates",
 ]

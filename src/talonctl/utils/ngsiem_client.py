@@ -163,7 +163,13 @@ class NGSIEMClient:
                 )
 
                 if response.get("status_code") != 200:
-                    error_msg = f"Start search failed: {response.get('status_code')} - {response.get('body', {}).get('errors', 'Unknown error')}"
+                    body = response.get("body") or {}
+                    errors = body.get("errors")
+                    status = response.get("status_code")
+                    detail = (
+                        (errors if isinstance(errors, str) else repr(errors)) if errors else "no detail returned by API"
+                    )
+                    error_msg = f"Start search failed (status={status}): {detail}"
                     logger.error(error_msg)
 
                     if attempt < config.max_retries:
@@ -324,16 +330,14 @@ class NGSIEMClient:
 
     def test_query_syntax(self, query: str) -> Dict[str, Any]:
         """
-        Test query syntax without executing full search
+        Test query syntax without executing full search.
 
-        Args:
-            query: Query to test
-
-        Returns:
-            Dict with syntax validation results
+        The upstream parse endpoint returns a generic rejection without
+        structured detail. We pass any body.errors payload through verbatim
+        and include the HTTP status so authors know what the API actually
+        told us — rather than a misleading 'Unknown error' fallback.
         """
         try:
-            # Validate query exactly as written - no modifications
             test_query = query.strip()
 
             response = self.client.start_search(
@@ -346,11 +350,18 @@ class NGSIEMClient:
 
             if response.get("status_code") == 200:
                 return {"valid": True, "message": "Query syntax is valid"}
+
+            body = response.get("body") or {}
+            errors = body.get("errors")
+            status = response.get("status_code")
+
+            if errors:
+                detail = errors if isinstance(errors, str) else repr(errors)
+                message = f"LogScale rejected query (status={status}): {detail}"
             else:
-                return {
-                    "valid": False,
-                    "message": f"Syntax error: {response.get('body', {}).get('errors', 'Unknown error')}",
-                }
+                message = f"LogScale rejected query (status={status}, no detail returned by API)"
+
+            return {"valid": False, "message": message}
 
         except Exception as e:
             return {"valid": False, "message": f"Syntax test failed: {str(e)}"}

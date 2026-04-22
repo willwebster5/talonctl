@@ -17,19 +17,9 @@ from rich.panel import Panel
 
 # Import ResourceChange and ResourceAction from the canonical definition in base_provider
 from .base_provider import ResourceChange, ResourceAction
+from .deployment_orchestrator import QueryValidationResult
 
 logger = logging.getLogger(__name__)
-
-
-@dataclass
-class QueryValidationResult:
-    """Result of FQL query validation"""
-
-    resource_id: str
-    resource_name: str
-    is_valid: bool
-    error_message: Optional[str] = None
-    query_snippet: Optional[str] = None
 
 
 @dataclass
@@ -385,8 +375,7 @@ class PlanFormatter:
             self.console.print(f"\n[red]✗ {invalid_templates} of {total_templates} templates have errors[/red]\n")
 
     def format_query_validation(self, results: List[QueryValidationResult]) -> None:
-        """
-        Format FQL query validation results
+        """Format CQL query validation results.
 
         Args:
             results: List of query validation results
@@ -399,13 +388,15 @@ class PlanFormatter:
         valid = total - invalid
 
         self.console.print()
-        self.console.print(Panel.fit("[bold]FQL Query Validation[/bold]", border_style="blue"))
+        self.console.print(Panel.fit("[bold]Query Validation[/bold]", border_style="blue"))
         self.console.print()
 
         # Show invalid queries first
         for result in results:
             if not result.is_valid:
                 self.console.print(f"[red]✗[/red] [bold]{result.resource_id}[/bold]")
+                if result.location:
+                    self.console.print(f"    [dim]at:[/dim] {result.location}")
                 if result.error_message:
                     self.console.print(f"    [red]Error:[/red] {result.error_message}")
                 if result.query_snippet:
@@ -414,14 +405,14 @@ class PlanFormatter:
 
         # Show valid queries (only if there are some invalid ones)
         if invalid > 0 and valid > 0:
-            self.console.print(f"[green]✓[/green] {valid} detection(s) with valid queries\n")
+            self.console.print(f"[green]✓[/green] {valid} queries valid\n")
 
         # Summary
         if invalid == 0:
-            self.console.print(f"[green]✓ All {total} detection queries are valid[/green]\n")
+            self.console.print(f"[green]✓ All {total} queries are valid[/green]\n")
         else:
-            self.console.print(f"[red]✗ {invalid} of {total} detection queries have errors[/red]\n")
-            self.console.print("[yellow]⚠[/yellow]  Deployment will be blocked until all queries are valid.\n")
+            self.console.print(f"[red]✗ {invalid} of {total} queries rejected by LogScale[/red]\n")
+            self.console.print("[yellow]⚠[/yellow]  Fix the above queries before running plan or apply.\n")
 
     def format_drift_report(self, report: Any) -> None:
         """
