@@ -20,6 +20,7 @@ from talonctl.core.provider_adapter import ProviderAdapter
 from talonctl.core.state_synchronizer import StateSynchronizer
 from talonctl.core.drift_detector import DriftDetector, DriftReport
 from talonctl.core.base_provider import ResourceAction, ResourceChange
+from talonctl.core.query_collection import collect_queries_from_templates
 
 # Try to import NGSIEMClient for query validation
 try:
@@ -861,6 +862,66 @@ class DeploymentOrchestrator:
         total_count = len(results)
 
         logger.info(f"Validation complete: {valid_count}/{total_count} templates valid")
+
+        return results
+
+    def validate_queries(
+        self,
+        resource_types: Optional[List[str]] = None,
+        tags: Optional[List[str]] = None,
+        names: Optional[List[str]] = None,
+        max_workers: int = 20,
+    ) -> List[QueryValidationResult]:
+        """
+        Parse every CQL query in every query-bearing template against NGSIEM.
+
+        Does NOT run schema validation — caller is responsible for that.
+        Raises ValueError (from NGSIEMClient) if credentials are missing.
+        """
+        if not NGSIEM_CLIENT_AVAILABLE:
+            raise RuntimeError("NGSIEM client unavailable — cannot validate queries")
+
+        discovered = self.template_discovery.discover_all(resource_types=resource_types, tags=tags, names=names)
+        refs = collect_queries_from_templates(discovered)
+        if not refs:
+            return []
+
+        logger.info(f"Validating {len(refs)} queries across {len(discovered)} resource types")
+        ngsiem_client = NGSIEMClient()
+
+        def validate_one(ref):
+            try:
+                result = ngsiem_client.test_query_syntax(ref.query)
+                return QueryValidationResult(
+                    resource_id=ref.resource_id,
+                    resource_name=ref.resource_name,
+                    is_valid=result["valid"],
+                    error_message=None if result["valid"] else result.get("message"),
+                    query_snippet=ref.query_snippet,
+                    location=ref.location,
+                )
+            except Exception as e:
+                return QueryValidationResult(
+                    resource_id=ref.resource_id,
+                    resource_name=ref.resource_name,
+                    is_valid=False,
+                    error_message=f"Validation error: {e}",
+                    query_snippet=ref.query_snippet,
+                    location=ref.location,
+                )
+
+        results: List[QueryValidationResult] = []
+        with ThreadPoolExecutor(max_workers=max_workers) as executor:
+            futures = [executor.submit(validate_one, r) for r in refs]
+            for future in as_completed(futures):
+                results.append(future.result())
+
+        valid = sum(1 for r in results if r.is_valid)
+        invalid = len(results) - valid
+        if invalid:
+            logger.warning(f"Query validation: {valid} valid, {invalid} invalid")
+        else:
+            logger.info(f"Query validation: all {valid} queries valid")
 
         return results
 
