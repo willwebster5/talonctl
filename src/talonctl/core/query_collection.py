@@ -39,8 +39,16 @@ def _extract_detection(template: dict) -> List[Tuple[str, str]]:
     return []
 
 
+def _extract_saved_search(template: dict) -> List[Tuple[str, str]]:
+    value = template.get("queryString")
+    if isinstance(value, str) and value.strip():
+        return [(value, "queryString")]
+    return []
+
+
 _EXTRACTORS: Dict[str, Callable[[dict], List[Tuple[str, str]]]] = {
     "detection": _extract_detection,
+    "saved_search": _extract_saved_search,
 }
 
 

@@ -78,3 +78,20 @@ def test_detection_without_query_is_skipped():
 
     t2 = _make("detection", "foo", {"search": {"filter": "   "}})
     assert collect_queries_from_templates({"detection": [t2]}) == []
+
+
+def test_saved_search_with_query_string():
+    t = _make("saved_search", "slow_login", {"queryString": "user=* | count()"})
+    refs = collect_queries_from_templates({"saved_search": [t]})
+    assert len(refs) == 1
+    assert refs[0].location == "queryString"
+    assert refs[0].query == "user=* | count()"
+    assert refs[0].resource_type == "saved_search"
+
+
+def test_saved_search_without_query_skipped():
+    t = _make("saved_search", "foo", {"queryString": ""})
+    assert collect_queries_from_templates({"saved_search": [t]}) == []
+
+    t2 = _make("saved_search", "foo", {})
+    assert collect_queries_from_templates({"saved_search": [t2]}) == []
