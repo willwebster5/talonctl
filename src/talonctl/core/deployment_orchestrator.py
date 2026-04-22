@@ -368,7 +368,7 @@ class DeploymentOrchestrator:
 
                 # Extract query from search config (supports both 'query' and 'filter')
                 search_config = template.template_data.get("search", {})
-                query = search_config.get("query") or search_config.get("filter")
+                query = search_config.get("filter") or search_config.get("query")
 
                 if query:
                     # Clean query for display
