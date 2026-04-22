@@ -406,6 +406,8 @@ class PlanFormatter:
         for result in results:
             if not result.is_valid:
                 self.console.print(f"[red]✗[/red] [bold]{result.resource_id}[/bold]")
+                if result.location:
+                    self.console.print(f"    [dim]at:[/dim] {result.location}")
                 if result.error_message:
                     self.console.print(f"    [red]Error:[/red] {result.error_message}")
                 if result.query_snippet:
@@ -414,13 +416,13 @@ class PlanFormatter:
 
         # Show valid queries (only if there are some invalid ones)
         if invalid > 0 and valid > 0:
-            self.console.print(f"[green]✓[/green] {valid} detection(s) with valid queries\n")
+            self.console.print(f"[green]✓[/green] {valid} queries valid\n")
 
         # Summary
         if invalid == 0:
-            self.console.print(f"[green]✓ All {total} detection queries are valid[/green]\n")
+            self.console.print(f"[green]✓ All {total} queries are valid[/green]\n")
         else:
-            self.console.print(f"[red]✗ {invalid} of {total} detection queries have errors[/red]\n")
+            self.console.print(f"[red]✗ {invalid} of {total} queries rejected by LogScale[/red]\n")
             self.console.print("[yellow]⚠[/yellow]  Deployment will be blocked until all queries are valid.\n")
 
     def format_drift_report(self, report: Any) -> None:

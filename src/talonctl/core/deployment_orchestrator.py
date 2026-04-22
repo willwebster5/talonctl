@@ -34,13 +34,14 @@ logger = logging.getLogger(__name__)
 
 @dataclass
 class QueryValidationResult:
-    """Result of FQL query validation"""
+    """Result of FQL query validation."""
 
     resource_id: str
     resource_name: str
     is_valid: bool
     error_message: Optional[str] = None
     query_snippet: Optional[str] = None  # First 100 chars of query
+    location: Optional[str] = None  # Field path within template, e.g. 'search.filter'
 
 
 @dataclass
