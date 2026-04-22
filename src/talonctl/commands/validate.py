@@ -9,6 +9,7 @@ from talonctl.commands._common import (
     parse_filters,
     init_orchestrator,
 )
+from talonctl.utils.auth import load_credentials
 
 
 @click.command()
@@ -26,6 +27,12 @@ def validate(ctx, resources, tags, names, state_file, parse_queries):
     """Validate all templates without deploying."""
     console.print("[bold blue]Validating templates...[/bold blue]\n")
     verbose = ctx.obj.get("verbose", False)
+
+    if parse_queries:
+        if load_credentials() is None:
+            console.print("[red]✗ --queries requires configured credentials.[/red]")
+            console.print("  Run 'talonctl auth setup' or unset --queries for schema-only validation.")
+            raise SystemExit(1)
 
     # Schema validation is always offline — no credentials needed.
     orchestrator = init_orchestrator(
