@@ -244,3 +244,111 @@ class TestFindCommandRegistration:
 
         assert "find" in cli.commands
         assert cli.commands["find"] is find
+
+
+class TestAcceptanceCriteria:
+    """Mirrors the spec's acceptance criteria list verbatim."""
+
+    def test_ac1_bare_uuid(self, tmp_path):
+        state_file = _write_state(tmp_path)
+        r = CliRunner().invoke(
+            find,
+            ["c1d430691e8b42e7b336956f6a3af6fc", "--format", "json", "--state-file", str(state_file)],
+        )
+        assert r.exit_code == 0
+        parsed = json.loads(r.output.strip())
+        assert parsed["strategy_used"] == "rule_id"
+        assert len(parsed["matches"]) == 1
+
+    def test_ac2_exact_resource_id(self, tmp_path):
+        state_file = _write_state(tmp_path)
+        r = CliRunner().invoke(find, ["aws_root_login", "--format", "json", "--state-file", str(state_file)])
+        parsed = json.loads(r.output.strip())
+        assert parsed["strategy_used"] == "resource_id"
+
+    def test_ac3_display_name_substring(self, tmp_path):
+        state_file = _write_state(tmp_path)
+        r = CliRunner().invoke(find, ["root login", "--format", "json", "--state-file", str(state_file)])
+        parsed = json.loads(r.output.strip())
+        assert parsed["strategy_used"] == "name_substring"
+        assert len(parsed["matches"]) == 1
+
+    def test_ac4_glob_with_type(self, tmp_path):
+        state_file = _write_state(tmp_path)
+        r = CliRunner().invoke(
+            find,
+            ["aws_*_login", "--type", "detection", "--format", "json", "--state-file", str(state_file)],
+        )
+        parsed = json.loads(r.output.strip())
+        assert parsed["strategy_used"] == "glob"
+        assert all(m["resource_type"] == "detection" for m in parsed["matches"])
+
+    def test_ac5_ngsiem_composite_equivalent_to_bare_uuid(self, tmp_path):
+        state_file = _write_state(tmp_path)
+        r = CliRunner().invoke(
+            find,
+            ["ngsiem:c1d430691e8b42e7b336956f6a3af6fc", "--format", "json", "--state-file", str(state_file)],
+        )
+        parsed = json.loads(r.output.strip())
+        assert parsed["strategy_used"] == "composite_id_ngsiem"
+        assert len(parsed["matches"]) == 1
+
+    def test_ac6_fcs_non_iac(self, tmp_path):
+        state_file = _write_state(tmp_path)
+        r = CliRunner().invoke(find, ["fcs:abc", "--format", "json", "--state-file", str(state_file)])
+        assert r.exit_code == 0
+        parsed = json.loads(r.output.strip())
+        assert parsed["matches"] == []
+        assert parsed["non_iac_info"]["prefix"] == "fcs"
+
+    def test_ac7_include_undeployed(self, tmp_path, monkeypatch):
+        state_file = _write_state(tmp_path)
+        from types import SimpleNamespace
+
+        fake_template = SimpleNamespace(
+            resource_type="detection",
+            name="aws_iam_key_created",
+            display_name="AWS - IAM Access Key Created",
+            file_path=Path("resources/detections/aws/aws_iam_key_created.yaml"),
+            tags=[],
+            template_data={},
+        )
+        import talonctl.commands.find as find_mod
+
+        monkeypatch.setattr(find_mod, "_discover_templates", lambda: [fake_template])
+        r = CliRunner().invoke(
+            find,
+            ["aws_iam_key_created", "--include-undeployed", "--format", "json", "--state-file", str(state_file)],
+        )
+        parsed = json.loads(r.output.strip())
+        assert parsed["strategy_used"] == "resource_id"
+        assert parsed["matches"][0]["deployed"] is False
+
+    def test_ac8_json_shape_stable_zero_match(self, tmp_path):
+        state_file = _write_state(tmp_path)
+        r = CliRunner().invoke(find, ["nothing", "--format", "json", "--state-file", str(state_file)])
+        assert r.exit_code == 1
+        parsed = json.loads(r.output.strip())
+        assert set(parsed.keys()) == {"query", "strategy_used", "matches", "non_iac_info"}
+
+    def test_ac9_path_format_pipe_clean(self, tmp_path):
+        state_file = _write_state(tmp_path)
+        r = CliRunner().invoke(
+            find,
+            ["c1d430691e8b42e7b336956f6a3af6fc", "--format", "path", "--state-file", str(state_file)],
+        )
+        # First non-empty line is a raw template path, not a banner.
+        first = next(ln for ln in r.output.splitlines() if ln.strip())
+        assert first == "resources/detections/aws/aws_root_login.yaml"
+
+    def test_ac10_exit_codes(self, tmp_path):
+        state_file = _write_state(tmp_path)
+        runner = CliRunner()
+        # 0: match
+        assert runner.invoke(find, ["aws_root_login", "--state-file", str(state_file)]).exit_code == 0
+        # 0: non-iac
+        assert runner.invoke(find, ["fcs:x", "--state-file", str(state_file)]).exit_code == 0
+        # 1: zero match
+        assert runner.invoke(find, ["nothing", "--state-file", str(state_file)]).exit_code == 1
+        # 2: bad --type
+        assert runner.invoke(find, ["x", "--type", "bogus", "--state-file", str(state_file)]).exit_code == 2
