@@ -128,3 +128,22 @@ def test_dashboard_widgets_and_parameters_fan_out():
 def test_dashboard_no_widgets_or_params():
     t = _make("dashboard", "empty", {})
     assert collect_queries_from_templates({"dashboard": [t]}) == []
+
+
+def test_query_less_types_return_empty():
+    for resource_type in ("workflow", "lookup_file", "rtr_script", "rtr_put_file"):
+        t = _make(resource_type, "foo", {"name": "foo"})
+        assert collect_queries_from_templates({resource_type: [t]}) == [], resource_type
+
+
+def test_mixed_types_only_include_known():
+    detection = _make("detection", "d1", {"search": {"filter": "A"}})
+    workflow = _make("workflow", "wf1", {"name": "wf1"})
+    refs = collect_queries_from_templates(
+        {
+            "detection": [detection],
+            "workflow": [workflow],
+        }
+    )
+    assert len(refs) == 1
+    assert refs[0].resource_type == "detection"
