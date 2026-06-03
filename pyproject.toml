@@ -25,6 +25,7 @@ dependencies = [
     "rich>=13.0.0",
     "requests>=2.28.0",
     "click>=8.0.0",
+    "jsonschema>=4.0",
 ]
 
 [project.optional-dependencies]
@@ -35,6 +36,7 @@ talonctl = "talonctl.cli:cli"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/talonctl"]
+force-include = { "src/talonctl/schemas/envelope.schema.json" = "talonctl/schemas/envelope.schema.json" }
 
 [tool.hatch.version]
 source = "vcs"
