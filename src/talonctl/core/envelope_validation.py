@@ -48,7 +48,7 @@ def check_depends_on_cycles(envs: List[Envelope]) -> List[str]:
     # Only consider edges whose target is in this set. Refs to resources defined
     # in other files (or v1 files, or filtered out) are NOT cycles — they resolve
     # elsewhere (spec §7). Counting them would produce false-positive cycles.
-    edges = {e.ref: [d for d in (e.spec.get("depends_on") or []) if d in nodes] for e in envs}
+    edges = {e.ref: list(dict.fromkeys(d for d in (e.spec.get("depends_on") or []) if d in nodes)) for e in envs}
     indeg = {n: 0 for n in nodes}
     for ref, deps in edges.items():
         for _ in deps:

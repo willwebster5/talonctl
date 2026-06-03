@@ -47,3 +47,10 @@ def test_external_ref_is_not_a_cycle():
     # NOT a cycle — spec §7 expects cross-file refs to resolve elsewhere.
     a = _det("a", ["lookup_file.defined_in_another_file"])
     assert check_depends_on_cycles([a]) == []
+
+
+def test_duplicate_depends_on_is_not_a_cycle():
+    # A ref listed twice is one logical edge, not a cycle (regression).
+    a = _det("a", ["detection.b", "detection.b"])
+    b = _det("b")
+    assert check_depends_on_cycles([a, b]) == []
