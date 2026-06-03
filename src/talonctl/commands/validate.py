@@ -36,7 +36,12 @@ def _validate_v2_files(console) -> bool:
     for yaml_file in sorted(resources_dir.rglob("*.yaml")):
         try:
             first = next(iter(yaml.safe_load_all(yaml_file.read_text())), None)
+        except yaml.YAMLError as e:
+            console.print(f"[red]✗ {yaml_file}: YAML parse error: {e}[/red]")
+            had_errors = True
+            continue
         except Exception:
+            # Non-YAML error (e.g. unreadable file) — skip defensively.
             continue
         if not (isinstance(first, dict) and first.get("apiVersion") == API_VERSION):
             continue  # leave v1 files to the existing path

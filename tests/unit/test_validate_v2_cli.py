@@ -28,3 +28,15 @@ def test_invalid_v2_file_fails_with_message(tmp_path, monkeypatch):
     result = CliRunner().invoke(cli, ["validate"])
     assert result.exit_code != 0
     assert "status" in result.output.lower()
+
+
+def test_malformed_yaml_file_is_reported(tmp_path, monkeypatch):
+    proj = _project(tmp_path)
+    # invalid YAML (unbalanced brackets) under resources/
+    (proj / "resources" / "detections" / "broken.yaml").write_text(
+        "apiVersion: talon/v2\nkind: Detection\nmetadata: {resource_id: d1\nspec: {severity: 1}\n"
+    )
+    monkeypatch.chdir(proj)
+    result = CliRunner().invoke(cli, ["validate"])
+    assert result.exit_code != 0
+    assert "parse error" in result.output.lower() or "yaml" in result.output.lower()
