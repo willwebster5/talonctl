@@ -7,6 +7,18 @@ from unittest.mock import Mock
 
 from talonctl.providers.detection_provider import DetectionProvider
 from talonctl.core import ResourceAction
+from tests.unit._helpers import make_envelope
+
+
+def _env(flat, origin_path=None):
+    """Wrap a legacy flat detection dict as an Envelope for the provider's
+    Envelope-consuming methods. Defaults a resource_id (which v1_to_v2 requires)
+    from the name when the test dict omits it — these tests assert on validation
+    errors / planned changes, not on resource_id, so the default is inert.
+    """
+    if "resource_id" not in flat:
+        flat = {**flat, "resource_id": "test_resource"}
+    return make_envelope(flat, "detection", origin_path=origin_path)
 
 
 class TestDetectionProvider:
@@ -35,7 +47,7 @@ class TestDetectionProvider:
             "search": {"query": "#event_simpleName=ProcessRollup2 | select([aid, FileName])"},
         }
 
-        errors = provider.validate_template(template)
+        errors = provider.validate_template(_env(template))
         assert errors == []
 
     def test_validate_template_missing_fields(self, provider):
@@ -45,7 +57,7 @@ class TestDetectionProvider:
             # Missing: description, severity, search
         }
 
-        errors = provider.validate_template(template)
+        errors = provider.validate_template(_env(template))
         assert len(errors) >= 3
         assert any("description" in err for err in errors)
         assert any("severity" in err for err in errors)
@@ -60,7 +72,7 @@ class TestDetectionProvider:
             "search": {"query": "test"},
         }
 
-        errors = provider.validate_template(template)
+        errors = provider.validate_template(_env(template))
         assert any("severity" in err.lower() for err in errors)
 
     def test_validate_template_missing_query(self, provider):
@@ -72,7 +84,7 @@ class TestDetectionProvider:
             "search": {},  # No query
         }
 
-        errors = provider.validate_template(template)
+        errors = provider.validate_template(_env(template))
         assert any("query" in err.lower() for err in errors)
 
     def test_validate_template_invalid_status(self, provider):
@@ -85,7 +97,7 @@ class TestDetectionProvider:
             "search": {"query": "test"},
         }
 
-        errors = provider.validate_template(template)
+        errors = provider.validate_template(_env(template))
         assert any("status" in err.lower() for err in errors)
 
     def test_fetch_remote_state(self, provider, mock_falcon):
@@ -125,14 +137,16 @@ class TestDetectionProvider:
         """Test planning rule creation"""
         template = {"name": "New Rule", "description": "Test", "severity": 50, "search": {"query": "test"}}
 
-        change = provider.plan_create(template, "rules/test.yaml")
+        env = _env(template)
+        change = provider.plan_create(env, "rules/test.yaml")
 
         assert change.action == ResourceAction.CREATE
         assert change.resource_type == "detection"
         assert change.resource_name == "New Rule"
         assert change.resource_id is None
-        assert change.new_value == template
+        assert change.new_value == env.to_working_dict()
         assert change.template_path == "rules/test.yaml"
+        assert change.envelope is env
 
     def test_plan_update_with_changes(self, provider):
         """Test planning rule update when changes exist"""
@@ -151,7 +165,7 @@ class TestDetectionProvider:
             "search": {"query": "old query"},
         }
 
-        change = provider.plan_update(template, current_state, "rules/test.yaml")
+        change = provider.plan_update(_env(template), current_state, "rules/test.yaml")
 
         assert change.action == ResourceAction.UPDATE
         assert change.resource_type == "detection"
@@ -168,7 +182,7 @@ class TestDetectionProvider:
         current_state = template.copy()
         current_state["rule_id"] = "rule123"
 
-        change = provider.plan_update(template, current_state, "rules/test.yaml")
+        change = provider.plan_update(_env(template), current_state, "rules/test.yaml")
 
         assert change.action == ResourceAction.NO_CHANGE
         assert change.resource_id == "rule123"
@@ -196,7 +210,7 @@ class TestDetectionProvider:
             "body": {"resources": [{"rule_id": "new123", "name": "New Rule"}]},
         }
 
-        result = provider.apply_create(template)
+        result = provider.apply_create(_env(template))
 
         assert result["rule_id"] == "new123"
         assert result["name"] == "New Rule"
@@ -217,7 +231,7 @@ class TestDetectionProvider:
             "body": {"resources": [{"rule_id": "rule123", "name": "Updated Rule"}]},
         }
 
-        result = provider.apply_update("rule123", template, {})
+        result = provider.apply_update("rule123", _env(template), {})
 
         assert result["rule_id"] == "rule123"
         assert result["name"] == "Updated Rule"
@@ -362,7 +376,7 @@ class TestDetectionProvider:
     def test_validate_template_ads_absent_passes(self, provider):
         """ads: block is optional — absence should not cause errors"""
         template = {"name": "Test Rule", "description": "Test", "severity": 50, "search": {"query": "test"}}
-        errors = provider.validate_template(template)
+        errors = provider.validate_template(_env(template))
         assert errors == []
 
     def test_validate_template_ads_valid(self, provider):
@@ -381,7 +395,7 @@ class TestDetectionProvider:
                 }
             },
         }
-        errors = provider.validate_template(template)
+        errors = provider.validate_template(_env(template))
         assert errors == []
 
     def test_validate_template_ads_missing_goal(self, provider):
@@ -397,7 +411,7 @@ class TestDetectionProvider:
                 }
             },
         }
-        errors = provider.validate_template(template)
+        errors = provider.validate_template(_env(template))
         assert any("ads.goal" in err for err in errors)
 
     def test_validate_template_ads_empty_goal(self, provider):
@@ -413,7 +427,7 @@ class TestDetectionProvider:
                 }
             },
         }
-        errors = provider.validate_template(template)
+        errors = provider.validate_template(_env(template))
         assert any("ads.goal" in err for err in errors)
 
     def test_validate_template_ads_unknown_field(self, provider):
@@ -430,7 +444,7 @@ class TestDetectionProvider:
                 }
             },
         }
-        errors = provider.validate_template(template)
+        errors = provider.validate_template(_env(template))
         assert any("unknown_field" in err for err in errors)
 
     def test_validate_template_ads_list_field_not_list(self, provider):
@@ -447,7 +461,7 @@ class TestDetectionProvider:
                 }
             },
         }
-        errors = provider.validate_template(template)
+        errors = provider.validate_template(_env(template))
         assert any("ads.blind_spots" in err and "list" in err for err in errors)
 
     def test_validate_template_ads_string_field_not_string(self, provider):
@@ -463,7 +477,7 @@ class TestDetectionProvider:
                 }
             },
         }
-        errors = provider.validate_template(template)
+        errors = provider.validate_template(_env(template))
         assert any("ads.goal" in err and "string" in err for err in errors)
 
     def test_validate_template_ads_not_dict(self, provider):
@@ -475,7 +489,7 @@ class TestDetectionProvider:
             "search": {"query": "test"},
             "metadata": {"ads": "not a dict"},
         }
-        errors = provider.validate_template(template)
+        errors = provider.validate_template(_env(template))
         assert any("'metadata.ads' must be a dictionary" in err for err in errors)
 
     def test_validate_template_ads_false_positives_mixed_entries(self, provider):
@@ -500,7 +514,7 @@ class TestDetectionProvider:
                 }
             },
         }
-        errors = provider.validate_template(template)
+        errors = provider.validate_template(_env(template))
         assert errors == []
 
     def test_validate_template_ads_all_optional_fields(self, provider):
@@ -527,7 +541,7 @@ class TestDetectionProvider:
                 }
             },
         }
-        errors = provider.validate_template(template)
+        errors = provider.validate_template(_env(template))
         assert errors == []
 
     # --- metadata: block validation ---
@@ -545,13 +559,13 @@ class TestDetectionProvider:
 
     def test_validate_metadata_absent_passes(self, provider, minimal_detection):
         """metadata: block is optional — absence should not cause errors."""
-        errors = provider.validate_template(minimal_detection)
+        errors = provider.validate_template(_env(minimal_detection))
         assert errors == []
 
     def test_validate_metadata_empty_maturity_passes(self, provider, minimal_detection):
         """Empty metadata.maturity: {} is valid (all fields optional when block present)."""
         minimal_detection["metadata"] = {"maturity": {}}
-        errors = provider.validate_template(minimal_detection)
+        errors = provider.validate_template(_env(minimal_detection))
         assert errors == []
 
     def test_validate_metadata_full_valid_block(self, provider, minimal_detection):
@@ -564,19 +578,19 @@ class TestDetectionProvider:
                 "confidence": "high",
             }
         }
-        errors = provider.validate_template(minimal_detection)
+        errors = provider.validate_template(_env(minimal_detection))
         assert errors == []
 
     def test_validate_metadata_not_dict(self, provider, minimal_detection):
         """metadata: must be a dictionary when present."""
         minimal_detection["metadata"] = "not a dict"
-        errors = provider.validate_template(minimal_detection)
+        errors = provider.validate_template(_env(minimal_detection))
         assert any("'metadata' must be a dictionary" in err for err in errors)
 
     def test_validate_metadata_unknown_maturity_key(self, provider, minimal_detection):
         """Unknown keys in metadata.maturity: are rejected with typo-friendly error."""
         minimal_detection["metadata"] = {"maturity": {"created": "2026-01-15", "confidance": "high"}}
-        errors = provider.validate_template(minimal_detection)
+        errors = provider.validate_template(_env(minimal_detection))
         assert any("confidance" in err for err in errors)
         # Error should list known keys for user guidance
         assert any("confidence" in err and "created" in err for err in errors)
@@ -584,62 +598,62 @@ class TestDetectionProvider:
     def test_validate_metadata_last_tuned_null(self, provider, minimal_detection):
         """last_tuned: null is valid (means never tuned)."""
         minimal_detection["metadata"] = {"maturity": {"last_tuned": None, "tune_count": 0}}
-        errors = provider.validate_template(minimal_detection)
+        errors = provider.validate_template(_env(minimal_detection))
         assert errors == []
 
     def test_validate_metadata_bad_date_format(self, provider, minimal_detection):
         """created/last_tuned must match YYYY-MM-DD."""
         minimal_detection["metadata"] = {"maturity": {"created": "2026-4-14"}}  # missing zero pad
-        errors = provider.validate_template(minimal_detection)
+        errors = provider.validate_template(_env(minimal_detection))
         assert any("metadata.maturity.created" in err and "YYYY-MM-DD" in err for err in errors)
 
     def test_validate_metadata_non_date_string(self, provider, minimal_detection):
         """Non-date strings rejected for date fields."""
         minimal_detection["metadata"] = {"maturity": {"last_tuned": "yesterday"}}
-        errors = provider.validate_template(minimal_detection)
+        errors = provider.validate_template(_env(minimal_detection))
         assert any("metadata.maturity.last_tuned" in err for err in errors)
 
     def test_validate_metadata_tune_count_negative(self, provider, minimal_detection):
         """tune_count must be >= 0."""
         minimal_detection["metadata"] = {"maturity": {"tune_count": -1}}
-        errors = provider.validate_template(minimal_detection)
+        errors = provider.validate_template(_env(minimal_detection))
         assert any("metadata.maturity.tune_count" in err and "non-negative" in err for err in errors)
 
     def test_validate_metadata_tune_count_string(self, provider, minimal_detection):
         """tune_count must be an int, not a string."""
         minimal_detection["metadata"] = {"maturity": {"tune_count": "3"}}
-        errors = provider.validate_template(minimal_detection)
+        errors = provider.validate_template(_env(minimal_detection))
         assert any("metadata.maturity.tune_count" in err for err in errors)
 
     def test_validate_metadata_tune_count_bool_rejected(self, provider, minimal_detection):
         """Python bool is technically int — must be explicitly rejected."""
         minimal_detection["metadata"] = {"maturity": {"tune_count": True}}
-        errors = provider.validate_template(minimal_detection)
+        errors = provider.validate_template(_env(minimal_detection))
         assert any("metadata.maturity.tune_count" in err for err in errors)
 
     def test_validate_metadata_tune_count_float(self, provider, minimal_detection):
         """tune_count must be int, not float."""
         minimal_detection["metadata"] = {"maturity": {"tune_count": 1.5}}
-        errors = provider.validate_template(minimal_detection)
+        errors = provider.validate_template(_env(minimal_detection))
         assert any("metadata.maturity.tune_count" in err for err in errors)
 
     def test_validate_metadata_tune_count_zero(self, provider, minimal_detection):
         """tune_count: 0 is valid (boundary)."""
         minimal_detection["metadata"] = {"maturity": {"tune_count": 0}}
-        errors = provider.validate_template(minimal_detection)
+        errors = provider.validate_template(_env(minimal_detection))
         assert errors == []
 
     def test_validate_metadata_confidence_valid_values(self, provider, minimal_detection):
         """Each of the four confidence values must pass."""
         for value in ("low", "medium", "high", "validated"):
             minimal_detection["metadata"] = {"maturity": {"confidence": value}}
-            errors = provider.validate_template(minimal_detection)
+            errors = provider.validate_template(_env(minimal_detection))
             assert errors == [], f"confidence={value} should pass, got {errors}"
 
     def test_validate_metadata_confidence_invalid(self, provider, minimal_detection):
         """Confidence value not in enum rejected, error names all allowed values."""
         minimal_detection["metadata"] = {"maturity": {"confidence": "mature"}}
-        errors = provider.validate_template(minimal_detection)
+        errors = provider.validate_template(_env(minimal_detection))
         assert any("metadata.maturity.confidence" in err and "low" in err and "validated" in err for err in errors)
 
     def test_validate_metadata_errors_accumulate(self, provider, minimal_detection):
@@ -651,7 +665,7 @@ class TestDetectionProvider:
                 "confidence": "not-in-enum",
             }
         }
-        errors = provider.validate_template(minimal_detection)
+        errors = provider.validate_template(_env(minimal_detection))
         metadata_errors = [e for e in errors if "metadata." in e]
         assert len(metadata_errors) >= 3, f"expected 3+ metadata errors, got {metadata_errors}"
 
@@ -675,7 +689,7 @@ class TestDetectionProvider:
                 ],
             },
         )
-        errors = provider.validate_template(minimal_detection)
+        errors = provider.validate_template(_env(minimal_detection))
         assert errors == []
 
     def test_validate_ads_fp_ref_dict_label_optional(self, provider, minimal_detection):
@@ -687,7 +701,7 @@ class TestDetectionProvider:
                 "false_positives": [{"path": "knowledge/patterns/aws.md#ci-cd"}],
             },
         )
-        errors = provider.validate_template(minimal_detection)
+        errors = provider.validate_template(_env(minimal_detection))
         assert errors == []
 
     def test_validate_ads_fp_mixed_forms(self, provider, minimal_detection):
@@ -703,7 +717,7 @@ class TestDetectionProvider:
                 ],
             },
         )
-        errors = provider.validate_template(minimal_detection)
+        errors = provider.validate_template(_env(minimal_detection))
         assert errors == []
 
     def test_validate_ads_validation_ref_dict(self, provider, minimal_detection):
@@ -715,7 +729,7 @@ class TestDetectionProvider:
                 "validation": [{"path": "knowledge/validations/foo.md"}],
             },
         )
-        errors = provider.validate_template(minimal_detection)
+        errors = provider.validate_template(_env(minimal_detection))
         assert errors == []
 
     def test_validate_ads_validation_mixed_forms(self, provider, minimal_detection):
@@ -727,7 +741,7 @@ class TestDetectionProvider:
                 "validation": ["Step 1: do thing", {"path": "knowledge/validations/foo.md"}],
             },
         )
-        errors = provider.validate_template(minimal_detection)
+        errors = provider.validate_template(_env(minimal_detection))
         assert errors == []
 
     def test_validate_ads_response_ref_dict(self, provider, minimal_detection):
@@ -739,13 +753,13 @@ class TestDetectionProvider:
                 "response": {"path": "playbooks/aws.md#sg-anomaly", "label": "SG anomaly playbook"},
             },
         )
-        errors = provider.validate_template(minimal_detection)
+        errors = provider.validate_template(_env(minimal_detection))
         assert errors == []
 
     def test_validate_ads_response_string_still_valid(self, provider, minimal_detection):
         """response: '...' string form still valid (backward compat)."""
         self._set_ads(minimal_detection, {"goal": "Detect X", "response": "Investigate user"})
-        errors = provider.validate_template(minimal_detection)
+        errors = provider.validate_template(_env(minimal_detection))
         assert errors == []
 
     def test_validate_ads_ref_dict_missing_path(self, provider, minimal_detection):
@@ -757,7 +771,7 @@ class TestDetectionProvider:
                 "false_positives": [{"label": "orphan"}],
             },
         )
-        errors = provider.validate_template(minimal_detection)
+        errors = provider.validate_template(_env(minimal_detection))
         assert any("ads.false_positives" in err and "path" in err for err in errors)
 
     def test_validate_ads_ref_dict_unknown_key(self, provider, minimal_detection):
@@ -769,7 +783,7 @@ class TestDetectionProvider:
                 "false_positives": [{"path": "x", "labol": "typo"}],
             },
         )
-        errors = provider.validate_template(minimal_detection)
+        errors = provider.validate_template(_env(minimal_detection))
         assert any("labol" in err for err in errors)
 
     def test_validate_ads_ref_dict_empty_path(self, provider, minimal_detection):
@@ -781,7 +795,7 @@ class TestDetectionProvider:
                 "false_positives": [{"path": ""}],
             },
         )
-        errors = provider.validate_template(minimal_detection)
+        errors = provider.validate_template(_env(minimal_detection))
         assert any("path" in err and "non-empty" in err for err in errors)
 
     def test_validate_ads_ref_dict_whitespace_path(self, provider, minimal_detection):
@@ -793,7 +807,7 @@ class TestDetectionProvider:
                 "false_positives": [{"path": "   "}],
             },
         )
-        errors = provider.validate_template(minimal_detection)
+        errors = provider.validate_template(_env(minimal_detection))
         assert any("path" in err for err in errors)
 
     def test_validate_ads_ref_dict_path_with_space(self, provider, minimal_detection):
@@ -805,7 +819,7 @@ class TestDetectionProvider:
                 "false_positives": [{"path": "has space"}],
             },
         )
-        errors = provider.validate_template(minimal_detection)
+        errors = provider.validate_template(_env(minimal_detection))
         assert any("path" in err and "whitespace" in err for err in errors)
 
     def test_validate_ads_ref_dict_path_non_string(self, provider, minimal_detection):
@@ -817,7 +831,7 @@ class TestDetectionProvider:
                 "false_positives": [{"path": 123}],
             },
         )
-        errors = provider.validate_template(minimal_detection)
+        errors = provider.validate_template(_env(minimal_detection))
         assert any("path" in err and "string" in err for err in errors)
 
     def test_validate_ads_ref_dict_label_non_string(self, provider, minimal_detection):
@@ -829,7 +843,7 @@ class TestDetectionProvider:
                 "false_positives": [{"path": "x", "label": 123}],
             },
         )
-        errors = provider.validate_template(minimal_detection)
+        errors = provider.validate_template(_env(minimal_detection))
         assert any("label" in err and "string" in err for err in errors)
 
     def test_validate_ads_ref_dict_label_empty(self, provider, minimal_detection):
@@ -841,7 +855,7 @@ class TestDetectionProvider:
                 "false_positives": [{"path": "x", "label": ""}],
             },
         )
-        errors = provider.validate_template(minimal_detection)
+        errors = provider.validate_template(_env(minimal_detection))
         assert any("label" in err and "non-empty" in err for err in errors)
 
     def test_validate_ads_validation_inline_dict_rejected(self, provider, minimal_detection):
@@ -853,7 +867,7 @@ class TestDetectionProvider:
                 "validation": [{"characteristics": "oops"}],
             },
         )
-        errors = provider.validate_template(minimal_detection)
+        errors = provider.validate_template(_env(minimal_detection))
         assert any("ads.validation" in err and ("strings" in err or "ref" in err) for err in errors)
 
     def test_validate_ads_response_dict_unknown_key_rejected(self, provider, minimal_detection):
@@ -865,7 +879,7 @@ class TestDetectionProvider:
                 "response": {"path": "x", "note": "extra"},
             },
         )
-        errors = provider.validate_template(minimal_detection)
+        errors = provider.validate_template(_env(minimal_detection))
         assert any("note" in err for err in errors)
 
     def test_validate_ads_fp_inline_dict_strict_keys(self, provider, minimal_detection):
@@ -879,7 +893,7 @@ class TestDetectionProvider:
                 ],
             },
         )
-        errors = provider.validate_template(minimal_detection)
+        errors = provider.validate_template(_env(minimal_detection))
         assert any("charactaristics" in err for err in errors)
 
     def test_validate_ads_fp_entry_wrong_type(self, provider, minimal_detection):
@@ -891,13 +905,13 @@ class TestDetectionProvider:
                 "false_positives": [123],
             },
         )
-        errors = provider.validate_template(minimal_detection)
+        errors = provider.validate_template(_env(minimal_detection))
         assert any("ads.false_positives" in err for err in errors)
 
     def test_validate_ads_response_wrong_type(self, provider, minimal_detection):
         """response must be string or ref dict, not list."""
         self._set_ads(minimal_detection, {"goal": "Detect X", "response": ["bad"]})
-        errors = provider.validate_template(minimal_detection)
+        errors = provider.validate_template(_env(minimal_detection))
         assert any("ads.response" in err for err in errors)
 
     # --- Allowlist regression: metadata: and ads: never leak to API or hash ---
@@ -989,24 +1003,24 @@ class TestDetectionProvider:
         minimal_detection["metadata"] = {
             "ads": {"goal": "Detect something", "mitre_attack": ["TA0011:T1090.003"]},
         }
-        assert provider.validate_template(minimal_detection) == []
+        assert provider.validate_template(_env(minimal_detection)) == []
 
     def test_v03_new_shape_metadata_maturity_validates(self, provider, minimal_detection):
         minimal_detection["metadata"] = {
             "maturity": {"created": "2026-04-16", "tune_count": 2, "confidence": "high"},
         }
-        assert provider.validate_template(minimal_detection) == []
+        assert provider.validate_template(_env(minimal_detection)) == []
 
     def test_v03_new_shape_both_blocks_together(self, provider, minimal_detection):
         minimal_detection["metadata"] = {
             "maturity": {"created": "2026-04-16"},
             "ads": {"goal": "Detect something"},
         }
-        assert provider.validate_template(minimal_detection) == []
+        assert provider.validate_template(_env(minimal_detection)) == []
 
     def test_v03_old_top_level_ads_rejected(self, provider, minimal_detection):
         minimal_detection["ads"] = {"goal": "Detect something"}
-        errors = provider.validate_template(minimal_detection)
+        errors = provider.validate_template(_env(minimal_detection))
         # Exact-string guard against silent refactors — CHANGELOG pointer must remain.
         assert any(
             "Top-level 'ads:' is removed in v0.3.0" in e and "metadata.ads" in e and "CHANGELOG.md" in e for e in errors
@@ -1014,19 +1028,19 @@ class TestDetectionProvider:
 
     def test_v03_old_flat_metadata_rejected(self, provider, minimal_detection):
         minimal_detection["metadata"] = {"created": "2026-04-16", "tune_count": 2}
-        errors = provider.validate_template(minimal_detection)
+        errors = provider.validate_template(_env(minimal_detection))
         assert any(
             "Top-level 'metadata:' now reserves sub-namespaces" in e and "metadata.maturity" in e for e in errors
         )
 
     def test_v03_metadata_ads_goal_required(self, provider, minimal_detection):
         minimal_detection["metadata"] = {"ads": {"mitre_attack": ["x"]}}  # missing goal
-        errors = provider.validate_template(minimal_detection)
+        errors = provider.validate_template(_env(minimal_detection))
         assert any("ads.goal is required" in e for e in errors)
 
     def test_v03_metadata_ads_unknown_field(self, provider, minimal_detection):
         minimal_detection["metadata"] = {"ads": {"goal": "g", "bogus": 1}}
-        errors = provider.validate_template(minimal_detection)
+        errors = provider.validate_template(_env(minimal_detection))
         assert any("Unknown ads fields: bogus" in e for e in errors)
 
     def test_v03_metadata_ads_ref_dict_false_positive(self, provider, minimal_detection):
@@ -1039,11 +1053,11 @@ class TestDetectionProvider:
                 ],
             }
         }
-        assert provider.validate_template(minimal_detection) == []
+        assert provider.validate_template(_env(minimal_detection)) == []
 
     def test_v03_metadata_not_dict(self, provider, minimal_detection):
         minimal_detection["metadata"] = "oops"
-        errors = provider.validate_template(minimal_detection)
+        errors = provider.validate_template(_env(minimal_detection))
         assert any("'metadata' must be a dictionary" in e for e in errors)
 
     def test_v03_metadata_edits_do_not_change_content_hash(self, provider, minimal_detection):

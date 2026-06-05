@@ -8,10 +8,13 @@ CrowdStrike NGSIEM detection rules as Infrastructure as Code resources.
 import json
 import hashlib
 import logging
-from typing import Dict, List, Optional, Any, Tuple
+from typing import Dict, List, Optional, Any, Tuple, TYPE_CHECKING
 from datetime import datetime, timezone
 
 from talonctl.core.base_provider import BaseResourceProvider, ResourceAction, ResourceChange
+
+if TYPE_CHECKING:
+    from talonctl.core.envelope import Envelope
 from talonctl.core.deployment_strategies import DeploymentStrategyFactory
 from talonctl.core.metadata_validators import reject_old_shape, validate_maturity
 from talonctl.core.template_sanitizer import strip_for_api, strip_for_hash
@@ -90,7 +93,7 @@ class DetectionProvider(BaseResourceProvider):
                 errs.append(f"{field_path}.label must be a non-empty string")
         return errs
 
-    def validate_template(self, template: Dict[str, Any]) -> List[str]:
+    def validate_template(self, env: "Envelope") -> List[str]:
         """
         Validate detection rule template
 
@@ -99,11 +102,12 @@ class DetectionProvider(BaseResourceProvider):
         - New: search.query, search_window, mitre_attack array
 
         Args:
-            template: Detection rule template data
+            env: Detection rule Envelope
 
         Returns:
             List of validation error messages (empty if valid)
         """
+        template = env.to_working_dict()
         errors = []
 
         # v0.3.0: reject pre-v0.3.0 shapes before running relocated validators so users
@@ -430,17 +434,18 @@ class DetectionProvider(BaseResourceProvider):
 
         return normalized
 
-    def plan_create(self, template: Dict[str, Any], template_path: str) -> ResourceChange:
+    def plan_create(self, env: "Envelope", template_path: str) -> ResourceChange:
         """
         Plan creation of a new detection rule
 
         Args:
-            template: Rule template data
+            env: Rule Envelope
             template_path: Path to template file
 
         Returns:
             ResourceChange describing the creation
         """
+        template = env.to_working_dict()
         return ResourceChange(
             action=ResourceAction.CREATE,
             resource_type=self.get_resource_type(),
@@ -450,22 +455,22 @@ class DetectionProvider(BaseResourceProvider):
             new_value=template,
             changes=None,
             template_path=template_path,
+            envelope=env,
         )
 
-    def plan_update(
-        self, template: Dict[str, Any], current_state: Dict[str, Any], template_path: str
-    ) -> ResourceChange:
+    def plan_update(self, env: "Envelope", current_state: Dict[str, Any], template_path: str) -> ResourceChange:
         """
         Plan update of an existing detection rule
 
         Args:
-            template: New rule template data
+            env: New rule Envelope
             current_state: Current deployed rule state
             template_path: Path to template file
 
         Returns:
             ResourceChange describing the update or no-change
         """
+        template = env.to_working_dict()
         # Calculate hashes to detect changes
         template_hash = self.compute_content_hash(template)
         current_hash = self.compute_content_hash(current_state)
@@ -480,6 +485,7 @@ class DetectionProvider(BaseResourceProvider):
                 new_value=template,
                 changes=None,
                 template_path=template_path,
+                envelope=env,
             )
 
         # Detect specific field changes
@@ -494,6 +500,7 @@ class DetectionProvider(BaseResourceProvider):
             new_value=template,
             changes=changes,
             template_path=template_path,
+            envelope=env,
         )
 
     def _detect_field_changes(self, new: Dict[str, Any], old: Dict[str, Any]) -> Dict[str, Any]:
@@ -577,16 +584,17 @@ class DetectionProvider(BaseResourceProvider):
             template_path=None,
         )
 
-    def apply_create(self, template: Dict[str, Any]) -> Dict[str, Any]:
+    def apply_create(self, env: "Envelope") -> Dict[str, Any]:
         """
         Create a detection rule in CrowdStrike
 
         Args:
-            template: Rule template data
+            env: Rule Envelope
 
         Returns:
             Created rule metadata including rule_id (PERMANENT identifier)
         """
+        template = env.to_working_dict()
         # Prepare payload
         payload = self._prepare_rule_payload(template)
 
@@ -664,7 +672,7 @@ class DetectionProvider(BaseResourceProvider):
         logger.warning(f"Rule {resource_id} did not reach status '{expected_status}' within {max_wait}s timeout")
         return False
 
-    def apply_update(self, resource_id: str, template: Dict[str, Any], current_state: Dict[str, Any]) -> Dict[str, Any]:
+    def apply_update(self, resource_id: str, env: "Envelope", current_state: Dict[str, Any]) -> Dict[str, Any]:
         """
         Update a detection rule in CrowdStrike.
 
@@ -674,12 +682,13 @@ class DetectionProvider(BaseResourceProvider):
 
         Args:
             resource_id: Rule ID to update
-            template: New rule template data
+            env: New rule Envelope
             current_state: Current rule state (for comparison)
 
         Returns:
             Updated rule metadata
         """
+        template = env.to_working_dict()
         # IMPORTANT: current_state from orchestrator contains state file metadata,
         # NOT actual rule data from API. We MUST fetch actual rule state from API.
         # State file has: type, id, content_hash, template_path, etc.

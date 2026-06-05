@@ -11,6 +11,7 @@ from unittest.mock import patch
 import pytest
 import yaml
 
+from tests.unit._helpers import validate_input
 from talonctl.providers.dashboard_provider import DashboardProvider
 from talonctl.providers.detection_provider import DetectionProvider
 from talonctl.providers.lookup_file_provider import LookupFileProvider
@@ -80,5 +81,5 @@ def test_example_template_validates(yaml_path):
     )
 
     provider = _build_provider(provider_cls)
-    errors = provider.validate_template(tmpl)
+    errors = provider.validate_template(validate_input(tmpl, resource_type, origin_path=str(yaml_path)))
     assert errors == [], f"{yaml_path.name} failed validation: {errors}"
