@@ -6,10 +6,12 @@ from __future__ import annotations
 from typing import Any, Dict
 
 from talonctl.core.base_provider import BaseResourceProvider
-from talonctl.core.envelope import Envelope, TYPE_TO_KIND
+from talonctl.core.envelope import IDENTITY_METADATA_KEYS, Envelope, TYPE_TO_KIND
 
 # Identity keys pulled OUT of the v1 top level into metadata (never land in spec).
-_IDENTITY_KEYS = {"resource_id", "name", "labels", "tags"}
+# Shares the single canonical source with Envelope.to_working_dict's inverse half
+# (see IDENTITY_METADATA_KEYS in envelope.py) so the two cannot silently diverge.
+_IDENTITY_KEYS = IDENTITY_METADATA_KEYS
 # Dropped entirely (subsumed or reconciled elsewhere).
 _DROP_KEYS = {"rule_id"}
 # Explicit camelCase -> snake_case spec renames (allow-list, not blanket).

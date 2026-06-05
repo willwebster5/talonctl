@@ -644,15 +644,17 @@ class LookupFileProvider(BaseResourceProvider):
         return f"lookup_files/{resource_id}.yaml"
 
     # Convenience methods (aliases for apply_* methods)
-    def create_resource(self, template: Dict[str, Any]) -> Dict[str, Any]:
+    # WARNING: these forward to Envelope-taking apply_create/apply_update. They
+    # have no current callers; if reused, pass an Envelope, not a dict (a dict
+    # would AttributeError inside apply_* on .to_working_dict()). Reverse-alias
+    # direction differs from other providers — consolidation deferred.
+    def create_resource(self, env: "Envelope") -> Dict[str, Any]:
         """Alias for apply_create"""
-        return self.apply_create(template)
+        return self.apply_create(env)
 
-    def update_resource(
-        self, resource_id: str, template: Dict[str, Any], current_state: Dict[str, Any]
-    ) -> Dict[str, Any]:
+    def update_resource(self, resource_id: str, env: "Envelope", current_state: Dict[str, Any]) -> Dict[str, Any]:
         """Alias for apply_update"""
-        return self.apply_update(resource_id, template, current_state)
+        return self.apply_update(resource_id, env, current_state)
 
     def delete_resource(self, resource_id: str) -> bool:
         """Alias for apply_delete"""

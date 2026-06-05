@@ -52,6 +52,23 @@ def test_working_dict_is_isolated_from_envelope():
     assert env.metadata["tags"] == ["aws", "auth"]  # envelope untouched
 
 
+def test_full_round_trip_equality_with_metadata_block():
+    flat = {
+        "resource_id": "r",
+        "name": "R",
+        "type": "behavioral",
+        "description": "d",
+        "severity": 70,
+        "status": "active",
+        "tags": ["a", "b"],
+        "labels": {"team": "soc"},
+        "search": {"filter": "x", "lookback": 60},
+        "metadata": {"maturity": "production", "ads": {"k": "v"}},
+    }
+    env = v1_to_v2(flat, resource_type="detection")
+    assert env.to_working_dict() == flat  # exact: no renamed keys in this fixture
+
+
 def test_origin_path_becomes_template_path():
     env = v1_to_v2(V1_DETECTION, resource_type="detection")
     env.origin_path = "/proj/resources/detections/x.yaml"

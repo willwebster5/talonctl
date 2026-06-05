@@ -27,6 +27,17 @@ KIND_TO_TYPE: Dict[str, str] = {
 TYPE_TO_KIND: Dict[str, str] = {v: k for k, v in KIND_TO_TYPE.items()}
 VALID_KINDS = frozenset(KIND_TO_TYPE)
 
+# Canonical identity-metadata key set — the ONE source of truth for the two
+# halves of identity extraction, which must stay in lockstep:
+#   * forward (v1_compat.v1_to_v2): these keys are lifted OUT of the v1 top
+#     level INTO envelope metadata and never land in spec.
+#   * inverse (Envelope.to_working_dict): these keys are NOT placed into the
+#     reconstructed working["metadata"] block (they round-trip as top-level
+#     working keys instead).
+# A divergence between the two would be invisible to the hash-stability anchor
+# (the metadata block is stripped before hashing), so both derive from here.
+IDENTITY_METADATA_KEYS = frozenset({"resource_id", "name", "labels", "tags"})
+
 
 @dataclass
 class Envelope:
@@ -45,10 +56,6 @@ class Envelope:
         "search_domain": "_search_domain",
         "depends_on": "dependencies",
     }
-    # Envelope metadata keys that are identity (handled explicitly below); every
-    # other metadata key is part of the v1 `metadata:` block (maturity, ads, ...)
-    # and must round-trip back into working["metadata"] for provider validation.
-    _IDENTITY_METADATA_KEYS = ("resource_id", "name", "labels", "tags")
 
     def to_working_dict(self) -> Dict[str, Any]:
         """Reconstruct the legacy flat dict the providers' internals read.
@@ -76,7 +83,7 @@ class Envelope:
         # Reconstruct the internal v1 `metadata:` block (everything in envelope
         # metadata that isn't identity). Providers read working["metadata"] for
         # maturity/ads validation; stripped before hashing, so hashes stay stable.
-        block = {k: v for k, v in md.items() if k not in Envelope._IDENTITY_METADATA_KEYS}
+        block = {k: v for k, v in md.items() if k not in IDENTITY_METADATA_KEYS}
         if block:
             working["metadata"] = block
         if self.origin_path:
