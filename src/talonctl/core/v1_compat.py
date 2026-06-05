@@ -50,11 +50,21 @@ def v1_to_v2(data: Dict[str, Any], *, resource_type: str) -> Envelope:
         metadata["labels"] = labels
     if isinstance(data.get("tags"), list):
         metadata["tags"] = list(data["tags"])
+    # v1 top-level `metadata:` is a talonctl-internal block (maturity, ads,
+    # custom frameworks, ...). It belongs in the envelope metadata, not spec.
+    # Identity keys already set above win on conflict.
+    if isinstance(data.get("metadata"), dict):
+        metadata.update({k: v for k, v in data["metadata"].items() if k not in metadata})
 
     spec: Dict[str, Any] = {}
     for key, value in data.items():
         if key == "_search_domain":
             spec["search_domain"] = value
+            continue
+        # A dict `metadata:` block was already lifted into envelope metadata
+        # above. A non-dict `metadata:` is malformed — let it fall through to
+        # spec so the provider's validator surfaces the proper error.
+        if key == "metadata" and isinstance(value, dict):
             continue
         if key in _IDENTITY_KEYS or key in _DROP_KEYS:
             continue

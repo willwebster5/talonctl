@@ -17,9 +17,10 @@
       "properties": {
         "resource_id": { "type": "string", "minLength": 1 },
         "name": { "type": "string" },
-        "labels": { "type": "object", "additionalProperties": { "type": "string" } }
+        "labels": { "type": "object", "additionalProperties": { "type": "string" } },
+        "tags": { "type": "array" }
       },
-      "additionalProperties": false
+      "additionalProperties": true
     },
     "spec": { "type": "object", "minProperties": 1 },
     "status": {

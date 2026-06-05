@@ -24,9 +24,12 @@ def test_empty_spec_is_an_error():
     assert validate_authored_envelope(env) != []
 
 
-def test_unknown_metadata_key_rejected():
-    env = Envelope("talon/v2", "Detection", {"resource_id": "d1", "bogus": 1}, {"severity": 1})
-    assert validate_authored_envelope(env) != []
+def test_extra_metadata_keys_allowed():
+    # metadata is talonctl-internal and open by design: the v1 `metadata:` block
+    # (maturity, ads, custom frameworks, ...) is routed here, so arbitrary keys
+    # must validate. Identity constraints (resource_id) are still enforced.
+    env = Envelope("talon/v2", "Detection", {"resource_id": "d1", "maturity": "production"}, {"severity": 1})
+    assert validate_authored_envelope(env) == []
 
 
 def test_no_cycle_returns_empty():

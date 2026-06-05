@@ -45,6 +45,10 @@ class Envelope:
         "search_domain": "_search_domain",
         "depends_on": "dependencies",
     }
+    # Envelope metadata keys that are identity (handled explicitly below); every
+    # other metadata key is part of the v1 `metadata:` block (maturity, ads, ...)
+    # and must round-trip back into working["metadata"] for provider validation.
+    _IDENTITY_METADATA_KEYS = ("resource_id", "name", "labels", "tags")
 
     def to_working_dict(self) -> Dict[str, Any]:
         """Reconstruct the legacy flat dict the providers' internals read.
@@ -69,6 +73,12 @@ class Envelope:
             working["labels"] = md["labels"]
         if md.get("tags"):
             working["tags"] = md["tags"]
+        # Reconstruct the internal v1 `metadata:` block (everything in envelope
+        # metadata that isn't identity). Providers read working["metadata"] for
+        # maturity/ads validation; stripped before hashing, so hashes stay stable.
+        block = {k: v for k, v in md.items() if k not in Envelope._IDENTITY_METADATA_KEYS}
+        if block:
+            working["metadata"] = block
         if self.origin_path:
             working["_template_path"] = self.origin_path
         return copy.deepcopy(working)

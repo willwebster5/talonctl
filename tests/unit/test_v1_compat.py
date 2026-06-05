@@ -64,14 +64,42 @@ def test_rule_id_dropped_but_schema_kept_in_spec():
     assert env.spec["$schema"] == "x"
 
 
-def test_nested_v1_metadata_block_goes_to_spec_not_identity():
+def test_nested_v1_metadata_block_goes_to_envelope_metadata():
     env = v1_to_v2(
         {"resource_id": "r", "name": "n", "metadata": {"maturity": "production", "ads": {"x": 1}}},
         resource_type="detection",
     )
-    assert "maturity" not in env.metadata
-    assert env.spec["metadata"]["maturity"] == "production"
-    assert env.spec["metadata"]["ads"] == {"x": 1}
+    assert env.metadata["maturity"] == "production"
+    assert env.metadata["ads"] == {"x": 1}
+    assert "metadata" not in env.spec
+
+
+def test_v1_metadata_block_routes_to_envelope_metadata():
+    flat = {
+        "resource_id": "r",
+        "name": "R",
+        "severity": 10,
+        "status": "active",
+        "metadata": {"maturity": "production"},
+    }
+    env = v1_to_v2(flat, resource_type="detection")
+    assert env.metadata["maturity"] == "production"
+    assert "metadata" not in env.spec
+
+
+def test_v1_metadata_block_does_not_clobber_identity():
+    env = v1_to_v2(
+        {
+            "resource_id": "r",
+            "name": "n",
+            "tags": ["keep"],
+            "metadata": {"resource_id": "evil", "name": "evil", "tags": ["nope"]},
+        },
+        resource_type="detection",
+    )
+    assert env.metadata["resource_id"] == "r"
+    assert env.metadata["name"] == "n"
+    assert env.metadata["tags"] == ["keep"]
 
 
 def test_rtr_script_resource_id_minted_from_name():
