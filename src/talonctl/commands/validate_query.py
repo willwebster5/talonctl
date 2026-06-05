@@ -37,13 +37,30 @@ def validate_query(ctx, query, query_file, template):
             return
         try:
             from talonctl.core.envelope_loader import load_envelopes
+            from talonctl.core.template_discovery import TemplateDiscovery
 
             # Peek the raw YAML to derive the default resource type needed for v1
-            # documents (v2 docs derive their type from `kind`). Reading the raw
-            # dict's `type` keeps v1 behavior; saved_search is the safe fallback.
+            # documents (v2 docs derive their type from `kind`). The raw `type`
+            # field is only a resource category for some v1 docs; for detections
+            # it carries the rule SUBTYPE (e.g. "behavioral"/"correlation"),
+            # which is NOT a valid resource type. Feeding a subtype to
+            # load_envelopes raises KeyError, so map non-category `type` values
+            # to a real resource type before handing it off. The exact type
+            # barely matters here — query extraction reads search/queryString
+            # regardless — the goal is just to pass a VALID type.
             with open(template_path) as f:
                 raw = yaml.safe_load(f)
-            default_resource_type = (raw or {}).get("type") or "saved_search"
+            raw = raw or {}
+            raw_type = raw.get("type")
+            valid_types = set(TemplateDiscovery.VALID_RESOURCE_TYPES)
+            if raw_type in valid_types:
+                default_resource_type = raw_type
+            elif raw_type in {"behavioral", "correlation"} or "search" in raw:
+                default_resource_type = "detection"
+            elif "queryString" in raw or "query_string" in raw:
+                default_resource_type = "saved_search"
+            else:
+                default_resource_type = "saved_search"
 
             envelopes = load_envelopes(template_path, default_resource_type=default_resource_type)
             for env in envelopes:
@@ -64,7 +81,9 @@ def validate_query(ctx, query, query_file, template):
             console.print(f"INVALID: YAML parse error: {e}")
             raise SystemExit(1)
             return
-        except ValueError as e:
+        except (ValueError, KeyError) as e:
+            # KeyError surfaces if a v1 `type`/`kind` maps to no known resource
+            # type/kind; map it to the INVALID contract instead of a traceback.
             console.print(f"INVALID: {e}")
             raise SystemExit(1)
             return

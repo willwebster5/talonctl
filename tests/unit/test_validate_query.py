@@ -69,3 +69,44 @@ def test_v1_detection_search_filter(tmp_path):
     assert result.exit_code == 0, result.output
     assert "VALID" in result.output
     assert query == "event.type = login"
+
+
+def test_v1_detection_behavioral_subtype(tmp_path):
+    """v1 detection with a realistic `type: behavioral` rule subtype.
+
+    `behavioral` is the detection rule SUBTYPE, not a resource category, so it
+    must be mapped to the "detection" resource type before reaching
+    load_envelopes — otherwise TYPE_TO_KIND["behavioral"] raises KeyError and
+    crashes this command. The search.filter must still be extracted and reach
+    the mocked client.
+    """
+    content = (
+        "resource_id: det_behavioral\n"
+        "name: My behavioral detection\n"
+        "type: behavioral\n"
+        "search:\n"
+        "  filter: 'event.type = login'\n"
+    )
+    result, query = _run_with_template(tmp_path, "det_behavioral.yaml", content)
+    assert result.exit_code == 0, result.output
+    assert "VALID" in result.output
+    assert query == "event.type = login"
+
+
+def test_v1_detection_correlation_subtype(tmp_path):
+    """v1 detection with a realistic `type: correlation` rule subtype.
+
+    Same KeyError-avoidance as the behavioral case: `correlation` is a rule
+    subtype, must map to the "detection" resource type.
+    """
+    content = (
+        "resource_id: det_correlation\n"
+        "name: My correlation detection\n"
+        "type: correlation\n"
+        "search:\n"
+        "  filter: 'event.type = alert'\n"
+    )
+    result, query = _run_with_template(tmp_path, "det_correlation.yaml", content)
+    assert result.exit_code == 0, result.output
+    assert "VALID" in result.output
+    assert query == "event.type = alert"
