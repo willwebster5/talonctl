@@ -31,14 +31,14 @@ def test_detection_rule_id_falls_back_to_top_level_id():
 
 
 def test_synthetic_placeholder_id_yields_no_server_id():
-    # never-deployed: id is "<type>.<resource_id>"
-    rs = _rs("saved_search", id="saved_search.example_source_enrich")
+    # never-deployed: id is "<type>.<resource_id>" AND no deployed_at (structural signal)
+    rs = _rs("saved_search", id="saved_search.example_source_enrich", deployed_at="")
     status = project_status(rs)
     assert "server_id" not in status
 
 
 def test_synthetic_placeholder_detection_yields_no_rule_id():
-    rs = _rs("detection", id="detection.example_source___x", provider_metadata={})
+    rs = _rs("detection", id="detection.example_source___x", provider_metadata={}, deployed_at="")
     status = project_status(rs)
     assert "server_id" not in status
     assert "rule_id" not in status
