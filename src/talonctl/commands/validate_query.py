@@ -36,18 +36,36 @@ def validate_query(ctx, query, query_file, template):
             raise SystemExit(1)
             return
         try:
+            from talonctl.core.envelope_loader import load_envelopes
+
+            # Peek the raw YAML to derive the default resource type needed for v1
+            # documents (v2 docs derive their type from `kind`). Reading the raw
+            # dict's `type` keeps v1 behavior; saved_search is the safe fallback.
             with open(template_path) as f:
-                template_data = yaml.safe_load(f)
-            search = template_data.get("search", {})
-            resolved_query = search.get("filter") or search.get("query")
-            if not resolved_query:
-                resolved_query = template_data.get("queryString")
+                raw = yaml.safe_load(f)
+            default_resource_type = (raw or {}).get("type") or "saved_search"
+
+            envelopes = load_envelopes(template_path, default_resource_type=default_resource_type)
+            for env in envelopes:
+                working = env.to_working_dict()
+                search = working.get("search", {}) or {}
+                resolved_query = search.get("filter") or search.get("query")
+                if not resolved_query:
+                    resolved_query = working.get("queryString")
+                if resolved_query:
+                    break
             if not resolved_query:
                 console.print("INVALID: No search.filter, search.query, or queryString found in template")
                 raise SystemExit(1)
                 return
+        except SystemExit:
+            raise
         except yaml.YAMLError as e:
             console.print(f"INVALID: YAML parse error: {e}")
+            raise SystemExit(1)
+            return
+        except ValueError as e:
+            console.print(f"INVALID: {e}")
             raise SystemExit(1)
             return
     else:
