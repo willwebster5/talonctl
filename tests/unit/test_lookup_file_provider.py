@@ -12,6 +12,18 @@ from unittest.mock import Mock, patch, mock_open
 
 from talonctl.providers.lookup_file_provider import LookupFileProvider
 from talonctl.core import ResourceAction
+from tests.unit._helpers import make_envelope
+
+
+def _env(flat):
+    """Wrap a legacy flat lookup_file dict as an Envelope for the provider's
+    Envelope-consuming methods. Defaults a resource_id (which v1_to_v2 requires)
+    from the name when the test dict omits it — these tests assert on validation
+    errors / planned changes, not on resource_id, so the default is inert.
+    """
+    if "resource_id" not in flat:
+        flat = {**flat, "resource_id": "test_resource"}
+    return make_envelope(flat, "lookup_file")
 
 
 class TestLookupFileProvider:
@@ -96,31 +108,31 @@ class TestLookupFileProvider:
     # Test: Template Validation - Valid Templates
     def test_validate_template_valid_csv(self, provider, valid_csv_template):
         """Test validation of valid CSV template"""
-        errors = provider.validate_template(valid_csv_template)
+        errors = provider.validate_template(_env(valid_csv_template))
         assert errors == []
 
     def test_validate_template_valid_json(self, provider, valid_json_template):
         """Test validation of valid JSON template"""
-        errors = provider.validate_template(valid_json_template)
+        errors = provider.validate_template(_env(valid_json_template))
         assert errors == []
 
     # Test: Template Validation - Missing Required Fields
     def test_validate_template_missing_name(self, provider, temp_csv_file):
         """Test validation fails when name is missing"""
         template = {"format": "csv", "source": temp_csv_file}
-        errors = provider.validate_template(template)
+        errors = provider.validate_template(_env(template))
         assert any("name" in err.lower() for err in errors)
 
     def test_validate_template_missing_format(self, provider, temp_csv_file):
         """Test validation fails when format is missing"""
         template = {"name": "test.csv", "source": temp_csv_file}
-        errors = provider.validate_template(template)
+        errors = provider.validate_template(_env(template))
         assert any("format" in err.lower() for err in errors)
 
     def test_validate_template_missing_source(self, provider):
         """Test validation fails when source is missing"""
         template = {"name": "test.csv", "format": "csv"}
-        errors = provider.validate_template(template)
+        errors = provider.validate_template(_env(template))
         assert any("source" in err.lower() for err in errors)
 
     # Test: Template Validation - Invalid Values
@@ -131,25 +143,25 @@ class TestLookupFileProvider:
             "format": "txt",  # Invalid
             "source": temp_csv_file,
         }
-        errors = provider.validate_template(template)
+        errors = provider.validate_template(_env(template))
         assert any("invalid format" in err.lower() for err in errors)
 
     def test_validate_template_invalid_search_domain(self, provider, temp_csv_file):
         """Test validation fails with invalid search domain"""
         template = {"name": "test.csv", "format": "csv", "source": temp_csv_file, "_search_domain": "invalid_domain"}
-        errors = provider.validate_template(template)
+        errors = provider.validate_template(_env(template))
         assert any("search_domain" in err.lower() for err in errors)
 
     def test_validate_template_nonexistent_file(self, provider):
         """Test validation fails when source file doesn't exist"""
         template = {"name": "test.csv", "format": "csv", "source": "/nonexistent/path/to/file.csv"}
-        errors = provider.validate_template(template)
+        errors = provider.validate_template(_env(template))
         assert any("not found" in err.lower() for err in errors)
 
     def test_validate_template_empty_name(self, provider, temp_csv_file):
         """Test validation fails with empty name"""
         template = {"name": "", "format": "csv", "source": temp_csv_file}
-        errors = provider.validate_template(template)
+        errors = provider.validate_template(_env(template))
         assert any("name" in err.lower() and "non-empty" in err.lower() for err in errors)
 
     def test_validate_template_invalid_description_type(self, provider, temp_csv_file):
@@ -160,7 +172,7 @@ class TestLookupFileProvider:
             "source": temp_csv_file,
             "description": 123,  # Invalid type
         }
-        errors = provider.validate_template(template)
+        errors = provider.validate_template(_env(template))
         assert any("description" in err.lower() for err in errors)
 
     # Test: File Size Validation
@@ -176,7 +188,7 @@ class TestLookupFileProvider:
 
         try:
             template = {"name": "large.csv", "format": "csv", "source": temp_path}
-            errors = provider.validate_template(template)
+            errors = provider.validate_template(_env(template))
             assert any("exceeds" in err.lower() and "209.7" in err for err in errors)
         finally:
             os.unlink(temp_path)
@@ -227,17 +239,19 @@ class TestLookupFileProvider:
     # Test: Planning Operations
     def test_plan_create(self, provider, valid_csv_template):
         """Test planning a create operation"""
-        change = provider.plan_create(valid_csv_template, "templates/test.yaml")
+        env = _env(valid_csv_template)
+        change = provider.plan_create(env, "templates/test.yaml")
         assert change.action == ResourceAction.CREATE
         assert change.resource_type == "lookup_file"
         assert change.resource_name == valid_csv_template["name"]
-        assert change.new_value == valid_csv_template
+        assert change.new_value == env.to_working_dict()
+        assert change.envelope is env
 
     def test_plan_update_with_changes(self, provider, valid_csv_template):
         """Test planning an update when content changed"""
         current_state = {"filename": "test.csv", "content_hash": "old_hash_value"}
 
-        change = provider.plan_update(valid_csv_template, current_state, "templates/test.yaml")
+        change = provider.plan_update(_env(valid_csv_template), current_state, "templates/test.yaml")
         assert change.action == ResourceAction.UPDATE
         assert change.resource_name == valid_csv_template["name"]
 
@@ -251,7 +265,7 @@ class TestLookupFileProvider:
             "content_hash": actual_hash,  # Same hash
         }
 
-        change = provider.plan_update(valid_csv_template, current_state, "templates/test.yaml")
+        change = provider.plan_update(_env(valid_csv_template), current_state, "templates/test.yaml")
         assert change.action == ResourceAction.NO_CHANGE
 
     def test_plan_delete(self, provider):
@@ -266,7 +280,7 @@ class TestLookupFileProvider:
         """Test creating a lookup file"""
         mock_falcon.command.return_value = {"status_code": 201, "body": {"resources": ["test.csv"]}}
 
-        result = provider.apply_create(valid_csv_template)
+        result = provider.apply_create(_env(valid_csv_template))
         assert result["filename"] == valid_csv_template["name"]
         assert result["format"] == "csv"
         assert "created_at" in result
@@ -282,7 +296,7 @@ class TestLookupFileProvider:
         mock_falcon.command.return_value = {"status_code": 200, "body": {"resources": ["test.csv"]}}
 
         current_state = {"filename": "test.csv", "search_domain": "falcon"}
-        result = provider.apply_update("test.csv", valid_csv_template, current_state)
+        result = provider.apply_update("test.csv", _env(valid_csv_template), current_state)
         assert result["filename"] == valid_csv_template["name"]
         assert "updated_at" in result
 
@@ -341,7 +355,7 @@ class TestLookupFileProvider:
                 template["source"] = f.name
 
             try:
-                errors = provider.validate_template(template)
+                errors = provider.validate_template(_env(template))
                 # Should not have search_domain errors
                 assert not any("search_domain" in err.lower() for err in errors)
             finally:
@@ -363,16 +377,16 @@ class TestLookupFileProvider:
 
     def test_v03_metadata_maturity_validates_on_lookup(self, provider, minimal_lookup):
         minimal_lookup["metadata"] = {"maturity": {"created": "2026-04-16"}}
-        assert provider.validate_template(minimal_lookup) == []
+        assert provider.validate_template(_env(minimal_lookup)) == []
 
     def test_v03_metadata_ads_rejected_on_lookup(self, provider, minimal_lookup):
         minimal_lookup["metadata"] = {"ads": {"goal": "g"}}
-        errors = provider.validate_template(minimal_lookup)
+        errors = provider.validate_template(_env(minimal_lookup))
         assert any("metadata.ads is only supported on detection resources" in e and "lookup_file" in e for e in errors)
 
     def test_v03_old_top_level_ads_rejected_on_lookup(self, provider, minimal_lookup):
         minimal_lookup["ads"] = {"goal": "g"}
-        errors = provider.validate_template(minimal_lookup)
+        errors = provider.validate_template(_env(minimal_lookup))
         assert any("Top-level 'ads:' is removed in v0.3.0" in e for e in errors)
 
     def test_v03_metadata_edits_do_not_change_content_hash(self, provider, minimal_lookup):
