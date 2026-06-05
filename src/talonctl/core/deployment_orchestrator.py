@@ -252,8 +252,8 @@ class DeploymentOrchestrator:
             if current_state:
                 logger.debug(f"Found state for '{template.name}' using legacy key '{template.display_name}'")
 
-        # Validate template
-        errors = provider.validate_template(template.template_data)
+        # Validate template (flipped providers consume the Envelope directly)
+        errors = provider.validate_template(template.envelope)
         if errors:
             logger.error(f"Template validation errors for {template.resource_id}:")
             for error in errors:
@@ -855,7 +855,8 @@ class DeploymentOrchestrator:
                 continue
 
             for template in templates:
-                errors = provider.validate_template(template.template_data)
+                # Flipped providers consume the Envelope directly.
+                errors = provider.validate_template(template.envelope)
                 results[template.resource_id] = errors
 
         valid_count = sum(1 for errors in results.values() if not errors)

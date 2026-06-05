@@ -2,6 +2,7 @@
 
 from talonctl.core.query_collection import QueryRef, collect_queries_from_templates
 from talonctl.core.template_discovery import DiscoveredTemplate
+from tests.unit._helpers import make_envelope
 
 
 def test_queryref_fields():
@@ -26,12 +27,13 @@ def test_collect_empty_returns_empty_list():
 
 
 def _make(resource_type: str, name: str, data: dict) -> DiscoveredTemplate:
+    flat = {"resource_id": name, **data}
     return DiscoveredTemplate(
         resource_type=resource_type,
         name=name,
         file_path="/tmp/ignored.yaml",
-        template_data=data,
         tags=[],
+        envelope=make_envelope(flat, resource_type),
     )
 
 

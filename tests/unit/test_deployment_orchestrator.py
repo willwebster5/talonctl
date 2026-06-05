@@ -16,6 +16,7 @@ from talonctl.core.deployment_orchestrator import DeploymentOrchestrator, Resour
 from talonctl.core.template_discovery import DiscoveredTemplate
 from talonctl.core.resource_graph import ResourceGraph
 from talonctl.core import ResourceAction
+from tests.unit._helpers import make_envelope
 
 
 class TestDeploymentOrchestrator:
@@ -74,12 +75,16 @@ class TestDeploymentOrchestrator:
             resource_type="detection",
             name="test_rule",
             file_path=Path("rules/test.yaml"),
-            template_data={
-                "name": "Test Rule",
-                "description": "Test",
-                "severity": 50,
-                "search": {"query": "test query"},
-            },
+            envelope=make_envelope(
+                {
+                    "resource_id": "test_rule",
+                    "name": "Test Rule",
+                    "description": "Test",
+                    "severity": 50,
+                    "search": {"query": "test query"},
+                },
+                "detection",
+            ),
             tags=[],
         )
 
@@ -109,7 +114,7 @@ class TestDeploymentOrchestrator:
             resource_type="lookup_file",
             name="trusted_ips",
             file_path=Path("data/trusted_ips.csv"),
-            template_data={"name": "trusted_ips.csv"},
+            envelope=make_envelope({"resource_id": "trusted_ips", "name": "trusted_ips.csv"}, "lookup_file"),
             tags=[],
         )
 
@@ -117,7 +122,14 @@ class TestDeploymentOrchestrator:
             resource_type="detection",
             name="network_check",
             file_path=Path("rules/network_check.yaml"),
-            template_data={"name": "Network Check", "search": {"query": '| in(name="trusted_ips")'}},
+            envelope=make_envelope(
+                {
+                    "resource_id": "network_check",
+                    "name": "Network Check",
+                    "search": {"query": '| in(name="trusted_ips")'},
+                },
+                "detection",
+            ),
             tags=[],
         )
 
@@ -153,7 +165,10 @@ class TestDeploymentOrchestrator:
             resource_type="detection",
             name="rule_a",
             file_path=Path("rules/a.yaml"),
-            template_data={"name": "Rule A", "search": {"query_id": "search_b"}},
+            envelope=make_envelope(
+                {"resource_id": "rule_a", "name": "Rule A", "search": {"query_id": "search_b"}},
+                "detection",
+            ),
             tags=[],
         )
 
@@ -161,7 +176,10 @@ class TestDeploymentOrchestrator:
             resource_type="saved_search",
             name="search_b",
             file_path=Path("searches/b.yaml"),
-            template_data={"name": "Search B", "query": '| in(name="lookup_a")'},
+            envelope=make_envelope(
+                {"resource_id": "search_b", "name": "Search B", "query": '| in(name="lookup_a")'},
+                "saved_search",
+            ),
             tags=[],
         )
 
@@ -169,7 +187,10 @@ class TestDeploymentOrchestrator:
             resource_type="lookup_file",
             name="lookup_a",
             file_path=Path("data/a.csv"),
-            template_data={"name": "lookup_a.csv", "_depends_on": ["detection.rule_a"]},
+            envelope=make_envelope(
+                {"resource_id": "lookup_a", "name": "lookup_a.csv", "_depends_on": ["detection.rule_a"]},
+                "lookup_file",
+            ),
             tags=[],
         )
 
@@ -201,12 +222,16 @@ class TestDeploymentOrchestrator:
             resource_type="detection",
             name="existing_rule",
             file_path=Path("rules/existing.yaml"),
-            template_data={
-                "name": "Existing Rule",
-                "description": "Updated description",
-                "severity": 70,
-                "search": {"query": "new query"},
-            },
+            envelope=make_envelope(
+                {
+                    "resource_id": "existing_rule",
+                    "name": "Existing Rule",
+                    "description": "Updated description",
+                    "severity": 70,
+                    "search": {"query": "new query"},
+                },
+                "detection",
+            ),
             tags=[],
         )
 
@@ -239,12 +264,16 @@ class TestDeploymentOrchestrator:
             resource_type="detection",
             name="unchanged_rule",
             file_path=Path("rules/unchanged.yaml"),
-            template_data={
-                "name": "Unchanged Rule",
-                "description": "Same",
-                "severity": 50,
-                "search": {"query": "same query"},
-            },
+            envelope=make_envelope(
+                {
+                    "resource_id": "unchanged_rule",
+                    "name": "Unchanged Rule",
+                    "description": "Same",
+                    "severity": 50,
+                    "search": {"query": "same query"},
+                },
+                "detection",
+            ),
             tags=[],
         )
 
@@ -275,10 +304,14 @@ class TestDeploymentOrchestrator:
             resource_type="detection",
             name="invalid_rule",
             file_path=Path("rules/invalid.yaml"),
-            template_data={
-                "name": "Invalid Rule",
-                # Missing required fields
-            },
+            envelope=make_envelope(
+                {
+                    "resource_id": "invalid_rule",
+                    "name": "Invalid Rule",
+                    # Missing required fields
+                },
+                "detection",
+            ),
             tags=[],
         )
 
@@ -757,14 +790,17 @@ class TestDeploymentOrchestrator:
                 resource_type="detection",
                 name="valid",
                 file_path=Path("rules/valid.yaml"),
-                template_data={"name": "Valid", "severity": 50, "search": {"query": "test"}},
+                envelope=make_envelope(
+                    {"resource_id": "valid", "name": "Valid", "severity": 50, "search": {"query": "test"}},
+                    "detection",
+                ),
                 tags=[],
             ),
             DiscoveredTemplate(
                 resource_type="detection",
                 name="invalid",
                 file_path=Path("rules/invalid.yaml"),
-                template_data={"name": "Invalid"},  # Missing fields
+                envelope=make_envelope({"resource_id": "invalid", "name": "Invalid"}, "detection"),
                 tags=[],
             ),
         ]
@@ -791,7 +827,7 @@ class TestDeploymentOrchestrator:
             resource_type="detection",
             name="deployed_rule",
             file_path=Path("rules/deployed.yaml"),
-            template_data={"name": "Deployed Rule"},
+            envelope=make_envelope({"resource_id": "deployed_rule", "name": "Deployed Rule"}, "detection"),
             tags=[],
         )
 

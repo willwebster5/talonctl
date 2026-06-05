@@ -11,8 +11,19 @@ def _project(tmp_path: Path):
 
 def test_valid_v2_file_passes(tmp_path, monkeypatch):
     proj = _project(tmp_path)
+    # A complete, valid v2 detection: passes both envelope-schema validation
+    # and the detection provider's validate_template (now reached via discovery).
     (proj / "resources" / "detections" / "ok.yaml").write_text(
-        "apiVersion: talon/v2\nkind: Detection\nmetadata: {resource_id: d1}\nspec: {severity: 1}\n"
+        "apiVersion: talon/v2\n"
+        "kind: Detection\n"
+        "metadata:\n"
+        "  resource_id: d1\n"
+        "  name: D1\n"
+        "spec:\n"
+        "  description: A valid detection.\n"
+        "  severity: 50\n"
+        "  search:\n"
+        "    filter: '#repo=test'\n"
     )
     monkeypatch.chdir(proj)
     result = CliRunner().invoke(cli, ["validate"])

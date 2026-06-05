@@ -6,16 +6,18 @@ import pytest
 
 from talonctl.core.deployment_orchestrator import DeploymentOrchestrator
 from talonctl.core.template_discovery import DiscoveredTemplate
+from tests.unit._helpers import make_envelope
 
 
 def _template(resource_type, name, data):
     # NOTE: DiscoveredTemplate.tags is required with no default.
+    flat = {"resource_id": name, **data}
     return DiscoveredTemplate(
         resource_type=resource_type,
         name=name,
         file_path="/tmp/ignored.yaml",
-        template_data=data,
         tags=[],
+        envelope=make_envelope(flat, resource_type),
     )
 
 
