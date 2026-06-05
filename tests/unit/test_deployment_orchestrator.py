@@ -7,7 +7,7 @@ error handling, and state management.
 
 import pytest
 from pathlib import Path
-from unittest.mock import Mock, patch
+from unittest.mock import Mock, MagicMock, patch
 from datetime import datetime, timezone
 import tempfile
 import json
@@ -518,6 +518,7 @@ class TestDeploymentOrchestrator:
             resource_id="detection.success",
             resource_name="success",
             new_value={"name": "Success Rule"},
+            envelope=make_envelope({"resource_id": "success", "name": "Success Rule"}, "detection"),
         )
 
         change2 = ResourceChange(
@@ -526,6 +527,7 @@ class TestDeploymentOrchestrator:
             resource_id="detection.fail",
             resource_name="fail",
             new_value={"name": "Fail Rule"},
+            envelope=make_envelope({"resource_id": "fail", "name": "Fail Rule"}, "detection"),
         )
 
         graph = ResourceGraph()
@@ -539,11 +541,11 @@ class TestDeploymentOrchestrator:
             graph=graph,
         )
 
-        # Mock one success and one failure
+        # Mock one success and one failure. Providers now receive an Envelope.
         detection_provider = orchestrator.provider_adapter.providers["detection"]
 
-        def mock_apply_create(template):
-            if template.get("name") == "Fail Rule":
+        def mock_apply_create(env):
+            if env.to_working_dict().get("name") == "Fail Rule":
                 raise Exception("Deployment failed")
             return {"rule_id": "success123"}
 
@@ -568,6 +570,7 @@ class TestDeploymentOrchestrator:
             resource_id="detection.success",
             resource_name="success",
             new_value={"name": "Success Rule"},
+            envelope=make_envelope({"resource_id": "success", "name": "Success Rule"}, "detection"),
         )
 
         change2 = ResourceChange(
@@ -576,6 +579,7 @@ class TestDeploymentOrchestrator:
             resource_id="detection.fail",
             resource_name="fail",
             new_value={"name": "Fail Rule"},
+            envelope=make_envelope({"resource_id": "fail", "name": "Fail Rule"}, "detection"),
         )
 
         graph = ResourceGraph()
@@ -589,11 +593,11 @@ class TestDeploymentOrchestrator:
             graph=graph,
         )
 
-        # Mock one success and one failure
+        # Mock one success and one failure. Providers now receive an Envelope.
         detection_provider = orchestrator.provider_adapter.providers["detection"]
 
-        def mock_apply_create(template):
-            if template.get("name") == "Fail Rule":
+        def mock_apply_create(env):
+            if env.to_working_dict().get("name") == "Fail Rule":
                 raise Exception("Deployment failed")
             return {"rule_id": "success123"}
 
@@ -672,6 +676,7 @@ class TestDeploymentOrchestrator:
             resource_name="existing",
             new_value={"name": "Existing Rule", "severity": 70},
             old_value={"id": "rule123", "name": "Existing Rule", "severity": 50, "content_hash": "old_hash"},
+            envelope=make_envelope({"resource_id": "existing", "name": "Existing Rule", "severity": 70}, "detection"),
         )
 
         change2 = ResourceChange(
@@ -680,6 +685,7 @@ class TestDeploymentOrchestrator:
             resource_id="detection.new",
             resource_name="new",
             new_value={"name": "New Rule"},
+            envelope=make_envelope({"resource_id": "new", "name": "New Rule"}, "detection"),
         )
 
         graph = ResourceGraph()
@@ -709,8 +715,8 @@ class TestDeploymentOrchestrator:
 
         detection_provider.apply_update.side_effect = mock_update
 
-        def mock_create(template):
-            if template.get("name") == "New Rule":
+        def mock_create(env):
+            if env.to_working_dict().get("name") == "New Rule":
                 raise Exception("Create failed")
             return {"rule_id": "new123"}
 
@@ -945,6 +951,149 @@ class TestDeploymentOrchestrator:
         assert "results" in wave_result
         assert "saved_search.my_search" in wave_result["results"]
         assert wave_result["results"]["saved_search.my_search"]["id"] == "uuid-abc123"
+
+
+class TestOrchestratorEndToEndWithRealProviders:
+    """End-to-end tests that drive REAL providers (only the Falcon API client is
+    mocked). These exercise the orchestrator -> provider -> envelope.to_working_dict()
+    path that mocked-provider tests mask. Before the Task 9 rewire, the orchestrator
+    passed dicts into the (now Envelope-consuming) plan_*/apply_* methods, so these
+    tests raise AttributeError ('dict' object has no attribute 'to_working_dict').
+    """
+
+    @pytest.fixture
+    def project(self, tmp_path):
+        """Build a real on-disk project: resources tree + binary put file + state file."""
+        resources_dir = tmp_path / "resources"
+        detections_dir = resources_dir / "detections"
+        put_files_dir = resources_dir / "rtr_put_files"
+        detections_dir.mkdir(parents=True)
+        put_files_dir.mkdir(parents=True)
+
+        # Detection template (unmanaged -> should plan CREATE)
+        (detections_dir / "test_rule.yaml").write_text(
+            "type: detection\n"
+            "resource_id: test_rule\n"
+            "name: Test Rule\n"
+            "description: An end-to-end test detection rule.\n"
+            "severity: 50\n"
+            "search:\n"
+            "  query: '#repo=base | head(1)'\n"
+        )
+
+        # Binary asset for the put file (file-based case -> origin_path/_template_path
+        # re-injection must reach the provider so it can locate the binary on disk).
+        (put_files_dir / "payload.bin").write_bytes(b"sysmon-config-bytes")
+        (put_files_dir / "sysmon_config.yaml").write_text(
+            "type: rtr_put_file\n"
+            "resource_id: sysmon_config\n"
+            "name: sysmonconfig-export.xml\n"
+            "description: Sysmon config pushed to endpoints.\n"
+            "file_path: payload.bin\n"
+        )
+
+        # State file. Seed nothing yet — the rtr_put_file content_hash is filled in by
+        # the test once it can call the real provider (hash depends on binary content).
+        crowdstrike_dir = tmp_path / ".crowdstrike"
+        crowdstrike_dir.mkdir()
+        state_file = crowdstrike_dir / "deployed_state.json"
+        state_file.write_text(
+            json.dumps(
+                {
+                    "version": "4.0",
+                    "last_updated": datetime.now(timezone.utc).isoformat(),
+                    "metadata": {},
+                    "resources": {},
+                    "resource_graph": {"nodes": [], "edges": {}},
+                }
+            )
+        )
+
+        return {
+            "root": tmp_path,
+            "resources_dir": resources_dir,
+            "state_file": state_file,
+        }
+
+    def _make_orchestrator(self, project):
+        """Real orchestrator + real providers; only the Falcon API client is a MagicMock."""
+        falcon = MagicMock()
+        return DeploymentOrchestrator(
+            falcon_client=falcon,
+            state_file_path=project["state_file"],
+            resources_dir=project["resources_dir"],
+            project_root=project["root"],
+            remote_state_enabled=False,
+        )
+
+    def _seed_no_change_state(self, project):
+        """Write a state entry for the put file whose content_hash matches what the
+        REAL provider computes for the current envelope (so plan emits NO-CHANGE).
+
+        Must run BEFORE the orchestrator is constructed: StateManager loads (and
+        caches) the state file at init, so the on-disk seed has to exist first.
+        Uses throwaway real discovery + provider purely to compute the hash the
+        way the orchestrator will."""
+        from talonctl.core.template_discovery import TemplateDiscovery
+        from talonctl.providers import RTRPutFileProvider
+
+        discovered = TemplateDiscovery(
+            resources_dir=project["resources_dir"], project_root=project["root"]
+        ).discover_all(resource_types=["rtr_put_file"])
+        template = discovered["rtr_put_file"][0]
+        provider = RTRPutFileProvider(MagicMock())
+        content_hash = provider.compute_content_hash(template.envelope.to_working_dict())
+
+        state = json.loads(project["state_file"].read_text())
+        state["resources"]["rtr_put_file"] = {
+            "sysmon_config": {
+                "type": "rtr_put_file",
+                "id": "existing-put-file-id",
+                "content_hash": content_hash,
+                "template_path": str(template.file_path),
+                "deployed_at": datetime.now(timezone.utc).isoformat(),
+                "last_modified": datetime.now(timezone.utc).isoformat(),
+                "provider_metadata": {"id": "existing-put-file-id"},
+                "dependencies": [],
+                "display_name": "sysmonconfig-export.xml",
+            }
+        }
+        project["state_file"].write_text(json.dumps(state))
+        return content_hash
+
+    def test_plan_create_and_no_change_with_real_providers(self, project):
+        """plan() over real providers yields CREATE for the unmanaged detection and
+        NO-CHANGE for the put file whose state hash matches the real provider hash."""
+        self._seed_no_change_state(project)
+        orchestrator = self._make_orchestrator(project)
+
+        plan = orchestrator.plan(skip_query_validation=True)
+
+        by_id = {c.resource_id: c for c in plan.changes}
+        assert by_id["detection.test_rule"].action == ResourceAction.CREATE
+        assert by_id["rtr_put_file.sysmon_config"].action == ResourceAction.NO_CHANGE
+        # The CREATE change must carry the real Envelope for apply to consume.
+        assert by_id["detection.test_rule"].envelope is not None
+
+    def test_apply_create_drives_real_detection_provider(self, project):
+        """apply() of the detection CREATE reaches the real DetectionProvider, which
+        calls the mocked Falcon client's command() — proving the real path runs."""
+        orchestrator = self._make_orchestrator(project)
+
+        # Stub the Falcon uber-class create response the DetectionProvider expects.
+        orchestrator.falcon.command.return_value = {
+            "status_code": 201,
+            "body": {"resources": [{"rule_id": "rule-uuid-123", "id": "version-id-1"}]},
+        }
+
+        plan = orchestrator.plan(resource_types=["detection"], skip_query_validation=True)
+        result = orchestrator.apply(plan, auto_approve=True)
+
+        assert result.success is True
+        assert "detection.test_rule" in result.deployed
+        # Real provider issued the create against the mocked Falcon client.
+        called_cmds = [c.args[0] for c in orchestrator.falcon.command.call_args_list if c.args]
+        assert "entities_rules_post_v1" in called_cmds
 
 
 if __name__ == "__main__":
