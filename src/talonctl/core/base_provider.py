@@ -7,11 +7,14 @@ saved searches, lookup files, correlation rules).
 """
 
 from abc import ABC, abstractmethod
-from typing import Dict, List, Any, Optional
+from typing import Dict, List, Any, Optional, TYPE_CHECKING
 from dataclasses import dataclass
 from enum import Enum
 import hashlib
 import json
+
+if TYPE_CHECKING:
+    from talonctl.core.envelope import Envelope
 
 
 class ResourceAction(Enum):
@@ -40,6 +43,7 @@ class ResourceChange:
     new_value: Optional[Dict[str, Any]] = None
     changes: Optional[Dict[str, Any]] = None  # Detailed diff for updates
     template_path: Optional[str] = None
+    envelope: Optional["Envelope"] = None  # source envelope, passed to apply_*
 
 
 class BaseResourceProvider(ABC):
@@ -83,7 +87,7 @@ class BaseResourceProvider(ABC):
         pass
 
     @abstractmethod
-    def validate_template(self, template: Dict[str, Any]) -> List[str]:
+    def validate_template(self, env: "Envelope") -> List[str]:
         """
         Validate a resource template.
 
@@ -91,7 +95,7 @@ class BaseResourceProvider(ABC):
         and valid values. Provider-specific validation (e.g., FQL syntax for detections).
 
         Args:
-            template: The resource template to validate
+            env: The resource Envelope to validate
 
         Returns:
             List of validation error messages (empty list if valid)
@@ -114,12 +118,12 @@ class BaseResourceProvider(ABC):
         pass
 
     @abstractmethod
-    def plan_create(self, template: Dict[str, Any], template_path: str) -> ResourceChange:
+    def plan_create(self, env: "Envelope", template_path: str) -> ResourceChange:
         """
         Plan the creation of a new resource.
 
         Args:
-            template: The resource template defining the new resource
+            env: The resource Envelope defining the new resource
             template_path: Path to the template file (for tracking)
 
         Returns:
@@ -128,16 +132,14 @@ class BaseResourceProvider(ABC):
         pass
 
     @abstractmethod
-    def plan_update(
-        self, template: Dict[str, Any], current_state: Dict[str, Any], template_path: str
-    ) -> ResourceChange:
+    def plan_update(self, env: "Envelope", current_state: Dict[str, Any], template_path: str) -> ResourceChange:
         """
         Plan an update to an existing resource.
 
-        Compares template with current remote state to determine what changed.
+        Compares the Envelope with current remote state to determine what changed.
 
         Args:
-            template: The new resource template
+            env: The new resource Envelope
             current_state: Current state from CrowdStrike API
             template_path: Path to the template file
 
@@ -161,12 +163,12 @@ class BaseResourceProvider(ABC):
         pass
 
     @abstractmethod
-    def apply_create(self, template: Dict[str, Any]) -> Dict[str, Any]:
+    def apply_create(self, env: "Envelope") -> Dict[str, Any]:
         """
         Create a new resource in CrowdStrike.
 
         Args:
-            template: The resource template
+            env: The resource Envelope
 
         Returns:
             Dictionary with resource metadata including:
@@ -179,13 +181,13 @@ class BaseResourceProvider(ABC):
         pass
 
     @abstractmethod
-    def apply_update(self, resource_id: str, template: Dict[str, Any], current_state: Dict[str, Any]) -> Dict[str, Any]:
+    def apply_update(self, resource_id: str, env: "Envelope", current_state: Dict[str, Any]) -> Dict[str, Any]:
         """
         Update an existing resource in CrowdStrike.
 
         Args:
             resource_id: ID of the resource to update
-            template: The new resource template
+            env: The new resource Envelope
             current_state: Current state (may be needed for partial updates)
 
         Returns:
@@ -220,6 +222,8 @@ class BaseResourceProvider(ABC):
         Used for change detection - if hash differs from state, resource has changed.
         Providers can override this to customize which fields are included in the hash.
 
+        # receives the working dict (env.to_working_dict()), not an Envelope
+
         Args:
             template: The resource template
 
@@ -240,6 +244,8 @@ class BaseResourceProvider(ABC):
         - lookup("trusted_ips.csv") in detection filters
         - detection.aws_root_login in workflow triggers
 
+        # receives the working dict (env.to_working_dict()), not an Envelope
+
         Args:
             template: The resource template
 
@@ -254,6 +260,8 @@ class BaseResourceProvider(ABC):
         Get a human-readable display name for the resource.
 
         Default implementation looks for 'name' field. Providers can override.
+
+        # receives the working dict (env.to_working_dict()), not an Envelope
 
         Args:
             template: The resource template
@@ -270,6 +278,8 @@ class BaseResourceProvider(ABC):
 
         Providers must override this to map their normalized API fields
         to the template format used by their YAML files.
+
+        # receives the working dict (env.to_working_dict()), not an Envelope
 
         Args:
             remote_resource: Normalized resource dict from the provider's fetch method
@@ -289,6 +299,8 @@ class BaseResourceProvider(ABC):
         The path is relative to the project's resources/ directory.
         Providers should override this to place templates in the correct
         subdirectory with appropriate naming.
+
+        # receives the working dict (env.to_working_dict()), not an Envelope
 
         Args:
             template: The template dict (as returned by to_template())
