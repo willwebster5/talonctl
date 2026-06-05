@@ -16,7 +16,7 @@ def make_envelope(flat: dict, resource_type: str, origin_path: Optional[str] = N
 # consume an Envelope (Section 3 provider flip). Grows as each provider is
 # migrated; cross-cutting tests use this to pass the right input shape per
 # provider. Detection is the worked example (Task 6); Task 7 adds the rest.
-ENVELOPE_CONSUMING_TYPES = frozenset({"detection", "saved_search", "lookup_file"})
+ENVELOPE_CONSUMING_TYPES = frozenset({"detection", "saved_search", "lookup_file", "dashboard"})
 
 
 def validate_input(flat: dict, resource_type: str, origin_path: Optional[str] = None):
