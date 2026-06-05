@@ -37,6 +37,36 @@ class Envelope:
     metadata: Dict[str, Any]
     spec: Dict[str, Any]
     status: Optional[Dict[str, Any]] = None
+    origin_path: Optional[str] = None  # absolute path of the source YAML; re-injected as _template_path
+
+    _SPEC_TO_WORKING_RENAMES = {
+        "query_string": "queryString",
+        "search_domain": "_search_domain",
+        "depends_on": "dependencies",
+    }
+
+    def to_working_dict(self) -> Dict[str, Any]:
+        """Reconstruct the legacy flat dict the providers' internals read.
+
+        The round-trip-tested inverse of v1_compat.v1_to_v2. Provider internals
+        (payload build, compute_content_hash, dependency/FQL extraction) read this
+        dict's keys unchanged, so content hashes stay byte-identical.
+        """
+        working: Dict[str, Any] = dict(self.spec)
+        for spec_key, legacy_key in Envelope._SPEC_TO_WORKING_RENAMES.items():
+            if spec_key in working:
+                working[legacy_key] = working.pop(spec_key)
+        md = self.metadata
+        for ident in ("resource_id", "name"):
+            if ident in md:
+                working[ident] = md[ident]
+        if md.get("labels"):
+            working["labels"] = md["labels"]
+        if md.get("tags"):
+            working["tags"] = md["tags"]
+        if self.origin_path:
+            working["_template_path"] = self.origin_path
+        return working
 
     @property
     def resource_id(self) -> str:

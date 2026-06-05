@@ -81,7 +81,7 @@ severity: 50
     envs = load_envelopes(p, default_resource_type="detection")
     assert len(envs) == 1
     assert envs[0].kind == "Detection"
-    assert envs[0].spec["enabled"] is True
+    assert envs[0].spec["status"] == "active"
 
 
 def test_v2_doc_rejects_authored_status(tmp_path):

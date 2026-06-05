@@ -18,22 +18,23 @@ def test_identity_lift_and_search_domain():
     assert env.kind == "Detection"
     assert env.metadata["resource_id"] == "ex___susp"
     assert env.metadata["name"] == "Ex Susp"
-    assert env.metadata["labels"]["domain"] == "example_source"
-    assert env.metadata["labels"]["a"] == "true"
+    assert env.spec["search_domain"] == "example_source"
+    assert env.metadata["tags"] == ["a", "b"]
     assert "severity" in env.spec
     for k in ("resource_id", "name", "_search_domain", "tags"):
         assert k not in env.spec
 
 
-def test_status_active_becomes_spec_enabled_true():
+def test_status_active_stays_string_in_spec():
     env = v1_to_v2({"resource_id": "r", "name": "n", "status": "active"}, resource_type="detection")
-    assert env.spec["enabled"] is True
-    assert "status" not in env.spec
+    assert env.spec["status"] == "active"
+    assert "enabled" not in env.spec
 
 
-def test_status_inactive_becomes_enabled_false():
+def test_status_inactive_stays_string_in_spec():
     env = v1_to_v2({"resource_id": "r", "name": "n", "status": "inactive"}, resource_type="detection")
-    assert env.spec["enabled"] is False
+    assert env.spec["status"] == "inactive"
+    assert "enabled" not in env.spec
 
 
 def test_dependencies_renamed_to_depends_on():
@@ -54,13 +55,13 @@ def test_querystring_renamed_to_snake_case():
     assert "queryString" not in env.spec
 
 
-def test_rule_id_and_schema_dropped_from_template():
+def test_rule_id_dropped_but_schema_kept_in_spec():
     env = v1_to_v2(
         {"resource_id": "r", "name": "n", "rule_id": "abc", "$schema": "x", "severity": 1},
         resource_type="detection",
     )
     assert "rule_id" not in env.spec
-    assert "$schema" not in env.spec
+    assert env.spec["$schema"] == "x"
 
 
 def test_nested_v1_metadata_block_goes_to_spec_not_identity():

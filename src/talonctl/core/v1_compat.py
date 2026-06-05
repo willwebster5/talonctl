@@ -11,7 +11,7 @@ from talonctl.core.envelope import Envelope, TYPE_TO_KIND
 # Identity keys pulled OUT of the v1 top level into metadata (never land in spec).
 _IDENTITY_KEYS = {"resource_id", "name", "labels", "tags", "_search_domain"}
 # Dropped entirely (subsumed or reconciled elsewhere).
-_DROP_KEYS = {"rule_id", "$schema"}
+_DROP_KEYS = {"rule_id"}
 # Explicit camelCase -> snake_case spec renames (allow-list, not blanket).
 _RENAME_MAP = {"queryString": "query_string"}
 # Kinds with no stable v1 identifier — mint resource_id from name.
@@ -23,12 +23,6 @@ def _build_labels(data: Dict[str, Any]) -> Dict[str, str]:
     raw = data.get("labels")
     if isinstance(raw, dict):
         labels.update({str(k): str(v) for k, v in raw.items()})
-    tags = data.get("tags")
-    if isinstance(tags, list):
-        for t in tags:
-            labels[str(t)] = "true"
-    if data.get("_search_domain"):
-        labels["domain"] = str(data["_search_domain"])
     return labels
 
 
@@ -54,13 +48,15 @@ def v1_to_v2(data: Dict[str, Any], *, resource_type: str) -> Envelope:
     labels = _build_labels(data)
     if labels:
         metadata["labels"] = labels
+    if isinstance(data.get("tags"), list):
+        metadata["tags"] = list(data["tags"])
 
     spec: Dict[str, Any] = {}
     for key, value in data.items():
-        if key in _IDENTITY_KEYS or key in _DROP_KEYS:
+        if key == "_search_domain":
+            spec["search_domain"] = value
             continue
-        if key == "status":
-            spec["enabled"] = value == "active"
+        if key in _IDENTITY_KEYS or key in _DROP_KEYS:
             continue
         if key == "dependencies":
             spec["depends_on"] = value
