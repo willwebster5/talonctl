@@ -1,5 +1,5 @@
 """
-State Manager v3.0
+State Manager v4.0
 
 Manages the deployment state file for all resources across all providers.
 Supports optional remote state sync to CrowdStrike NGSIEM lookup files.
@@ -37,9 +37,9 @@ class StateManager:
     """
     Manages the unified state file for all deployed resources.
 
-    State file format v3.0:
+    State file format v4.0:
     {
-        "version": "3.0",
+        "version": "4.0",
         "last_updated": "ISO8601",
         "metadata": {
             "deployed_by": "user@example.com",
@@ -64,7 +64,7 @@ class StateManager:
     }
     """
 
-    STATE_VERSION = "3.0"
+    STATE_VERSION = "4.0"
 
     def __init__(
         self,
