@@ -7,6 +7,7 @@ from pathlib import Path
 import click
 
 from talonctl.commands._common import console
+from talonctl.core.state_manager import StateManager
 
 RESOURCE_DIRS = [
     "detections",
@@ -47,9 +48,11 @@ def init(ctx, path):
     templates_dir = Path(__file__).parent.parent / "templates" / "init"
     _copy_templates(templates_dir, project_dir)
 
-    # Create state file
+    # Create state file. Use the same `version` key/value StateManager reads/writes
+    # (sourced from STATE_VERSION) so a freshly-scaffolded project is never stamped
+    # with a stale or mismatched format version.
     (project_dir / ".crowdstrike").mkdir(exist_ok=True)
-    state = {"format_version": "3.0", "resources": {}}
+    state = {"version": StateManager.STATE_VERSION, "resources": {}}
     (project_dir / ".crowdstrike" / "deployed_state.json").write_text(json.dumps(state, indent=2) + "\n")
 
     # Create .gitignore
