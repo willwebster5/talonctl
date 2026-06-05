@@ -7,6 +7,18 @@ from unittest.mock import Mock
 
 from talonctl.providers.saved_search_provider import SavedSearchProvider
 from talonctl.core import ResourceAction
+from tests.unit._helpers import make_envelope
+
+
+def _env(flat):
+    """Wrap a legacy flat saved_search dict as an Envelope for the provider's
+    Envelope-consuming methods. Defaults a resource_id (which v1_to_v2 requires)
+    from the name when the test dict omits it — these tests assert on validation
+    errors / planned changes, not on resource_id, so the default is inert.
+    """
+    if "resource_id" not in flat:
+        flat = {**flat, "resource_id": "test_resource"}
+    return make_envelope(flat, "saved_search")
 
 
 class TestSavedSearchProvider:
@@ -36,7 +48,7 @@ class TestSavedSearchProvider:
             "description": "Test saved query",
         }
 
-        errors = provider.validate_template(template)
+        errors = provider.validate_template(_env(template))
         assert errors == []
 
     def test_validate_template_missing_required_fields(self, provider):
@@ -46,7 +58,7 @@ class TestSavedSearchProvider:
             # Missing: $schema, queryString, _search_domain
         }
 
-        errors = provider.validate_template(template)
+        errors = provider.validate_template(_env(template))
         assert len(errors) >= 3
         assert any("$schema" in err for err in errors)
         assert any("queryString" in err for err in errors)
@@ -61,7 +73,7 @@ class TestSavedSearchProvider:
             "_search_domain": "invalid_domain",
         }
 
-        errors = provider.validate_template(template)
+        errors = provider.validate_template(_env(template))
         assert any("_search_domain" in err for err in errors)
         assert any("invalid_domain" in err for err in errors)
 
@@ -74,14 +86,14 @@ class TestSavedSearchProvider:
             "_search_domain": "falcon",
         }
 
-        errors = provider.validate_template(template)
+        errors = provider.validate_template(_env(template))
         assert any("queryString" in err for err in errors)
 
     def test_validate_template_empty_name(self, provider):
         """Test validation catches empty name"""
         template = {"name": "", "queryString": "| limit 10", "_search_domain": "falcon"}
 
-        errors = provider.validate_template(template)
+        errors = provider.validate_template(_env(template))
         assert any("name" in err for err in errors)
 
     def test_validate_template_invalid_description_type(self, provider):
@@ -93,7 +105,7 @@ class TestSavedSearchProvider:
             "description": 12345,  # Should be string
         }
 
-        errors = provider.validate_template(template)
+        errors = provider.validate_template(_env(template))
         assert any("description" in err for err in errors)
 
     def test_validate_template_with_optional_fields(self, provider):
@@ -107,7 +119,7 @@ class TestSavedSearchProvider:
             "timeInterval": "24h",
         }
 
-        errors = provider.validate_template(template)
+        errors = provider.validate_template(_env(template))
         assert errors == []
 
     def test_fetch_remote_state_success(self, provider, mock_falcon):
@@ -274,12 +286,14 @@ description: Test query
             "_search_domain": "falcon",
         }
 
-        change = provider.plan_create(template, "/path/to/template.yaml")
+        env = _env(template)
+        change = provider.plan_create(env, "/path/to/template.yaml")
 
         assert change.action == ResourceAction.CREATE
         assert change.resource_type == "saved_search"
         assert change.resource_name == "new_query"
-        assert change.new_value == template
+        assert change.new_value == env.to_working_dict()
+        assert change.envelope is env
 
     def test_plan_update_with_changes(self, provider):
         """Test planning an update when content changed"""
@@ -297,7 +311,7 @@ description: Test query
             "_search_domain": "falcon",
         }
 
-        change = provider.plan_update(template, current_state, "/path/to/template.yaml")
+        change = provider.plan_update(_env(template), current_state, "/path/to/template.yaml")
 
         assert change.action == ResourceAction.UPDATE
         assert change.resource_type == "saved_search"
@@ -324,7 +338,7 @@ description: Test query
             "_search_domain": "falcon",
         }
 
-        change = provider.plan_update(template, current_state, "/path/to/template.yaml")
+        change = provider.plan_update(_env(template), current_state, "/path/to/template.yaml")
 
         assert change.action == ResourceAction.NO_CHANGE
         assert change.resource_type == "saved_search"
@@ -364,7 +378,7 @@ description: Test query
 
         mock_falcon.command.return_value = {"status_code": 201, "body": {"resources": [{"id": "query-123"}]}}
 
-        result = provider.apply_create(template)
+        result = provider.apply_create(_env(template))
 
         assert result is not None
         assert result["id"] == "query-123"
@@ -387,7 +401,7 @@ description: Test query
 
         mock_falcon.command.return_value = {"status_code": 200, "body": {"resources": [{"id": "query-456"}]}}
 
-        result = provider.apply_update("query-123", template, current_state)
+        result = provider.apply_update("query-123", _env(template), current_state)
 
         assert result is not None
         assert result["id"] == "query-456"
@@ -462,16 +476,16 @@ description: Test query
 
     def test_v03_metadata_maturity_validates_on_saved_search(self, provider, minimal_saved_search):
         minimal_saved_search["metadata"] = {"maturity": {"created": "2026-04-16", "confidence": "high"}}
-        assert provider.validate_template(minimal_saved_search) == []
+        assert provider.validate_template(_env(minimal_saved_search)) == []
 
     def test_v03_metadata_ads_rejected_on_non_detection(self, provider, minimal_saved_search):
         minimal_saved_search["metadata"] = {"ads": {"goal": "g"}}
-        errors = provider.validate_template(minimal_saved_search)
+        errors = provider.validate_template(_env(minimal_saved_search))
         assert any("metadata.ads is only supported on detection resources" in e and "saved_search" in e for e in errors)
 
     def test_v03_old_top_level_ads_rejected_on_saved_search(self, provider, minimal_saved_search):
         minimal_saved_search["ads"] = {"goal": "g"}
-        errors = provider.validate_template(minimal_saved_search)
+        errors = provider.validate_template(_env(minimal_saved_search))
         assert any("Top-level 'ads:' is removed in v0.3.0" in e for e in errors)
 
     def test_v03_metadata_edits_do_not_change_content_hash(self, provider, minimal_saved_search):
