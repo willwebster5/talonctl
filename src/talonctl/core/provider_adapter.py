@@ -13,6 +13,7 @@ from datetime import datetime, timezone
 
 from talonctl.core.base_provider import BaseResourceProvider, ResourceAction, ResourceChange
 from talonctl.core.state_manager import StateManager, ResourceState
+from talonctl.core.v1_compat import v1_to_v2
 
 logger = logging.getLogger(__name__)
 
@@ -96,6 +97,7 @@ class ProviderAdapter:
         Returns:
             Dictionary with 'create', 'update', 'delete' lists
         """
+        # NOTE: no production callers; retained for the test surface — consolidation deferred (RFC §12).
         to_create = []
         to_update = []
         to_delete = []
@@ -106,8 +108,9 @@ class ProviderAdapter:
 
         # Plan creates and updates
         for rule_name, template in templates.items():
+            env = self._envelope_for(template, "detection")
             # Validate template first
-            errors = self.detection_provider.validate_template(template)
+            errors = self.detection_provider.validate_template(env)
             if errors:
                 logger.warning(f"Template validation failed for {rule_name}: {errors}")
                 continue
@@ -122,19 +125,19 @@ class ProviderAdapter:
                 if remote_state:
                     # Plan update
                     template_path = template.get("_template_path", "")
-                    change = self.detection_provider.plan_update(template, remote_state, template_path)
+                    change = self.detection_provider.plan_update(env, remote_state, template_path)
 
                     if change.action == ResourceAction.UPDATE:
                         to_update.append(change)
                 else:
                     # Rule in state but not deployed - recreate
                     template_path = template.get("_template_path", "")
-                    change = self.detection_provider.plan_create(template, template_path)
+                    change = self.detection_provider.plan_create(env, template_path)
                     to_create.append(change)
             else:
                 # New rule
                 template_path = template.get("_template_path", "")
-                change = self.detection_provider.plan_create(template, template_path)
+                change = self.detection_provider.plan_create(env, template_path)
                 to_create.append(change)
 
         # Plan deletes for rules in state but not in templates
@@ -161,9 +164,11 @@ class ProviderAdapter:
         Returns:
             Result metadata
         """
+        # NOTE: no production callers; retained for the test surface — consolidation deferred (RFC §12).
         if change.action == ResourceAction.CREATE:
             # Apply create
-            result = self.detection_provider.apply_create(change.new_value)
+            env = change.envelope or self._envelope_for(change.new_value, "detection")
+            result = self.detection_provider.apply_create(env)
 
             # Update state
             content_hash = self.detection_provider.compute_content_hash(change.new_value)
@@ -191,7 +196,8 @@ class ProviderAdapter:
             current_state = self.detection_provider.fetch_remote_state(change.resource_id)
 
             # Apply update
-            result = self.detection_provider.apply_update(change.resource_id, change.new_value, current_state or {})
+            env = change.envelope or self._envelope_for(change.new_value, "detection")
+            result = self.detection_provider.apply_update(change.resource_id, env, current_state or {})
 
             # Update state
             content_hash = self.detection_provider.compute_content_hash(change.new_value)
@@ -292,8 +298,9 @@ class ProviderAdapter:
 
         # Plan creates and updates
         for name, template in templates.items():
+            env = self._envelope_for(template, resource_type)
             # Validate template first
-            errors = provider.validate_template(template)
+            errors = provider.validate_template(env)
             if errors:
                 logger.warning(f"Template validation failed for {name}: {errors}")
                 continue
@@ -308,19 +315,19 @@ class ProviderAdapter:
                 if remote_state:
                     # Plan update
                     template_path = template.get("_template_path", template.get("template_path", ""))
-                    change = provider.plan_update(template, remote_state, template_path)
+                    change = provider.plan_update(env, remote_state, template_path)
 
                     if change.action == ResourceAction.UPDATE:
                         to_update.append(change)
                 else:
                     # Resource in state but not deployed - recreate
                     template_path = template.get("_template_path", template.get("template_path", ""))
-                    change = provider.plan_create(template, template_path)
+                    change = provider.plan_create(env, template_path)
                     to_create.append(change)
             else:
                 # New resource
                 template_path = template.get("_template_path", template.get("template_path", ""))
-                change = provider.plan_create(template, template_path)
+                change = provider.plan_create(env, template_path)
                 to_create.append(change)
 
         # Plan deletes for resources in state but not in templates
@@ -357,7 +364,8 @@ class ProviderAdapter:
 
         if change.action == ResourceAction.CREATE:
             # Apply create
-            result = provider.apply_create(template)
+            env = change.envelope or self._envelope_for(template, resource_type)
+            result = provider.apply_create(env)
 
             # Build resource ID (provider-specific)
             resource_id = self._extract_resource_id(result, resource_type)
@@ -388,7 +396,8 @@ class ProviderAdapter:
             current_state = provider.fetch_remote_state(change.resource_id)
 
             # Apply update
-            result = provider.apply_update(change.resource_id, template, current_state or {})
+            env = change.envelope or self._envelope_for(template, resource_type)
+            result = provider.apply_update(change.resource_id, env, current_state or {})
 
             # Extract resource ID (may have changed for some resources like saved_search)
             resource_id = self._extract_resource_id(result, resource_type)
@@ -432,6 +441,30 @@ class ProviderAdapter:
         else:
             logger.warning(f"Unknown action: {change.action}")
             return {}
+
+    @staticmethod
+    def _envelope_for(template: Dict[str, Any], resource_type: str) -> Any:
+        """Build an Envelope from a legacy flat-dict template for the flipped
+        provider methods (validate_template / plan_* / apply_*), re-injecting the
+        source path the way the loader does. The wrappers below build envelopes
+        here so their callers can keep passing flat dicts unchanged.
+
+        Loaded templates always carry a resource_id; v1_to_v2 enforces that. As a
+        defensive fallback (these wrappers have no production callers — only the
+        test surface), mint a resource_id from the name when the dict omits one
+        so the wrapper can still route through the provider method.
+        """
+        if not template.get("resource_id"):
+            name = template.get("name")
+            if name:
+                template = {
+                    **template,
+                    "resource_id": BaseResourceProvider._name_to_resource_id(name),
+                }
+        env = v1_to_v2(template, resource_type=resource_type)
+        if template.get("_template_path"):
+            env.origin_path = template["_template_path"]
+        return env
 
     def _extract_resource_id(self, result: Dict[str, Any], resource_type: str) -> str:
         """
@@ -482,6 +515,7 @@ class ProviderAdapter:
         to_update = []
         to_delete = []
 
+        # NOTE: no production callers; retained for the test surface — consolidation deferred (RFC §12).
         # Get current deployed saved searches from state
         deployed_searches = self.state_manager.get_all_resources("saved_search")
         deployed_search_names = {name.split(".")[1] for name in deployed_searches.keys()}
@@ -492,8 +526,9 @@ class ProviderAdapter:
             if "search_domain" not in template:
                 template["search_domain"] = search_domain
 
+            env = self._envelope_for(template, "saved_search")
             # Validate template first
-            errors = self.saved_search_provider.validate_template(template)
+            errors = self.saved_search_provider.validate_template(env)
             if errors:
                 logger.warning(f"Template validation failed for {search_name}: {errors}")
                 continue
@@ -509,18 +544,18 @@ class ProviderAdapter:
 
                 if current_state:
                     change = self.saved_search_provider.plan_update(
-                        template, current_state, template.get("template_path", "")
+                        env, current_state, template.get("template_path", "")
                     )
 
                     if change.action == ResourceAction.UPDATE:
                         to_update.append(change)
                 else:
                     # Resource in state but not found remotely - recreate
-                    change = self.saved_search_provider.plan_create(template, template.get("template_path", ""))
+                    change = self.saved_search_provider.plan_create(env, template.get("template_path", ""))
                     to_create.append(change)
             else:
                 # Plan create
-                change = self.saved_search_provider.plan_create(template, template.get("template_path", ""))
+                change = self.saved_search_provider.plan_create(env, template.get("template_path", ""))
                 to_create.append(change)
 
         # Plan deletes for deployed searches not in templates
@@ -548,9 +583,11 @@ class ProviderAdapter:
         Returns:
             Result metadata
         """
+        # NOTE: no production callers; retained for the test surface — consolidation deferred (RFC §12).
         if change.action == ResourceAction.CREATE:
             # Apply create
-            result = self.saved_search_provider.apply_create(template)
+            env = change.envelope or self._envelope_for(template, "saved_search")
+            result = self.saved_search_provider.apply_create(env)
 
             # Update state
             content_hash = self.saved_search_provider.compute_content_hash(template)
@@ -580,7 +617,8 @@ class ProviderAdapter:
         elif change.action == ResourceAction.UPDATE:
             # Apply update
             current_state = self.saved_search_provider.fetch_remote_state(change.resource_id)
-            result = self.saved_search_provider.apply_update(change.resource_id, template, current_state)
+            env = change.envelope or self._envelope_for(template, "saved_search")
+            result = self.saved_search_provider.apply_update(change.resource_id, env, current_state)
 
             # IMPORTANT: Update returns NEW ID!
             new_id = result["id"]
@@ -647,6 +685,7 @@ class ProviderAdapter:
         to_update = []
         to_delete = []
 
+        # NOTE: no production callers; retained for the test surface — consolidation deferred (RFC §12).
         # Get current deployed lookup files from state
         deployed_files = self.state_manager.get_all_resources("lookup_file")
         deployed_file_names = {name.split(".")[1] for name in deployed_files.keys()}
@@ -657,8 +696,9 @@ class ProviderAdapter:
             if "_search_domain" not in template:
                 template["_search_domain"] = search_domain
 
+            env = self._envelope_for(template, "lookup_file")
             # Validate template first
-            errors = self.lookup_file_provider.validate_template(template)
+            errors = self.lookup_file_provider.validate_template(env)
             if errors:
                 logger.warning(f"Template validation failed for {file_name}: {errors}")
                 continue
@@ -674,18 +714,18 @@ class ProviderAdapter:
 
                 if current_state:
                     change = self.lookup_file_provider.plan_update(
-                        template, current_state, template.get("template_path", "")
+                        env, current_state, template.get("template_path", "")
                     )
 
                     if change.action == ResourceAction.UPDATE:
                         to_update.append(change)
                 else:
                     # Resource in state but not found remotely - recreate
-                    change = self.lookup_file_provider.plan_create(template, template.get("template_path", ""))
+                    change = self.lookup_file_provider.plan_create(env, template.get("template_path", ""))
                     to_create.append(change)
             else:
                 # Plan create
-                change = self.lookup_file_provider.plan_create(template, template.get("template_path", ""))
+                change = self.lookup_file_provider.plan_create(env, template.get("template_path", ""))
                 to_create.append(change)
 
         # Plan deletes for deployed files not in templates
@@ -713,9 +753,11 @@ class ProviderAdapter:
         Returns:
             Result metadata from the provider
         """
+        # NOTE: no production callers; retained for the test surface — consolidation deferred (RFC §12).
         if change.action == ResourceAction.CREATE:
             # Apply create
-            result = self.lookup_file_provider.apply_create(template)
+            env = change.envelope or self._envelope_for(template, "lookup_file")
+            result = self.lookup_file_provider.apply_create(env)
 
             # Extract dependencies
             dependencies = self.lookup_file_provider.extract_dependencies(template)
@@ -748,7 +790,8 @@ class ProviderAdapter:
             current_state = self.lookup_file_provider.fetch_remote_state(change.resource_id)
 
             # Apply update
-            result = self.lookup_file_provider.apply_update(change.resource_id, template, current_state or {})
+            env = change.envelope or self._envelope_for(template, "lookup_file")
+            result = self.lookup_file_provider.apply_update(change.resource_id, env, current_state or {})
 
             # Extract dependencies
             dependencies = self.lookup_file_provider.extract_dependencies(template)
