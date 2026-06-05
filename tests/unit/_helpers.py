@@ -17,7 +17,7 @@ def make_envelope(flat: dict, resource_type: str, origin_path: Optional[str] = N
 # migrated; cross-cutting tests use this to pass the right input shape per
 # provider. Detection is the worked example (Task 6); Task 7 adds the rest.
 ENVELOPE_CONSUMING_TYPES = frozenset(
-    {"detection", "saved_search", "lookup_file", "dashboard", "workflow", "rtr_script"}
+    {"detection", "saved_search", "lookup_file", "dashboard", "workflow", "rtr_script", "rtr_put_file"}
 )
 
 

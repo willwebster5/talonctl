@@ -8,6 +8,22 @@ from unittest.mock import Mock
 
 from talonctl.providers.rtr_put_file_provider import RTRPutFileProvider
 from talonctl.core import ResourceAction
+from tests.unit._helpers import make_envelope
+
+
+def _env(flat):
+    """Wrap a legacy flat rtr_put_file dict as an Envelope for the provider's
+    Envelope-consuming methods. Defaults a resource_id (which v1_to_v2 mints
+    from name for rtr_put_file, but needs an explicit one when the test dict
+    omits both) — these tests assert on validation/planned changes, not
+    resource_id, so the default is inert. The provider resolves file_path
+    relative to _template_path, so pass origin_path to re-inject it the way the
+    loader will.
+    """
+    if "resource_id" not in flat:
+        flat = {**flat, "resource_id": "test_resource"}
+    origin_path = flat.get("_template_path")
+    return make_envelope(flat, "rtr_put_file", origin_path=origin_path)
 
 
 class TestRTRPutFileProvider:
@@ -59,7 +75,7 @@ class TestRTRPutFileProvider:
             "file_path": "tool.exe",
             "_template_path": str(template_path),
         }
-        errors = provider.validate_template(template)
+        errors = provider.validate_template(_env(template))
         assert errors == []
 
     def test_validate_template_missing_name(self, provider, binary_file, template_path):
@@ -68,7 +84,7 @@ class TestRTRPutFileProvider:
             "file_path": "tool.exe",
             "_template_path": str(template_path),
         }
-        errors = provider.validate_template(template)
+        errors = provider.validate_template(_env(template))
         assert any("name" in err.lower() for err in errors)
 
     def test_validate_template_missing_description(self, provider, binary_file, template_path):
@@ -77,7 +93,7 @@ class TestRTRPutFileProvider:
             "file_path": "tool.exe",
             "_template_path": str(template_path),
         }
-        errors = provider.validate_template(template)
+        errors = provider.validate_template(_env(template))
         assert any("description" in err.lower() for err in errors)
 
     def test_validate_template_missing_file_path(self, provider):
@@ -85,7 +101,7 @@ class TestRTRPutFileProvider:
             "name": "tool.exe",
             "description": "test",
         }
-        errors = provider.validate_template(template)
+        errors = provider.validate_template(_env(template))
         assert any("file_path" in err.lower() for err in errors)
 
     def test_validate_template_file_not_found(self, provider, template_path):
@@ -95,7 +111,7 @@ class TestRTRPutFileProvider:
             "file_path": "nonexistent.exe",
             "_template_path": str(template_path),
         }
-        errors = provider.validate_template(template)
+        errors = provider.validate_template(_env(template))
         assert any("not found" in err.lower() for err in errors)
 
     def test_validate_template_empty_name(self, provider, binary_file, template_path):
@@ -105,7 +121,7 @@ class TestRTRPutFileProvider:
             "file_path": "tool.exe",
             "_template_path": str(template_path),
         }
-        errors = provider.validate_template(template)
+        errors = provider.validate_template(_env(template))
         assert any("non-empty" in err for err in errors)
 
     def test_validate_template_empty_file_path(self, provider):
@@ -114,7 +130,7 @@ class TestRTRPutFileProvider:
             "description": "test",
             "file_path": "   ",
         }
-        errors = provider.validate_template(template)
+        errors = provider.validate_template(_env(template))
         assert any("file_path" in err.lower() for err in errors)
 
     def test_validate_template_non_string_file_path(self, provider):
@@ -123,7 +139,7 @@ class TestRTRPutFileProvider:
             "description": "test",
             "file_path": 12345,
         }
-        errors = provider.validate_template(template)
+        errors = provider.validate_template(_env(template))
         assert any("file_path" in err.lower() and "string" in err.lower() for err in errors)
 
     # --- Content Hashing ---
@@ -200,10 +216,12 @@ class TestRTRPutFileProvider:
             "file_path": "tool.exe",
             "_template_path": str(template_path),
         }
-        change = provider.plan_create(template, "rtr_put_files/tool.yaml")
+        env = _env(template)
+        change = provider.plan_create(env, "rtr_put_files/tool.yaml")
         assert change.action == ResourceAction.CREATE
         assert change.resource_type == "rtr_put_file"
         assert change.resource_name == "tool.exe"
+        assert change.envelope is env
 
     def test_plan_update_no_change(self, provider, binary_file, template_path):
         template = {
@@ -220,7 +238,7 @@ class TestRTRPutFileProvider:
             "file_path": "tool.exe",
             "_template_path": str(template_path),
         }
-        change = provider.plan_update(template, current, "rtr_put_files/tool.yaml")
+        change = provider.plan_update(_env(template), current, "rtr_put_files/tool.yaml")
         assert change.action == ResourceAction.NO_CHANGE
 
     def test_plan_update_file_content_changed(self, provider, tmp_path):
@@ -246,7 +264,7 @@ class TestRTRPutFileProvider:
             "file_path": "tool_a.exe",
             "_template_path": str(tpl_path),
         }
-        change = provider.plan_update(template, current, "rtr_put_files/tool.yaml")
+        change = provider.plan_update(_env(template), current, "rtr_put_files/tool.yaml")
         assert change.action == ResourceAction.UPDATE
         assert "file_content" in change.changes
         assert "SHA256:" in change.changes["file_content"]["old"]
@@ -396,7 +414,7 @@ class TestRTRPutFileProvider:
             "file_path": "tool.exe",
             "_template_path": str(template_path),
         }
-        result = provider_with_api.apply_create(template)
+        result = provider_with_api.apply_create(_env(template))
         assert result["id"] == "id1"
 
     def test_apply_delete_alias(self, provider_with_api):
@@ -420,11 +438,11 @@ class TestRTRPutFileProvider:
 
     def test_v03_metadata_maturity_validates_on_rtr_put(self, provider, minimal_rtr_put):
         minimal_rtr_put["metadata"] = {"maturity": {"created": "2026-04-16"}}
-        assert provider.validate_template(minimal_rtr_put) == []
+        assert provider.validate_template(_env(minimal_rtr_put)) == []
 
     def test_v03_metadata_ads_rejected_on_rtr_put(self, provider, minimal_rtr_put):
         minimal_rtr_put["metadata"] = {"ads": {"goal": "g"}}
-        errors = provider.validate_template(minimal_rtr_put)
+        errors = provider.validate_template(_env(minimal_rtr_put))
         assert any("metadata.ads is only supported on detection resources" in e and "rtr_put_file" in e for e in errors)
 
     def test_v03_metadata_edits_do_not_change_content_hash(self, provider, minimal_rtr_put):
