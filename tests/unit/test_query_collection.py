@@ -1,5 +1,8 @@
 """Tests for talonctl.core.query_collection."""
 
+from pathlib import Path
+
+from talonctl.core.envelope import Envelope
 from talonctl.core.query_collection import QueryRef, collect_queries_from_templates
 from talonctl.core.template_discovery import DiscoveredTemplate
 from tests.unit._helpers import make_envelope
@@ -149,3 +152,84 @@ def test_mixed_types_only_include_known():
     )
     assert len(refs) == 1
     assert refs[0].resource_type == "detection"
+
+
+# ---------------------------------------------------------------------------
+# v2-authored (native Envelope) tests — verify the template_data property
+# transparently surfaces spec fields to collect_queries_from_templates.
+# ---------------------------------------------------------------------------
+
+
+def _make_v2(resource_type: str, name: str, spec: dict, metadata: dict | None = None) -> DiscoveredTemplate:
+    """Build a DiscoveredTemplate from a *native* v2 Envelope (not via v1_to_v2)."""
+    from talonctl.core.envelope import TYPE_TO_KIND
+
+    md = {"resource_id": name}
+    if metadata:
+        md.update(metadata)
+    env = Envelope(
+        api_version="talon/v2",
+        kind=TYPE_TO_KIND[resource_type],
+        metadata=md,
+        spec=spec,
+    )
+    return DiscoveredTemplate(
+        resource_type=resource_type,
+        name=name,
+        file_path=Path("/tmp/ignored.yaml"),
+        tags=[],
+        envelope=env,
+    )
+
+
+def test_v2_detection_filter_extracted():
+    """Native v2 Envelope: detection.search.filter is found by the extractor."""
+    t = _make_v2("detection", "v2_rule", {"search": {"filter": "#vendor=aws | count()"}})
+    refs = collect_queries_from_templates({"detection": [t]})
+    assert len(refs) == 1
+    assert refs[0].query == "#vendor=aws | count()"
+    assert refs[0].location == "search.filter"
+    assert refs[0].resource_id == "detection.v2_rule"
+
+
+def test_v2_saved_search_query_string_extracted():
+    """Native v2 Envelope: saved_search.query_string -> queryString round-trip via to_working_dict."""
+    t = _make_v2("saved_search", "v2_search", {"query_string": "user=* | count()"})
+    refs = collect_queries_from_templates({"saved_search": [t]})
+    assert len(refs) == 1
+    assert refs[0].query == "user=* | count()"
+    assert refs[0].location == "queryString"
+    assert refs[0].resource_type == "saved_search"
+
+
+def test_v2_dashboard_widgets_extracted():
+    """Native v2 Envelope: dashboard widget queryStrings are fanned out."""
+    spec = {
+        "widgets": {
+            "top_ips": {"queryString": "sourceIPAddress=* | groupBy(ip)"},
+        },
+        "parameters": {},
+    }
+    t = _make_v2("dashboard", "v2_dash", spec)
+    refs = collect_queries_from_templates({"dashboard": [t]})
+    assert len(refs) == 1
+    assert refs[0].location == "widgets.top_ips.queryString"
+
+
+def test_v2_and_v1_detection_produce_identical_query_refs():
+    """v2-native and v1-compat Envelopes produce identical QueryRef output."""
+    query = "#vendor=okta | count()"
+
+    # v1 path (via make_envelope / v1_to_v2)
+    t_v1 = _make("detection", "same_rule", {"search": {"filter": query}})
+    # v2 native path
+    t_v2 = _make_v2("detection", "same_rule", {"search": {"filter": query}})
+
+    refs_v1 = collect_queries_from_templates({"detection": [t_v1]})
+    refs_v2 = collect_queries_from_templates({"detection": [t_v2]})
+
+    assert len(refs_v1) == 1
+    assert len(refs_v2) == 1
+    assert refs_v1[0].query == refs_v2[0].query
+    assert refs_v1[0].location == refs_v2[0].location
+    assert refs_v1[0].resource_id == refs_v2[0].resource_id
