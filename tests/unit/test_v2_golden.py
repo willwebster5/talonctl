@@ -1,6 +1,6 @@
 from pathlib import Path
 from talonctl.core.envelope_loader import load_envelopes
-from talonctl.core.envelope_validation import validate_envelope, check_depends_on_cycles
+from talonctl.core.envelope_validation import validate_authored_envelope, check_depends_on_cycles
 
 FIXTURE = Path(__file__).parent.parent / "fixtures" / "v2" / "example_resources.yaml"
 
@@ -13,7 +13,7 @@ def test_example_module_loads_as_three_resources():
 def test_every_resource_validates():
     envs = load_envelopes(FIXTURE)
     for env in envs:
-        assert validate_envelope(env) == [], env.resource_id
+        assert validate_authored_envelope(env) == [], env.resource_id
 
 
 def test_no_dependency_cycle():

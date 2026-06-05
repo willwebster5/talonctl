@@ -32,8 +32,13 @@ def _to_document(env: Envelope) -> Dict[str, Any]:
     return doc
 
 
-def validate_envelope(env: Envelope) -> List[str]:
-    """Return a list of human-readable schema errors ('' empty == valid)."""
+def validate_authored_envelope(env: Envelope) -> List[str]:
+    """Return a list of human-readable schema errors for the authored contract.
+
+    Enforces the authoring-only schema: must run BEFORE any status attachment.
+    If called after a status field has been injected onto the Envelope, the
+    schema will reject it as an unexpected field.
+    """
     validator = jsonschema.Draft202012Validator(_schema())
     errors = []
     for err in sorted(validator.iter_errors(_to_document(env)), key=lambda e: list(e.path)):
