@@ -9,7 +9,7 @@ from talonctl.core.base_provider import BaseResourceProvider
 from talonctl.core.envelope import Envelope, TYPE_TO_KIND
 
 # Identity keys pulled OUT of the v1 top level into metadata (never land in spec).
-_IDENTITY_KEYS = {"resource_id", "name", "labels", "tags", "_search_domain"}
+_IDENTITY_KEYS = {"resource_id", "name", "labels", "tags"}
 # Dropped entirely (subsumed or reconciled elsewhere).
 _DROP_KEYS = {"rule_id"}
 # Explicit camelCase -> snake_case spec renames (allow-list, not blanket).

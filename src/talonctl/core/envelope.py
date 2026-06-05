@@ -7,6 +7,7 @@ loader, validator, and (later) providers.
 
 from __future__ import annotations
 
+import copy
 from dataclasses import dataclass
 from typing import Any, Dict, Optional
 
@@ -51,6 +52,10 @@ class Envelope:
         The round-trip-tested inverse of v1_compat.v1_to_v2. Provider internals
         (payload build, compute_content_hash, dependency/FQL extraction) read this
         dict's keys unchanged, so content hashes stay byte-identical.
+
+        The returned dict is a deep copy fully independent of this Envelope:
+        callers may mutate it (including nested values) without corrupting the
+        shared Envelope's spec/metadata.
         """
         working: Dict[str, Any] = dict(self.spec)
         for spec_key, legacy_key in Envelope._SPEC_TO_WORKING_RENAMES.items():
@@ -66,7 +71,7 @@ class Envelope:
             working["tags"] = md["tags"]
         if self.origin_path:
             working["_template_path"] = self.origin_path
-        return working
+        return copy.deepcopy(working)
 
     @property
     def resource_id(self) -> str:

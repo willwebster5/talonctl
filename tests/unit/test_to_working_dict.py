@@ -43,6 +43,15 @@ def test_saved_search_renames_back_to_legacy_keys():
     assert working["labels"] == {"team": "soc"}
 
 
+def test_working_dict_is_isolated_from_envelope():
+    env = v1_to_v2(V1_DETECTION, resource_type="detection")
+    w = env.to_working_dict()
+    w["search"]["filter"] = "MUTATED"
+    w["tags"].append("MUTATED")
+    assert env.spec["search"]["filter"] == "x"  # envelope untouched
+    assert env.metadata["tags"] == ["aws", "auth"]  # envelope untouched
+
+
 def test_origin_path_becomes_template_path():
     env = v1_to_v2(V1_DETECTION, resource_type="detection")
     env.origin_path = "/proj/resources/detections/x.yaml"
