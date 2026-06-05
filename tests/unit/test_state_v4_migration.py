@@ -83,3 +83,19 @@ def test_state_with_no_version_key_upgrades_to_v4(tmp_path):
     state_file.write_text(json.dumps({"resources": {}}))  # pre-versioning: no `version`
     mgr = StateManager(state_file)
     assert mgr.export_to_dict()["version"] == "4.0"
+
+
+def test_migration_runs_after_remote_merge_reinjects_v3(tmp_path, monkeypatch):
+    """Load-bearing ordering: _merge_remote_state re-stamps version from the remote
+    payload, so a remote v3 file re-injects '3.0'. Migration must run AFTER the
+    merge — assert the loaded in-memory state is '4.0', not '3.0'."""
+    local = _seed(tmp_path, "v3_clean.json")  # local state on disk, version 3.0
+
+    # remote payload is also version 3.0; returning it bypasses the real network
+    remote_payload = json.loads((FIXTURES / "v3_clean.json").read_text())
+    monkeypatch.setattr(StateManager, "_sync_from_remote", lambda self: remote_payload)
+
+    mgr = StateManager(local, falcon_client=object(), remote_state_enabled=True)
+
+    # the merge re-injected "3.0"; migration ran after it and re-stamped "4.0"
+    assert mgr.export_to_dict()["version"] == "4.0"
