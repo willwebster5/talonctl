@@ -176,7 +176,7 @@ class StateManager:
         if ambiguous:
             logger.warning(
                 "State upgraded to v%s with %d ambiguous display-name key(s) left "
-                "untouched; run `talonctl migrate` to reconcile them against "
+                "untouched; a future `talonctl migrate` will reconcile them against "
                 "templates: %s",
                 self.STATE_VERSION,
                 len(ambiguous),

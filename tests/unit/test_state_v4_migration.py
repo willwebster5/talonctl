@@ -76,3 +76,10 @@ def test_v4_file_is_a_noop(tmp_path, caplog):
         mgr = StateManager(state_file)  # reload an already-v4 file
     assert mgr.export_to_dict()["version"] == "4.0"
     assert "ambiguous" not in caplog.text.lower()
+
+
+def test_state_with_no_version_key_upgrades_to_v4(tmp_path):
+    state_file = tmp_path / "deployed_state.json"
+    state_file.write_text(json.dumps({"resources": {}}))  # pre-versioning: no `version`
+    mgr = StateManager(state_file)
+    assert mgr.export_to_dict()["version"] == "4.0"
