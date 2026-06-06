@@ -2,7 +2,15 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from talonctl.core.migrate import FileRewrap, MigrationReport, StateReconcile, TemplateIndex, reconcile_state
+from talonctl.core.migrate import (
+    FileRewrap,
+    MigrationReport,
+    StateReconcile,
+    TemplateIndex,
+    build_template_index,
+    reconcile_state,
+)
+from talonctl.core.template_discovery import DiscoveredTemplate
 
 
 def _idx(ids, by_path=None, by_display=None):
@@ -102,3 +110,49 @@ def test_migration_report_to_dict_is_json_serializable():
     assert data["state"]["rekeyed"][0] == ["detection", "Old", "old"]
     assert data["state"]["orphans"] == [["workflow", "Ghost"]]
     json.dumps(data)
+
+
+# -- build_template_index direct tests -----------------------------------------
+
+
+def _tmpl(rtype, name, file_path, display_name):
+    return DiscoveredTemplate(
+        resource_type=rtype, name=name, file_path=Path(file_path), tags=[], display_name=display_name
+    )
+
+
+def test_build_index_single_template_per_file():
+    discovered = {"detection": [_tmpl("detection", "susp", "/r/detections/susp.yaml", "Susp")]}
+    index = build_template_index(discovered)
+    assert ("detection", "susp") in index.ids
+    assert index.by_path[str(Path("/r/detections/susp.yaml").resolve())] == [("detection", "susp")]
+    assert index.by_display[("detection", "Susp")] == "susp"
+
+
+def test_build_index_same_display_same_type_is_ambiguous_none():
+    discovered = {
+        "detection": [
+            _tmpl("detection", "a", "/r/detections/a.yaml", "Dup"),
+            _tmpl("detection", "b", "/r/detections/b.yaml", "Dup"),
+        ]
+    }
+    index = build_template_index(discovered)
+    assert index.by_display[("detection", "Dup")] is None  # ambiguous
+    assert ("detection", "a") in index.ids and ("detection", "b") in index.ids
+
+
+def test_build_index_same_display_different_types_are_separate():
+    discovered = {
+        "detection": [_tmpl("detection", "x", "/r/detections/x.yaml", "Shared")],
+        "saved_search": [_tmpl("saved_search", "y", "/r/saved_searches/y.yaml", "Shared")],
+    }
+    index = build_template_index(discovered)
+    assert index.by_display[("detection", "Shared")] == "x"
+    assert index.by_display[("saved_search", "Shared")] == "y"
+
+
+def test_build_index_multiple_resources_same_file():
+    f = "/r/detections/multi.yaml"
+    discovered = {"detection": [_tmpl("detection", "a", f, "A"), _tmpl("detection", "b", f, "B")]}
+    index = build_template_index(discovered)
+    assert sorted(index.by_path[str(Path(f).resolve())]) == [("detection", "a"), ("detection", "b")]

@@ -146,6 +146,7 @@ def _resolve(rtype: str, entry: Dict[str, Any], index: TemplateIndex) -> Tuple[O
             if len(picked) == 1:
                 return picked[0], False
             return None, True
+    # template_path no longer in the index (deleted/retyped) -> degrade to display-name resolution
     display = entry.get("display_name")
     if display is not None and (rtype, display) in index.by_display:
         rid = index.by_display[(rtype, display)]
