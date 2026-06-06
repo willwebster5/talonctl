@@ -479,6 +479,10 @@ class TestFsTemplateDiscoveryEnvelopeDelegation:
 
         assert v2.template_data["_template_path"].endswith("v2_rule.yaml")
 
+    def test_valid_resource_types_matches_type_to_dir(self):
+        """Drift guard: VALID_RESOURCE_TYPES and TYPE_TO_DIR must cover the same keys."""
+        assert set(FsTemplateDiscovery.VALID_RESOURCE_TYPES) == set(FsTemplateDiscovery.TYPE_TO_DIR)
+
     def test_kind_dir_mismatch_skipped_with_warning(self, tmp_path, caplog):
         resources = tmp_path / "resources"
         # A Detection authored under saved_searches/ — kind/dir mismatch.

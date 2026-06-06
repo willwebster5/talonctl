@@ -75,3 +75,38 @@ def test_rewrap_is_idempotent(tmp_path):
     src.write_text(first)
     fr2 = next(r for r in scan_templates(res) if r.path == src)
     assert fr2.status == "skip"  # second pass: already v2
+
+
+def test_v2_file_with_trailing_scalar_is_error(tmp_path):
+    """A v2 file containing a bare scalar document must be status=error, not skip."""
+    res = tmp_path / "resources"
+    _write(
+        res / "detections" / "scalar.yaml",
+        "apiVersion: talon/v2\nkind: Detection\nmetadata:\n  resource_id: a\nspec:\n  severity: 1\n---\nhello world\n",
+    )
+    fr = next(r for r in scan_templates(res) if r.path.name == "scalar.yaml")
+    assert fr.status == "error"
+    assert fr.errors
+
+
+def test_multidoc_v1_file_rewraps_both_resources(tmp_path):
+    """A single multi-doc file with two v1 detections rewraps to status=rewrap with both kinds."""
+    res = tmp_path / "resources"
+    content = (
+        "# comment one\n"
+        "resource_id: rule_a\nname: Rule A\nseverity: 70\nstatus: active\nsearch:\n  filter: '#repo=x'\n"
+        "---\n"
+        "# comment two\n"
+        "# comment three\n"
+        "resource_id: rule_b\nname: Rule B\nseverity: 50\nstatus: active\nsearch:\n  filter: '#repo=y'\n"
+    )
+    _write(res / "detections" / "multi.yaml", content)
+    fr = next(r for r in scan_templates(res) if r.path.name == "multi.yaml")
+    assert fr.status == "rewrap"
+    assert fr.kinds == ["Detection", "Detection"]
+    assert fr.comments_dropped == 3  # one + two + three
+
+    # Reload new_text and verify both resource_ids present
+    docs = list(yaml.safe_load_all(fr.new_text))
+    resource_ids = {d["metadata"]["resource_id"] for d in docs if isinstance(d, dict)}
+    assert resource_ids == {"rule_a", "rule_b"}

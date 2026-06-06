@@ -36,7 +36,11 @@ class FileRewrap:
 
 def _all_docs_v2(raw_text: str) -> bool:
     """True iff every mapping document in the file already declares apiVersion
-    talon/v2 (handles multi-doc and top-level-list files like the loader does)."""
+    talon/v2 (handles multi-doc and top-level-list files like the loader does).
+
+    Raises ``ValueError`` on non-None, non-mapping, non-list scalar documents
+    (e.g. a bare ``hello world`` YAML document), matching the behaviour of
+    ``envelope_loader._iter_documents``."""
     docs: List[dict] = []
     for item in yaml.safe_load_all(raw_text):
         if item is None:
@@ -45,6 +49,8 @@ def _all_docs_v2(raw_text: str) -> bool:
             docs.extend(d for d in item if isinstance(d, dict))
         elif isinstance(item, dict):
             docs.append(item)
+        else:
+            raise ValueError(f"document is not a mapping: {type(item).__name__}")
     return bool(docs) and all(d.get("apiVersion") == "talon/v2" for d in docs)
 
 
@@ -54,11 +60,11 @@ def _count_comment_lines(raw_text: str) -> int:
 
 def _scan_file(path: Path, resource_type: str) -> FileRewrap:
     raw = path.read_text()
-    if _all_docs_v2(raw):
-        return FileRewrap(path=path, status="skip")
     try:
+        if _all_docs_v2(raw):
+            return FileRewrap(path=path, status="skip")
         envelopes = load_envelopes(path, default_resource_type=resource_type)
-    except Exception as e:  # malformed v1 (e.g. missing resource_id)
+    except Exception as e:  # malformed YAML, non-mapping doc, missing resource_id, etc.
         return FileRewrap(path=path, status="error", errors=[str(e)])
 
     errors: List[str] = []
