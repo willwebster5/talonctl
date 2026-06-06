@@ -11,9 +11,12 @@ from typing import Any, List
 
 import yaml
 
-from talonctl.core.envelope import Envelope
+from talonctl.core.envelope import IDENTITY_METADATA_KEYS, Envelope
 
-# Identity metadata keys emitted first, in this fixed order.
+# Emit-order for identity metadata keys (must cover exactly IDENTITY_METADATA_KEYS
+# from talonctl.core.envelope — the frozenset is the source of truth for *which*
+# keys are identity; this tuple encodes *in what order* they appear in serialized
+# YAML).  A drift-guard test in test_envelope_serializer.py enforces parity.
 _METADATA_ORDER = ("resource_id", "name", "labels", "tags")
 
 
@@ -33,8 +36,8 @@ def _document(env: Envelope) -> dict:
     for key in _METADATA_ORDER:
         if key in env.metadata:
             metadata[key] = _canonical(env.metadata[key])
-    for key in sorted(env.metadata):  # remaining metadata-block keys, sorted
-        if key not in metadata:
+    for key in sorted(env.metadata):  # remaining (non-identity) metadata-block keys, sorted
+        if key not in IDENTITY_METADATA_KEYS:
             metadata[key] = _canonical(env.metadata[key])
     # status is server-assigned and never authored -> never serialized.
     return {

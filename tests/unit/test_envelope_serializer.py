@@ -6,9 +6,9 @@ import pytest
 import yaml
 from unittest.mock import MagicMock
 
-from talonctl.core.envelope import Envelope
+from talonctl.core.envelope import IDENTITY_METADATA_KEYS, Envelope
 from talonctl.core.envelope_loader import load_envelopes
-from talonctl.core.envelope_serializer import serialize_envelope, serialize_envelopes
+from talonctl.core.envelope_serializer import _METADATA_ORDER, serialize_envelope, serialize_envelopes
 from talonctl.core.v1_compat import v1_to_v2
 from talonctl.providers.dashboard_provider import DashboardProvider
 from talonctl.providers.detection_provider import DetectionProvider
@@ -43,6 +43,7 @@ _DETECTION = {
     "type": "ootb",
     "search": {"filter": "#x", "lookback": "1h"},
     "labels": {"team": "td"},
+    "metadata": {"maturity": "production"},  # non-identity metadata field; exercises envelope metadata round-trip
 }
 _SAVED_SEARCH = {
     "resource_id": "failed_logins",
@@ -116,3 +117,9 @@ def test_multi_doc_serialization_reloads_all(tmp_path):
     out.write_text(serialize_envelopes([a, b]))
     loaded = load_envelopes(out, default_resource_type="detection")
     assert {e.resource_id for e in loaded} == {"suspicious_process", "other"}
+
+
+def test_metadata_order_covers_identity_keys():
+    # _METADATA_ORDER encodes the emit-order of the identity set; if a key is
+    # added to IDENTITY_METADATA_KEYS, this forces an explicit ordering decision.
+    assert set(_METADATA_ORDER) == set(IDENTITY_METADATA_KEYS)
