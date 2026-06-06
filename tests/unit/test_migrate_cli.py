@@ -73,3 +73,51 @@ def test_json_output(tmp_path, monkeypatch):
     data = json.loads(out.read_text())
     assert data["dry_run"] is True
     assert data["templates"]["rewrap"]
+
+
+def _project_with_v3_state(tmp_path: Path) -> Path:
+    proj = _project(tmp_path)
+    state = {
+        "version": "3.0",
+        "resources": {
+            "detection": {
+                "Susp": {
+                    "type": "detection",
+                    "id": "rule-123",
+                    "content_hash": "abc",
+                    "template_path": str(proj / "resources" / "detections" / "susp.yaml"),
+                    "deployed_at": "2026-01-01T00:00:00Z",
+                    "last_modified": "2026-01-01T00:00:00Z",
+                    "provider_metadata": {},
+                    "dependencies": [],
+                    "display_name": "Susp",
+                }
+            }
+        },
+        "resource_graph": {"nodes": [], "edges": []},
+    }
+    (proj / ".crowdstrike" / "deployed_state.json").write_text(json.dumps(state))
+    return proj
+
+
+def test_state_only_dry_run_leaves_state_untouched(tmp_path, monkeypatch):
+    proj = _project_with_v3_state(tmp_path)
+    monkeypatch.chdir(proj)
+    statefile = proj / ".crowdstrike" / "deployed_state.json"
+    before = statefile.read_text()
+    result = CliRunner().invoke(cli, ["migrate", "--state-only"])
+    assert result.exit_code == 0, result.output
+    assert statefile.read_text() == before
+
+
+def test_state_only_write_rekeys_to_resource_id(tmp_path, monkeypatch):
+    proj = _project_with_v3_state(tmp_path)
+    monkeypatch.chdir(proj)
+    statefile = proj / ".crowdstrike" / "deployed_state.json"
+    result = CliRunner().invoke(cli, ["migrate", "--state-only", "--write"])
+    assert result.exit_code == 0, result.output
+    data = json.loads(statefile.read_text())
+    assert data["version"] == "4.0"
+    assert "susp" in data["resources"]["detection"]
+    assert "Susp" not in data["resources"]["detection"]
+    assert data["resources"]["detection"]["susp"]["id"] == "rule-123"
