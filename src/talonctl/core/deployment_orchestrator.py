@@ -20,6 +20,8 @@ from talonctl.core.provider_adapter import ProviderAdapter
 from talonctl.core.state_synchronizer import StateSynchronizer
 from talonctl.core.drift_detector import DriftDetector, DriftReport
 from talonctl.core.base_provider import ResourceAction, ResourceChange
+from talonctl.core.envelope import Envelope, TYPE_TO_KIND
+from talonctl.core.status_projection import attach_status
 from talonctl.core.query_collection import collect_queries_from_templates
 
 # Try to import NGSIEMClient for query validation
@@ -252,13 +254,17 @@ class DeploymentOrchestrator:
             if current_state:
                 logger.debug(f"Found state for '{template.name}' using legacy key '{template.display_name}'")
 
-        # Validate template
-        errors = provider.validate_template(template.template_data)
+        # Validate template (flipped providers consume the Envelope directly)
+        errors = provider.validate_template(template.envelope)
         if errors:
             logger.error(f"Template validation errors for {template.resource_id}:")
             for error in errors:
                 logger.error(f"  - {error}")
             raise ValueError(f"Invalid template: {template.resource_id}")
+
+        # Attach the read-only status projection from on-disk state (None == unmanaged)
+        # before planning, so providers see server-assigned fields on the Envelope.
+        attach_status(template.envelope, current_state, resource_type)
 
         # Determine action
         if not current_state:
@@ -300,6 +306,7 @@ class DeploymentOrchestrator:
             new_value=template.template_data,
             changes=changes_dict,
             template_path=str(template.file_path),
+            envelope=template.envelope,
         )
 
     def _compute_changes(self, new_template: Dict[str, Any], old_state: Dict[str, Any]) -> Dict[str, Any]:
@@ -700,10 +707,17 @@ class DeploymentOrchestrator:
                 resource_id = change.old_value.get("id")
                 logger.info(f"Rolling back update: restoring {change.resource_id} to previous state")
 
-                # Reconstruct old template from old_value
-                # This is a simplified approach - ideally old template would be preserved
-                old_template = change.old_value.copy()
-                result = provider.apply_update(resource_id, old_template)
+                # Reconstruct a minimal old-state Envelope from old_value.
+                # This is a simplified approach - ideally the old template would be
+                # preserved; the flipped providers consume Envelopes, so wrap the
+                # state dict to match the new apply_update signature.
+                rollback_env = Envelope(
+                    api_version="talon/v2",
+                    kind=TYPE_TO_KIND[change.resource_type],
+                    metadata={"resource_id": change.resource_id},
+                    spec=dict(change.old_value or {}),
+                )
+                result = provider.apply_update(resource_id, rollback_env, change.old_value)
                 return bool(result)
 
             elif change.action == ResourceAction.DELETE:
@@ -713,8 +727,13 @@ class DeploymentOrchestrator:
                     logger.warning(f"No old state to recreate {change.resource_id}")
                     return False
 
-                old_template = change.old_value.copy()
-                result = provider.apply_create(old_template)
+                rollback_env = Envelope(
+                    api_version="talon/v2",
+                    kind=TYPE_TO_KIND[change.resource_type],
+                    metadata={"resource_id": change.resource_id},
+                    spec=dict(change.old_value or {}),
+                )
+                result = provider.apply_create(rollback_env)
                 return bool(result)
 
             return False
@@ -739,7 +758,7 @@ class DeploymentOrchestrator:
 
         try:
             if change.action == ResourceAction.CREATE:
-                result = provider.apply_create(change.new_value)
+                result = provider.apply_create(change.envelope)
                 return result if result else None
 
             elif change.action == ResourceAction.UPDATE:
@@ -757,7 +776,7 @@ class DeploymentOrchestrator:
                 if not resource_id:
                     raise ValueError(f"No resource ID found for update of {change.resource_id}")
 
-                result = provider.apply_update(resource_id, change.new_value, change.old_value)
+                result = provider.apply_update(resource_id, change.envelope, change.old_value)
                 return result if result else None
 
             elif change.action == ResourceAction.REPLACE:
@@ -779,7 +798,7 @@ class DeploymentOrchestrator:
                 time.sleep(2)  # Allow API to process deletion before recreate
 
                 logger.info(f"Replacing {change.resource_id}: recreating")
-                result = provider.apply_create(change.new_value)
+                result = provider.apply_create(change.envelope)
                 return result if result else None
 
             elif change.action == ResourceAction.DELETE:
@@ -855,7 +874,8 @@ class DeploymentOrchestrator:
                 continue
 
             for template in templates:
-                errors = provider.validate_template(template.template_data)
+                # Flipped providers consume the Envelope directly.
+                errors = provider.validate_template(template.envelope)
                 results[template.resource_id] = errors
 
         valid_count = sum(1 for errors in results.values() if not errors)

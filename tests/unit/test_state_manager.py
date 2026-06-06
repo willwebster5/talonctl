@@ -31,7 +31,7 @@ class TestStateManager:
         assert manager.get_resource_count() == 0
 
         state = manager.export_to_dict()
-        assert state["version"] == "3.0"
+        assert state["version"] == "4.0"
         assert "resources" in state
         assert "resource_graph" in state
 
@@ -221,7 +221,7 @@ class TestStateManager:
         assert temp_state_file.exists()
         with open(temp_state_file, "r") as f:
             state = json.load(f)
-            assert state["version"] == "3.0"
+            assert state["version"] == "4.0"
             assert "detection" in state["resources"]
 
         # Verify file size is non-zero (fsync guarantee)

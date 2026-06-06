@@ -46,3 +46,11 @@ src/talonctl/_version.py
 
 # Git worktrees (isolated workspaces, not checked in)
 .worktrees/
+
+# direnv per-developer environment (not committed)
+.envrc
+
+# Coverage artifacts
+.coverage
+.coverage.*
+htmlcov/

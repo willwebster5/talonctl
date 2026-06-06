@@ -83,6 +83,7 @@ from talonctl.commands.auth import auth  # noqa: E402
 from talonctl.commands.health import health  # noqa: E402
 from talonctl.commands.metrics import metrics  # noqa: E402
 from talonctl.commands.find import find  # noqa: E402
+from talonctl.commands.migrate import migrate  # noqa: E402
 
 cli.add_command(validate)
 cli.add_command(plan)
@@ -101,3 +102,4 @@ cli.add_command(auth)
 cli.add_command(health)
 cli.add_command(metrics)
 cli.add_command(find)
+cli.add_command(migrate)

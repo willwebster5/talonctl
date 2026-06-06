@@ -33,13 +33,17 @@ class TestInitCommand:
         assert (project / ".gitignore").is_file()
 
     def test_creates_valid_state_file(self, tmp_path):
-        """State file should be valid JSON with correct format version."""
+        """State file should use the same `version` key/value StateManager reads."""
         import json
+
+        from talonctl.core.state_manager import StateManager
 
         runner = CliRunner()
         runner.invoke(cli, ["init", str(tmp_path / "myproject")])
         state = json.loads((tmp_path / "myproject" / ".crowdstrike" / "deployed_state.json").read_text())
-        assert state["format_version"] == "3.0"
+        # Must match StateManager's key/version, not a stale hardcoded `format_version`.
+        assert state["version"] == StateManager.STATE_VERSION
+        assert "format_version" not in state
         assert state["resources"] == {}
 
     def test_refuses_existing_directory_with_crowdstrike(self, tmp_path):

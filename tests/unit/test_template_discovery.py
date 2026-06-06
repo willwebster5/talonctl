@@ -2,11 +2,14 @@
 Unit tests for TemplateDiscovery
 """
 
+import textwrap
+
 import pytest
 from unittest.mock import Mock, patch
 from datetime import datetime, timezone
 
 from talonctl.core.template_library import TemplateDiscovery, Template
+from talonctl.core.template_discovery import TemplateDiscovery as FsTemplateDiscovery
 
 
 @pytest.fixture
@@ -361,3 +364,145 @@ class TestProcessTemplateManifestCompat:
 
         assert "last_updated_on" in discovery.manifest["templates"]["tmpl-001"]
         assert "modified_timestamp" not in discovery.manifest["templates"]["tmpl-001"]
+
+
+class TestFsTemplateDiscoveryEnvelopeDelegation:
+    """Filesystem TemplateDiscovery delegates to load_envelopes (one parse path).
+
+    Covers core.template_discovery.TemplateDiscovery — the resources/ tree
+    discoverer, distinct from the API template_library discoverer above.
+    """
+
+    def _write(self, path, text):
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(textwrap.dedent(text).lstrip())
+
+    def _build_tree(self, tmp_path):
+        resources = tmp_path / "resources"
+
+        # (a) v1 detection (flat dict, no apiVersion)
+        self._write(
+            resources / "detections" / "v1_rule.yaml",
+            """
+            resource_id: v1_rule
+            name: V1 Rule
+            type: detection
+            tags:
+              - aws
+            search:
+              filter: "#repo=cloudtrail"
+            """,
+        )
+
+        # (b) canonical v2 detection (name lives under metadata)
+        self._write(
+            resources / "detections" / "v2_rule.yaml",
+            """
+            apiVersion: talon/v2
+            kind: Detection
+            metadata:
+              resource_id: v2_rule
+              name: V2 Rule
+              tags:
+                - azure
+            spec:
+              search:
+                filter: "#repo=azure"
+            """,
+        )
+
+        # (c) multi-doc v2 file (two Detections via ---)
+        self._write(
+            resources / "detections" / "multi.yaml",
+            """
+            apiVersion: talon/v2
+            kind: Detection
+            metadata:
+              resource_id: multi_one
+              name: Multi One
+            spec:
+              search:
+                filter: "#repo=one"
+            ---
+            apiVersion: talon/v2
+            kind: Detection
+            metadata:
+              resource_id: multi_two
+              name: Multi Two
+            spec:
+              search:
+                filter: "#repo=two"
+            """,
+        )
+
+        return resources
+
+    def test_discovers_v1_and_v2_with_envelopes(self, tmp_path, caplog):
+        resources = self._build_tree(tmp_path)
+        disco = FsTemplateDiscovery(resources_dir=resources, project_root=tmp_path)
+
+        with caplog.at_level("WARNING"):
+            discovered = disco.discover_all(resource_types=["detection"])
+
+        detections = discovered["detection"]
+        by_id = {t.name: t for t in detections}
+
+        # All v1 + v2 + both multi-doc resources discovered.
+        assert set(by_id) == {"v1_rule", "v2_rule", "multi_one", "multi_two"}
+
+        # Every DiscoveredTemplate is envelope-backed.
+        for t in detections:
+            assert t.envelope is not None
+            assert t.resource_type == "detection"
+
+        # template_data is derived from the envelope (compatibility property).
+        v2 = by_id["v2_rule"]
+        assert v2.envelope.resource_id == "v2_rule"
+        assert v2.template_data["resource_id"] == "v2_rule"
+        assert v2.template_data["name"] == "V2 Rule"
+        assert v2.display_name == "V2 Rule"
+        assert v2.tags == ["azure"]
+
+        v1 = by_id["v1_rule"]
+        assert v1.template_data["resource_id"] == "v1_rule"
+        assert v1.template_data["name"] == "V1 Rule"
+
+        # No spurious "missing 'name'" warning for the v2 file.
+        assert "missing 'name'" not in caplog.text
+
+    def test_template_data_reinjects_template_path(self, tmp_path):
+        resources = self._build_tree(tmp_path)
+        disco = FsTemplateDiscovery(resources_dir=resources, project_root=tmp_path)
+
+        discovered = disco.discover_all(resource_types=["detection"])
+        v2 = {t.name: t for t in discovered["detection"]}["v2_rule"]
+
+        assert v2.template_data["_template_path"].endswith("v2_rule.yaml")
+
+    def test_valid_resource_types_matches_type_to_dir(self):
+        """Drift guard: VALID_RESOURCE_TYPES and TYPE_TO_DIR must cover the same keys."""
+        assert set(FsTemplateDiscovery.VALID_RESOURCE_TYPES) == set(FsTemplateDiscovery.TYPE_TO_DIR)
+
+    def test_kind_dir_mismatch_skipped_with_warning(self, tmp_path, caplog):
+        resources = tmp_path / "resources"
+        # A Detection authored under saved_searches/ — kind/dir mismatch.
+        self._write(
+            resources / "saved_searches" / "wrong.yaml",
+            """
+            apiVersion: talon/v2
+            kind: Detection
+            metadata:
+              resource_id: misplaced
+              name: Misplaced
+            spec:
+              search:
+                filter: "#repo=x"
+            """,
+        )
+        disco = FsTemplateDiscovery(resources_dir=resources, project_root=tmp_path)
+
+        with caplog.at_level("WARNING"):
+            discovered = disco.discover_all(resource_types=["saved_search"])
+
+        assert discovered["saved_search"] == []
+        assert "mismatch" in caplog.text.lower()

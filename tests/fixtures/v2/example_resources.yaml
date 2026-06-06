@@ -1,0 +1,34 @@
+# tests/fixtures/v2/example_resources.yaml — converted from prototype kind:Module
+apiVersion: talon/v2
+kind: LookupFile
+metadata:
+  resource_id: example_approved_uploaders
+  name: "Example Source — Approved Uploaders"
+spec:
+  format: csv
+  source: ./data/example_approved_uploaders.csv
+---
+apiVersion: talon/v2
+kind: SavedSearch
+metadata:
+  resource_id: example_source_enrich
+  name: "Example Source — Identity Enrichment"
+spec:
+  query_string: |
+    | user.email := lower(user.email)
+---
+apiVersion: talon/v2
+kind: Detection
+metadata:
+  resource_id: example_source___suspicious_upload
+  name: "Example Source — Suspicious Upload"
+spec:
+  depends_on:
+    - lookup_file.example_approved_uploaders
+    - saved_search.example_source_enrich
+  severity: 70
+  enabled: true
+  search:
+    filter: "#Vendor=\"example_source\" | event.action=\"UPLOAD\""
+    lookback: "5m"
+    trigger_mode: summary

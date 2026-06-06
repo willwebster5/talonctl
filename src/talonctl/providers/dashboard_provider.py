@@ -12,11 +12,14 @@ import hashlib
 import json
 import logging
 import re
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, TYPE_CHECKING
 
 import yaml
 
 from talonctl.core.base_provider import BaseResourceProvider, ResourceChange, ResourceAction
+
+if TYPE_CHECKING:
+    from talonctl.core.envelope import Envelope
 from talonctl.core.metadata_validators import reject_old_shape, validate_maturity
 from talonctl.core.template_sanitizer import strip_for_api, strip_for_hash
 
@@ -47,7 +50,8 @@ class DashboardProvider(BaseResourceProvider):
 
     # ── Validation ──────────────────────────────────────────────
 
-    def validate_template(self, template: Dict[str, Any]) -> List[str]:
+    def validate_template(self, env: "Envelope") -> List[str]:
+        template = env.to_working_dict()
         errors = []
 
         # v0.3.0: reject pre-v0.3.0 shapes and validate metadata.maturity universally.
@@ -385,7 +389,8 @@ class DashboardProvider(BaseResourceProvider):
 
     # ── Plan Methods ────────────────────────────────────────────
 
-    def plan_create(self, template: Dict[str, Any], template_path: str) -> ResourceChange:
+    def plan_create(self, env: "Envelope", template_path: str) -> ResourceChange:
+        template = env.to_working_dict()
         return ResourceChange(
             action=ResourceAction.CREATE,
             resource_type="dashboard",
@@ -393,11 +398,11 @@ class DashboardProvider(BaseResourceProvider):
             resource_name=template.get("name", ""),
             new_value=template,
             template_path=template_path,
+            envelope=env,
         )
 
-    def plan_update(
-        self, template: Dict[str, Any], current_state: Dict[str, Any], template_path: str
-    ) -> ResourceChange:
+    def plan_update(self, env: "Envelope", current_state: Dict[str, Any], template_path: str) -> ResourceChange:
+        template = env.to_working_dict()
         # Compare content hashes — if identical, no change needed
         new_hash = self.compute_content_hash(template)
         old_hash = current_state.get("content_hash", "")
@@ -409,6 +414,7 @@ class DashboardProvider(BaseResourceProvider):
                 resource_id=template.get("resource_id", ""),
                 resource_name=template.get("name", ""),
                 template_path=template_path,
+                envelope=env,
             )
 
         return ResourceChange(
@@ -419,6 +425,7 @@ class DashboardProvider(BaseResourceProvider):
             old_value=current_state,
             new_value=template,
             template_path=template_path,
+            envelope=env,
         )
 
     def plan_delete(self, resource_id: str, resource_name: str) -> ResourceChange:
@@ -431,10 +438,12 @@ class DashboardProvider(BaseResourceProvider):
 
     # ── Apply Aliases ───────────────────────────────────────────
 
-    def apply_create(self, template: Dict[str, Any]) -> Dict[str, Any]:
+    def apply_create(self, env: "Envelope") -> Dict[str, Any]:
+        template = env.to_working_dict()
         return self.create_resource(template)
 
-    def apply_update(self, resource_id: str, template: Dict[str, Any], current_state: Dict[str, Any]) -> Dict[str, Any]:
+    def apply_update(self, resource_id: str, env: "Envelope", current_state: Dict[str, Any]) -> Dict[str, Any]:
+        template = env.to_working_dict()
         return self.update_resource(resource_id, template, current_state)
 
     def apply_delete(self, resource_id: str) -> Optional[Dict[str, Any]]:

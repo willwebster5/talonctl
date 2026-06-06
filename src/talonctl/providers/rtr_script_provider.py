@@ -12,13 +12,16 @@ import json
 import hashlib
 import logging
 from pathlib import Path
-from typing import Dict, List, Optional, Any
+from typing import Dict, List, Optional, Any, TYPE_CHECKING
 from datetime import datetime, timezone
 
 # Import FalconPy service class for RTR Admin
 from falconpy import RealTimeResponseAdmin
 
 from talonctl.core.base_provider import BaseResourceProvider, ResourceAction, ResourceChange
+
+if TYPE_CHECKING:
+    from talonctl.core.envelope import Envelope
 from talonctl.core.metadata_validators import reject_old_shape, validate_maturity
 from talonctl.core.template_sanitizer import strip_for_hash
 
@@ -100,16 +103,17 @@ class RTRScriptProvider(BaseResourceProvider):
         """Return resource type identifier"""
         return "rtr_script"
 
-    def validate_template(self, template: Dict[str, Any]) -> List[str]:
+    def validate_template(self, env: "Envelope") -> List[str]:
         """
         Validate RTR script template
 
         Args:
-            template: RTR script template data
+            env: RTR script Envelope
 
         Returns:
             List of validation error messages (empty if valid)
         """
+        template = env.to_working_dict()
         errors = []
 
         # v0.3.0: reject pre-v0.3.0 shapes and validate metadata.maturity universally.
@@ -570,20 +574,21 @@ class RTRScriptProvider(BaseResourceProvider):
 
     # BaseResourceProvider planning methods
 
-    def plan_create(self, template: Dict[str, Any], template_path: str) -> ResourceChange:
+    def plan_create(self, env: "Envelope", template_path: str) -> ResourceChange:
         """Plan the creation of a new RTR script"""
+        template = env.to_working_dict()
         return ResourceChange(
             action=ResourceAction.CREATE,
             resource_type=self.get_resource_type(),
             resource_name=template["name"],
             new_value=template,
             template_path=template_path,
+            envelope=env,
         )
 
-    def plan_update(
-        self, template: Dict[str, Any], current_state: Dict[str, Any], template_path: str
-    ) -> ResourceChange:
+    def plan_update(self, env: "Envelope", current_state: Dict[str, Any], template_path: str) -> ResourceChange:
         """Plan an update to an existing RTR script"""
+        template = env.to_working_dict()
         # Calculate content hashes
         template_hash = self.compute_content_hash(template)
         current_hash = self.compute_content_hash(current_state)
@@ -597,6 +602,7 @@ class RTRScriptProvider(BaseResourceProvider):
                 old_value=current_state,
                 new_value=template,
                 template_path=template_path,
+                envelope=env,
             )
 
         # Detect changes
@@ -626,6 +632,7 @@ class RTRScriptProvider(BaseResourceProvider):
             new_value=template,
             changes=changes,
             template_path=template_path,
+            envelope=env,
         )
 
     def plan_delete(self, resource_id: str, resource_name: str) -> ResourceChange:
@@ -639,12 +646,14 @@ class RTRScriptProvider(BaseResourceProvider):
 
     # Convenience methods matching BaseResourceProvider naming
 
-    def apply_create(self, template: Dict[str, Any]) -> Dict[str, Any]:
+    def apply_create(self, env: "Envelope") -> Dict[str, Any]:
         """Alias for create_resource (BaseResourceProvider compatibility)"""
+        template = env.to_working_dict()
         return self.create_resource(None, template)
 
-    def apply_update(self, resource_id: str, template: Dict[str, Any], current_state: Dict[str, Any]) -> Dict[str, Any]:
+    def apply_update(self, resource_id: str, env: "Envelope", current_state: Dict[str, Any]) -> Dict[str, Any]:
         """Alias for update_resource (BaseResourceProvider compatibility)"""
+        template = env.to_working_dict()
         return self.update_resource(resource_id, template, current_state)
 
     def apply_delete(self, resource_id: str) -> Dict[str, Any]:

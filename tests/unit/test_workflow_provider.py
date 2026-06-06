@@ -7,6 +7,18 @@ from unittest.mock import Mock, patch
 
 from talonctl.providers.workflow_provider import WorkflowProvider
 from talonctl.core import ResourceAction
+from tests.unit._helpers import make_envelope
+
+
+def _env(flat):
+    """Wrap a legacy flat workflow dict as an Envelope for the provider's
+    Envelope-consuming methods. Defaults a resource_id (which v1_to_v2 requires)
+    from the name when the test dict omits it — these tests assert on validation
+    errors / planned changes, not on resource_id, so the default is inert.
+    """
+    if "resource_id" not in flat:
+        flat = {**flat, "resource_id": "test_resource"}
+    return make_envelope(flat, "workflow")
 
 
 class TestWorkflowProvider:
@@ -49,7 +61,7 @@ class TestWorkflowProvider:
             "actions": {"send_slack": {"id": "slack_action", "properties": {"msg": "Test alert"}}},
         }
 
-        errors = provider.validate_template(template)
+        errors = provider.validate_template(_env(template))
         assert errors == []
 
     def test_validate_template_missing_fields(self, provider):
@@ -59,7 +71,7 @@ class TestWorkflowProvider:
             # Missing: trigger, actions
         }
 
-        errors = provider.validate_template(template)
+        errors = provider.validate_template(_env(template))
         assert len(errors) >= 2
         assert any("trigger" in err for err in errors)
         assert any("actions" in err for err in errors)
@@ -76,7 +88,7 @@ class TestWorkflowProvider:
             "actions": {"action1": {}},
         }
 
-        errors = provider.validate_template(template)
+        errors = provider.validate_template(_env(template))
         assert any("event" in err.lower() for err in errors)
 
     def test_validate_template_empty_actions(self, provider):
@@ -88,7 +100,7 @@ class TestWorkflowProvider:
             "actions": {},  # Empty
         }
 
-        errors = provider.validate_template(template)
+        errors = provider.validate_template(_env(template))
         assert any("actions" in err.lower() for err in errors)
 
     def test_fetch_remote_state(self, provider, mock_workflows_client):
@@ -136,14 +148,16 @@ class TestWorkflowProvider:
         """Test planning workflow creation"""
         template = {"name": "new_workflow", "trigger": {"event": "test", "type": "Signal"}, "actions": {"action1": {}}}
 
-        change = provider.plan_create(template, "workflows/test.yaml")
+        env = _env(template)
+        change = provider.plan_create(env, "workflows/test.yaml")
 
         assert change.action == ResourceAction.CREATE
         assert change.resource_type == "workflow"
         assert change.resource_name == "new_workflow"
         assert change.resource_id is None
-        assert change.new_value == template
+        assert change.new_value == env.to_working_dict()
         assert change.template_path == "workflows/test.yaml"
+        assert change.envelope is env
 
     def test_plan_update_with_changes(self, provider):
         """Test planning workflow update when changes exist"""
@@ -162,7 +176,7 @@ class TestWorkflowProvider:
             "actions": {"old_action": {}},
         }
 
-        change = provider.plan_update(template, current_state, "workflows/test.yaml")
+        change = provider.plan_update(_env(template), current_state, "workflows/test.yaml")
 
         assert change.action == ResourceAction.UPDATE
         assert change.resource_type == "workflow"
@@ -185,7 +199,7 @@ class TestWorkflowProvider:
         current_state = template.copy()
         current_state["id"] = "wf123"
 
-        change = provider.plan_update(template, current_state, "workflows/test.yaml")
+        change = provider.plan_update(_env(template), current_state, "workflows/test.yaml")
 
         assert change.action == ResourceAction.NO_CHANGE
         assert change.resource_id == "wf123"
@@ -210,7 +224,7 @@ class TestWorkflowProvider:
             "body": {"resources": [{"id": "new123", "name": "new_workflow", "enabled": True}]},
         }
 
-        result = provider.apply_create(template)
+        result = provider.apply_create(_env(template))
 
         assert result["id"] == "new123"
         assert result["name"] == "new_workflow"
@@ -306,14 +320,20 @@ class TestWorkflowProvider:
         assert "not support updates" in reason.lower() or "delete and recreate" in reason.lower()
 
     def test_validate_template_requires_resource_id(self, provider):
-        """Templates must include resource_id for IaC tracking."""
+        """Templates must include resource_id for IaC tracking.
+
+        In v2 the Envelope guarantees a resource_id (metadata.resource_id is
+        mandatory); v1_to_v2 raises at load time when it is absent, so the
+        provider's own resource_id check is unreachable through the Envelope
+        path. Assert the v2 enforcement point instead.
+        """
         template = {
             "name": "Test Workflow",
             "trigger": {"event": "Investigatable/NGSIEM", "type": "Signal"},
             "actions": {"Notify": {"id": "abc123", "name": "Notify"}},
         }
-        errors = provider.validate_template(template)
-        assert any("resource_id" in e.lower() for e in errors)
+        with pytest.raises(ValueError, match="resource_id"):
+            make_envelope(template, "workflow")
 
     # --- v0.3.0 metadata namespace redesign ---
 
@@ -330,16 +350,16 @@ class TestWorkflowProvider:
 
     def test_v03_metadata_maturity_validates_on_workflow(self, provider, minimal_workflow):
         minimal_workflow["metadata"] = {"maturity": {"created": "2026-04-16"}}
-        assert provider.validate_template(minimal_workflow) == []
+        assert provider.validate_template(_env(minimal_workflow)) == []
 
     def test_v03_metadata_ads_rejected_on_workflow(self, provider, minimal_workflow):
         minimal_workflow["metadata"] = {"ads": {"goal": "g"}}
-        errors = provider.validate_template(minimal_workflow)
+        errors = provider.validate_template(_env(minimal_workflow))
         assert any("metadata.ads is only supported on detection resources" in e and "workflow" in e for e in errors)
 
     def test_v03_old_top_level_ads_rejected_on_workflow(self, provider, minimal_workflow):
         minimal_workflow["ads"] = {"goal": "g"}
-        errors = provider.validate_template(minimal_workflow)
+        errors = provider.validate_template(_env(minimal_workflow))
         assert any("Top-level 'ads:' is removed in v0.3.0" in e for e in errors)
 
     def test_v03_metadata_edits_do_not_change_content_hash(self, provider, minimal_workflow):

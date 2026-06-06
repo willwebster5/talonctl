@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import pytest
 
+from tests.unit._helpers import validate_input
 from talonctl.providers.dashboard_provider import DashboardProvider
 from talonctl.providers.detection_provider import DetectionProvider
 from talonctl.providers.lookup_file_provider import LookupFileProvider
@@ -14,6 +15,18 @@ from talonctl.providers.rtr_put_file_provider import RTRPutFileProvider
 from talonctl.providers.rtr_script_provider import RTRScriptProvider
 from talonctl.providers.saved_search_provider import SavedSearchProvider
 from talonctl.providers.workflow_provider import WorkflowProvider
+
+# Map provider class -> snake_case resource_type, so cross-cutting tests can pass
+# the right input shape (Envelope for flipped providers, flat dict otherwise).
+_TYPE_BY_PROVIDER = {
+    DetectionProvider: "detection",
+    SavedSearchProvider: "saved_search",
+    DashboardProvider: "dashboard",
+    WorkflowProvider: "workflow",
+    LookupFileProvider: "lookup_file",
+    RTRScriptProvider: "rtr_script",
+    RTRPutFileProvider: "rtr_put_file",
+}
 
 
 def _minimal_template_for(provider_cls, tmp_path):
@@ -115,7 +128,7 @@ def test_every_provider_rejects_top_level_ads(cls, tmp_path):
     provider = _build_provider(cls)
     tmpl = _minimal_template_for(cls, tmp_path)
     tmpl["ads"] = {"goal": "g"}
-    errors = provider.validate_template(tmpl)
+    errors = provider.validate_template(validate_input(tmpl, _TYPE_BY_PROVIDER[cls]))
     assert any(
         "Top-level 'ads:' is removed in v0.3.0" in e and "metadata.ads" in e and "CHANGELOG.md" in e for e in errors
     ), f"{cls.__name__} missing migration pointer: {errors!r}"
@@ -126,7 +139,7 @@ def test_every_provider_rejects_flat_metadata_maturity(cls, tmp_path):
     provider = _build_provider(cls)
     tmpl = _minimal_template_for(cls, tmp_path)
     tmpl["metadata"] = {"created": "2026-04-16", "tune_count": 2}
-    errors = provider.validate_template(tmpl)
+    errors = provider.validate_template(validate_input(tmpl, _TYPE_BY_PROVIDER[cls]))
     assert any(
         "Top-level 'metadata:' now reserves sub-namespaces" in e and "metadata.maturity" in e and "CHANGELOG.md" in e
         for e in errors

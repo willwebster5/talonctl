@@ -1,5 +1,5 @@
 """
-State Manager v3.0
+State Manager v4.0
 
 Manages the deployment state file for all resources across all providers.
 Supports optional remote state sync to CrowdStrike NGSIEM lookup files.
@@ -37,9 +37,9 @@ class StateManager:
     """
     Manages the unified state file for all deployed resources.
 
-    State file format v3.0:
+    State file format v4.0:
     {
-        "version": "3.0",
+        "version": "4.0",
         "last_updated": "ISO8601",
         "metadata": {
             "deployed_by": "user@example.com",
@@ -64,7 +64,7 @@ class StateManager:
     }
     """
 
-    STATE_VERSION = "3.0"
+    STATE_VERSION = "4.0"
 
     def __init__(
         self,
@@ -99,7 +99,7 @@ class StateManager:
         if os.getenv("NGSIEM_SEARCH_DOMAIN"):
             self.remote_state_search_domain = os.getenv("NGSIEM_SEARCH_DOMAIN")
 
-        self._state = self._load_state()
+        self._state = self._migrate_to_v4(self._load_state())
 
     def _load_state(self) -> Dict[str, Any]:
         """
@@ -153,6 +153,36 @@ class StateManager:
         else:
             logger.info("Initializing new state")
             return self._initialize_state()
+
+    def _migrate_to_v4(self, state: Dict[str, Any]) -> Dict[str, Any]:
+        """Lazily, non-destructively upgrade a pre-v4 state dict to v4 in memory.
+
+        Runs AFTER the local/remote load+merge (a remote file can re-inject an
+        older version via _merge_remote_state, so this must run last). Stamps the
+        current STATE_VERSION and reports — but never moves, re-keys, or deletes —
+        any ambiguous space-containing keys. Persistence is deferred to save().
+        """
+        if state.get("version") == self.STATE_VERSION:
+            return state
+
+        resources = state.get("resources", {})
+        ambiguous: List[str] = []
+        if isinstance(resources, dict):
+            for rtype, entries in resources.items():
+                if isinstance(entries, dict):
+                    ambiguous.extend(f"{rtype}.{k}" for k in entries if " " in k)
+
+        state["version"] = self.STATE_VERSION
+        if ambiguous:
+            logger.warning(
+                "State upgraded to v%s with %d ambiguous display-name key(s) left "
+                "untouched; a future `talonctl migrate` will reconcile them against "
+                "templates: %s",
+                self.STATE_VERSION,
+                len(ambiguous),
+                ", ".join(sorted(ambiguous)),
+            )
+        return state
 
     def _initialize_state(self) -> Dict[str, Any]:
         """

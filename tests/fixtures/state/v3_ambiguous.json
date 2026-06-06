@@ -1,0 +1,52 @@
+{
+  "version": "3.0",
+  "last_updated": "2026-01-01T00:00:00+00:00",
+  "metadata": {},
+  "resource_graph": { "nodes": [], "edges": [] },
+  "resources": {
+    "detection": {
+      "example_source___suspicious_upload": {
+        "type": "detection",
+        "id": "c1d430691e8b42e7b336956f6a3af6fc",
+        "content_hash": "35430ac27b59",
+        "template_path": "resources/detections/suspicious_upload.yaml",
+        "deployed_at": "2026-01-01T00:00:00+00:00",
+        "last_modified": "2026-01-01T00:00:00+00:00",
+        "provider_metadata": { "rule_id": "c1d430691e8b42e7b336956f6a3af6fc" },
+        "dependencies": []
+      },
+      "Example Source - Legacy Display Name Rule": {
+        "type": "detection",
+        "id": "ef4e5309c8744a2f89e9f2d488202333",
+        "content_hash": "9fdd6f0087c4",
+        "template_path": "resources/detections/legacy.yaml",
+        "deployed_at": "2026-01-01T00:00:00+00:00",
+        "last_modified": "2026-01-01T00:00:00+00:00",
+        "provider_metadata": {},
+        "dependencies": []
+      }
+    },
+    "saved_search": {
+      "example_source_enrich": {
+        "type": "saved_search",
+        "id": "Rs7o4INDcL8R0Dyz25My0uWt0WnhmkIl",
+        "content_hash": "3a4c013d709e",
+        "template_path": "resources/saved_searches/enrich.yaml",
+        "deployed_at": "2026-01-01T00:00:00+00:00",
+        "last_modified": "2026-01-01T00:00:00+00:00",
+        "provider_metadata": {},
+        "dependencies": []
+      },
+      "Example Source - Legacy Saved Search": {
+        "type": "saved_search",
+        "id": "abc123DELONGTOKEN456",
+        "content_hash": "1111aaaa2222",
+        "template_path": "resources/saved_searches/legacy.yaml",
+        "deployed_at": "2026-01-01T00:00:00+00:00",
+        "last_modified": "2026-01-01T00:00:00+00:00",
+        "provider_metadata": {},
+        "dependencies": []
+      }
+    }
+  }
+}

@@ -5,26 +5,40 @@ Discovers and loads resource templates from the resources/ directory tree.
 Supports filtering by resource type, tags, and name patterns.
 """
 
-import yaml
 import logging
 from pathlib import Path
-from typing import Dict, List, Optional, Set
+from typing import Dict, List, Optional, Set, TYPE_CHECKING
 from dataclasses import dataclass
 import fnmatch
+
+from talonctl.core.envelope_loader import load_envelopes
+
+if TYPE_CHECKING:
+    from talonctl.core.envelope import Envelope
 
 logger = logging.getLogger(__name__)
 
 
 @dataclass
 class DiscoveredTemplate:
-    """Represents a discovered template with metadata"""
+    """Represents a discovered template with metadata.
+
+    Envelope-backed: the canonical v2 :class:`Envelope` is the source of truth.
+    ``template_data`` is a read-only compatibility property reconstructing the
+    legacy flat dict consumers still read (via ``envelope.to_working_dict()``).
+    """
 
     resource_type: str
-    name: str  # Stable resource identifier (from resource_id field or fallback to name)
+    name: str  # Stable resource identifier (envelope.resource_id)
     file_path: Path
-    template_data: Dict
     tags: List[str]
-    display_name: Optional[str] = None  # Human-readable name (from name field)
+    envelope: "Envelope" = None  # default so non-envelope construction doesn't break
+    display_name: Optional[str] = None  # Human-readable name (metadata 'name')
+
+    @property
+    def template_data(self) -> Dict:
+        """Legacy flat dict reconstructed from the envelope (with _template_path)."""
+        return self.envelope.to_working_dict()
 
     @property
     def resource_id(self) -> str:
@@ -56,6 +70,17 @@ class TemplateDiscovery:
         "rtr_put_file",
         "dashboard",
     ]
+
+    # Resource type -> on-disk directory name.
+    TYPE_TO_DIR = {
+        "detection": "detections",
+        "workflow": "workflows",
+        "saved_search": "saved_searches",
+        "lookup_file": "lookup_files",
+        "rtr_script": "rtr_scripts",
+        "rtr_put_file": "rtr_put_files",
+        "dashboard": "dashboards",
+    }
 
     # Default resources directory
     DEFAULT_RESOURCES_DIR = "resources"
@@ -137,18 +162,7 @@ class TemplateDiscovery:
         """
         templates = []
 
-        # Map resource type to directory name
-        type_to_dir = {
-            "detection": "detections",
-            "workflow": "workflows",
-            "saved_search": "saved_searches",
-            "lookup_file": "lookup_files",
-            "rtr_script": "rtr_scripts",
-            "rtr_put_file": "rtr_put_files",
-            "dashboard": "dashboards",
-        }
-
-        dir_name = type_to_dir.get(resource_type)
+        dir_name = self.TYPE_TO_DIR.get(resource_type)
         if not dir_name:
             logger.warning(f"Unknown resource type: {resource_type}")
             return templates
@@ -162,8 +176,7 @@ class TemplateDiscovery:
         # Recursively find all YAML files
         for yaml_file in type_dir.rglob("*.yaml"):
             try:
-                template = self._load_template(yaml_file, resource_type)
-                if template:
+                for template in self._load_template(yaml_file, resource_type):
                     templates.append(template)
                     # Cache template
                     self._template_cache[template.resource_id] = template
@@ -173,85 +186,56 @@ class TemplateDiscovery:
         logger.info(f"Discovered {len(templates)} {resource_type} templates")
         return templates
 
-    def _load_template(self, file_path: Path, expected_type: str) -> Optional[DiscoveredTemplate]:
+    def _load_template(self, file_path: Path, expected_type: str) -> List[DiscoveredTemplate]:
         """
-        Load and validate a template file
+        Load and validate a template file via the single envelope parse path.
+
+        Delegates to ``load_envelopes`` so v1 (flat dict) and v2 (apiVersion:
+        talon/v2) files share one parser. A single file may declare multiple
+        resources (multi-doc ``---`` or a top-level list), so this returns a
+        list of templates.
 
         Args:
             file_path: Path to template YAML file
-            expected_type: Expected resource type
+            expected_type: Expected resource type (from the directory)
 
         Returns:
-            DiscoveredTemplate or None if invalid
+            List of DiscoveredTemplate (empty if the file fails to parse or
+            every declared resource is a kind/dir mismatch).
         """
         try:
-            with open(file_path, "r") as f:
-                data = yaml.safe_load(f)
-
-            if not isinstance(data, dict):
-                logger.warning(f"Template {file_path} is not a valid YAML dictionary")
-                return None
-
-            # Infer type from directory if missing (supports legacy templates)
-            # Note: 'type' can be a resource type (detection, saved_search) OR a rule
-            # sub-type (behavioral). Sub-types like 'behavioral' are valid detection rules
-            # that get passed through to the API as the rule type.
-            DETECTION_SUBTYPES = {"behavioral"}
-
-            template_type = data.get("type")
-            if not template_type:
-                logger.debug(f"Template {file_path} missing 'type' field, inferring as {expected_type}")
-                template_type = expected_type
-            elif template_type in DETECTION_SUBTYPES and expected_type == "detection":
-                # 'behavioral' is a sub-type of detection, not a different resource type
-                # Keep 'type: behavioral' in data for the API, but route as detection
-                template_type = expected_type
-            elif template_type != expected_type:
-                logger.warning(f"Template {file_path} type mismatch: expected {expected_type}, got {template_type}")
-                return None
-
-            # Extract resource_id and name
-            # Phase 1: Support resource_id field as stable identifier
-            resource_id = data.get("resource_id")  # Stable IaC identifier
-            display_name = data.get("name")  # Human-readable display name
-
-            if not display_name:
-                logger.warning(f"Template {file_path} missing 'name' field")
-                return None
-
-            # Determine stable identifier
-            # If resource_id exists, use it as the stable identifier
-            # Otherwise fall back to name for backward compatibility
-            stable_id = resource_id if resource_id else display_name
-
-            logger.debug(
-                f"Template {file_path}: resource_id={resource_id}, name={display_name}, using stable_id={stable_id}"
-            )
-
-            # Extract tags
-            tags = data.get("tags", [])
-            if not isinstance(tags, list):
-                tags = []
-
-            # Add template path to data for providers that need to resolve relative paths
-            # Use resolve() to ensure absolute path for CI/CD compatibility
-            data["_template_path"] = str(file_path.resolve())
-
-            return DiscoveredTemplate(
-                resource_type=template_type,
-                name=stable_id,  # Use stable identifier for state tracking
-                file_path=file_path,
-                template_data=data,
-                tags=tags,
-                display_name=display_name,  # Store display name separately
-            )
-
-        except yaml.YAMLError as e:
-            logger.error(f"YAML parse error in {file_path}: {e}")
-            return None
+            envelopes = load_envelopes(file_path, default_resource_type=expected_type)
         except Exception as e:
             logger.error(f"Error loading {file_path}: {e}")
-            return None
+            return []
+
+        templates: List[DiscoveredTemplate] = []
+        origin = str(file_path.resolve())
+
+        for env in envelopes:
+            # Envelope validation owns identity/name checks; here we only guard
+            # the kind/dir invariant (a resource authored in the wrong dir).
+            if env.resource_type != expected_type:
+                logger.warning(
+                    f"Template {file_path} kind/dir mismatch: directory implies "
+                    f"'{expected_type}' but kind '{env.kind}' maps to '{env.resource_type}' — skipping"
+                )
+                continue
+
+            env.origin_path = origin  # re-injected as _template_path by to_working_dict
+
+            templates.append(
+                DiscoveredTemplate(
+                    resource_type=env.resource_type,
+                    name=env.resource_id,  # stable identifier for state tracking
+                    file_path=file_path,
+                    tags=env.metadata.get("tags", []),
+                    envelope=env,
+                    display_name=env.metadata.get("name"),
+                )
+            )
+
+        return templates
 
     def _filter_by_tags(self, templates: List[DiscoveredTemplate], tags: List[str]) -> List[DiscoveredTemplate]:
         """

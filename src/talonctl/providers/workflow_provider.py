@@ -10,10 +10,13 @@ import yaml
 import hashlib
 import logging
 import tempfile
-from typing import Dict, List, Optional, Any
+from typing import Dict, List, Optional, Any, TYPE_CHECKING
 from datetime import datetime, timezone
 
 from talonctl.core.base_provider import BaseResourceProvider, ResourceAction, ResourceChange
+
+if TYPE_CHECKING:
+    from talonctl.core.envelope import Envelope
 from talonctl.core.metadata_validators import reject_old_shape, validate_maturity
 from talonctl.core.template_sanitizer import strip_for_hash
 
@@ -69,16 +72,17 @@ class WorkflowProvider(BaseResourceProvider):
         """Return resource type identifier"""
         return "workflow"
 
-    def validate_template(self, template: Dict[str, Any]) -> List[str]:
+    def validate_template(self, env: "Envelope") -> List[str]:
         """
         Validate workflow template
 
         Args:
-            template: Workflow template data
+            env: Workflow Envelope
 
         Returns:
             List of validation error messages (empty if valid)
         """
+        template = env.to_working_dict()
         errors = []
 
         # v0.3.0: reject pre-v0.3.0 shapes and validate metadata.maturity universally.
@@ -207,17 +211,18 @@ class WorkflowProvider(BaseResourceProvider):
 
         return normalized
 
-    def plan_create(self, template: Dict[str, Any], template_path: str) -> ResourceChange:
+    def plan_create(self, env: "Envelope", template_path: str) -> ResourceChange:
         """
         Plan creation of a new workflow
 
         Args:
-            template: Workflow template data
+            env: Workflow Envelope
             template_path: Path to template file
 
         Returns:
             ResourceChange describing the creation
         """
+        template = env.to_working_dict()
         return ResourceChange(
             action=ResourceAction.CREATE,
             resource_type=self.get_resource_type(),
@@ -227,22 +232,22 @@ class WorkflowProvider(BaseResourceProvider):
             new_value=template,
             changes=None,
             template_path=template_path,
+            envelope=env,
         )
 
-    def plan_update(
-        self, template: Dict[str, Any], current_state: Dict[str, Any], template_path: str
-    ) -> ResourceChange:
+    def plan_update(self, env: "Envelope", current_state: Dict[str, Any], template_path: str) -> ResourceChange:
         """
         Plan update of an existing workflow
 
         Args:
-            template: New workflow template data
+            env: New workflow Envelope
             current_state: Current deployed workflow state
             template_path: Path to template file
 
         Returns:
             ResourceChange describing the update or no-change
         """
+        template = env.to_working_dict()
         # Calculate hashes to detect changes
         template_hash = self.compute_content_hash(template)
         current_hash = self.compute_content_hash(current_state)
@@ -257,6 +262,7 @@ class WorkflowProvider(BaseResourceProvider):
                 new_value=template,
                 changes=None,
                 template_path=template_path,
+                envelope=env,
             )
 
         # Detect specific field changes
@@ -271,6 +277,7 @@ class WorkflowProvider(BaseResourceProvider):
             new_value=template,
             changes=changes,
             template_path=template_path,
+            envelope=env,
         )
 
     def _detect_field_changes(self, new: Dict[str, Any], old: Dict[str, Any]) -> Dict[str, Any]:
@@ -330,16 +337,17 @@ class WorkflowProvider(BaseResourceProvider):
             template_path=None,
         )
 
-    def apply_create(self, template: Dict[str, Any]) -> Dict[str, Any]:
+    def apply_create(self, env: "Envelope") -> Dict[str, Any]:
         """
         Create a workflow in CrowdStrike
 
         Args:
-            template: Workflow template data
+            env: Workflow Envelope
 
         Returns:
             Created workflow metadata including workflow_id
         """
+        template = env.to_working_dict()
         if not self.workflows_client:
             raise RuntimeError("Workflows SDK not available")
 
@@ -382,8 +390,13 @@ class WorkflowProvider(BaseResourceProvider):
             except OSError:
                 pass
 
-    def apply_update(self, resource_id: str, template: Dict[str, Any], current_state: Dict[str, Any]) -> Dict[str, Any]:
-        """Workflow updates are not supported — all changes go through requires_replacement() → REPLACE."""
+    def apply_update(self, resource_id: str, env: "Envelope", current_state: Dict[str, Any]) -> Dict[str, Any]:
+        """Workflow updates are not supported — all changes go through requires_replacement() → REPLACE.
+
+        Signature takes an Envelope to match the base interface; the body never
+        reads it (workflows always go through REPLACE), so to_working_dict() is
+        intentionally not called here.
+        """
         raise NotImplementedError(
             "Workflow updates are not supported by the CrowdStrike API. "
             "All changes should go through the REPLACE path (delete + recreate)."

@@ -7,6 +7,22 @@ from unittest.mock import Mock
 
 from talonctl.providers.rtr_script_provider import RTRScriptProvider
 from talonctl.core import ResourceAction
+from tests.unit._helpers import make_envelope
+
+
+def _env(flat):
+    """Wrap a legacy flat rtr_script dict as an Envelope for the provider's
+    Envelope-consuming methods. Defaults a resource_id (which v1_to_v2 mints
+    from name for rtr_script, but needs an explicit one when the test dict omits
+    both) — these tests assert on validation/planned changes, not resource_id,
+    so the default is inert. When the dict carries a file_path that the provider
+    resolves relative to _template_path, pass origin_path so to_working_dict
+    re-injects it the way the loader will.
+    """
+    if "resource_id" not in flat:
+        flat = {**flat, "resource_id": "test_resource"}
+    origin_path = flat.get("_template_path")
+    return make_envelope(flat, "rtr_script", origin_path=origin_path)
 
 
 class TestRTRScriptProvider:
@@ -44,7 +60,7 @@ class TestRTRScriptProvider:
             "platform": ["windows"],
             "content": "Get-Process | Format-Table",
         }
-        errors = provider.validate_template(template)
+        errors = provider.validate_template(_env(template))
         assert errors == []
 
     def test_validate_template_valid_with_file_path(self, provider):
@@ -54,7 +70,7 @@ class TestRTRScriptProvider:
             "platform": "windows",
             "file_path": "scripts/Get-ProcessTree.ps1",
         }
-        errors = provider.validate_template(template)
+        errors = provider.validate_template(_env(template))
         assert errors == []
 
     def test_validate_template_valid_multi_platform(self, provider):
@@ -64,7 +80,7 @@ class TestRTRScriptProvider:
             "platform": ["linux", "mac"],
             "content": "#!/bin/bash\ncat /var/log/syslog",
         }
-        errors = provider.validate_template(template)
+        errors = provider.validate_template(_env(template))
         assert errors == []
 
     def test_validate_template_missing_name(self, provider):
@@ -73,7 +89,7 @@ class TestRTRScriptProvider:
             "platform": "windows",
             "content": "echo hello",
         }
-        errors = provider.validate_template(template)
+        errors = provider.validate_template(_env(template))
         assert any("name" in err.lower() for err in errors)
 
     def test_validate_template_missing_description(self, provider):
@@ -82,7 +98,7 @@ class TestRTRScriptProvider:
             "platform": "windows",
             "content": "echo hello",
         }
-        errors = provider.validate_template(template)
+        errors = provider.validate_template(_env(template))
         assert any("description" in err.lower() for err in errors)
 
     def test_validate_template_missing_platform(self, provider):
@@ -91,7 +107,7 @@ class TestRTRScriptProvider:
             "description": "test",
             "content": "echo hello",
         }
-        errors = provider.validate_template(template)
+        errors = provider.validate_template(_env(template))
         assert any("platform" in err.lower() for err in errors)
 
     def test_validate_template_invalid_platform(self, provider):
@@ -101,7 +117,7 @@ class TestRTRScriptProvider:
             "platform": "solaris",
             "content": "echo hello",
         }
-        errors = provider.validate_template(template)
+        errors = provider.validate_template(_env(template))
         assert any("solaris" in err.lower() for err in errors)
         assert any("VALID_PLATFORMS" in err or "windows" in err for err in errors)
 
@@ -113,7 +129,7 @@ class TestRTRScriptProvider:
             "permission_type": "admin",
             "content": "echo hello",
         }
-        errors = provider.validate_template(template)
+        errors = provider.validate_template(_env(template))
         assert any("permission_type" in err.lower() for err in errors)
 
     def test_validate_template_no_content_or_file_path(self, provider):
@@ -122,7 +138,7 @@ class TestRTRScriptProvider:
             "description": "test",
             "platform": "windows",
         }
-        errors = provider.validate_template(template)
+        errors = provider.validate_template(_env(template))
         assert any("content" in err.lower() or "file_path" in err.lower() for err in errors)
 
     def test_validate_template_both_content_and_file_path(self, provider):
@@ -134,7 +150,7 @@ class TestRTRScriptProvider:
             "content": "echo hello",
             "file_path": "scripts/test.ps1",
         }
-        errors = provider.validate_template(template)
+        errors = provider.validate_template(_env(template))
         assert errors == []
 
     def test_validate_template_empty_name(self, provider):
@@ -144,7 +160,7 @@ class TestRTRScriptProvider:
             "platform": "windows",
             "content": "echo hello",
         }
-        errors = provider.validate_template(template)
+        errors = provider.validate_template(_env(template))
         assert any("non-empty" in err for err in errors)
 
     def test_validate_template_empty_description(self, provider):
@@ -154,7 +170,7 @@ class TestRTRScriptProvider:
             "platform": "windows",
             "content": "echo hello",
         }
-        errors = provider.validate_template(template)
+        errors = provider.validate_template(_env(template))
         assert any("non-empty" in err for err in errors)
 
     def test_validate_template_non_string_content(self, provider):
@@ -164,7 +180,7 @@ class TestRTRScriptProvider:
             "platform": "windows",
             "content": 12345,
         }
-        errors = provider.validate_template(template)
+        errors = provider.validate_template(_env(template))
         assert any("content" in err.lower() and "string" in err.lower() for err in errors)
 
     def test_validate_template_non_string_file_path(self, provider):
@@ -174,7 +190,7 @@ class TestRTRScriptProvider:
             "platform": "windows",
             "file_path": 12345,
         }
-        errors = provider.validate_template(template)
+        errors = provider.validate_template(_env(template))
         assert any("file_path" in err.lower() and "string" in err.lower() for err in errors)
 
     # --- Content Hashing ---
@@ -277,12 +293,14 @@ class TestRTRScriptProvider:
             "platform": ["windows"],
             "content": "Get-Process",
         }
-        change = provider.plan_create(template, "rtr_scripts/new_script.yaml")
+        env = _env(template)
+        change = provider.plan_create(env, "rtr_scripts/new_script.yaml")
         assert change.action == ResourceAction.CREATE
         assert change.resource_type == "rtr_script"
         assert change.resource_name == "New Script"
-        assert change.new_value == template
+        assert change.new_value == env.to_working_dict()
         assert change.template_path == "rtr_scripts/new_script.yaml"
+        assert change.envelope is env
 
     def test_plan_update_no_change(self, provider):
         template = {
@@ -298,7 +316,7 @@ class TestRTRScriptProvider:
             "platform": ["windows"],
             "content": "Get-Process",
         }
-        change = provider.plan_update(template, current, "rtr_scripts/test.yaml")
+        change = provider.plan_update(_env(template), current, "rtr_scripts/test.yaml")
         assert change.action == ResourceAction.NO_CHANGE
         assert change.resource_id == "abc123"
 
@@ -316,7 +334,7 @@ class TestRTRScriptProvider:
             "platform": ["windows"],
             "content": "Get-Process",
         }
-        change = provider.plan_update(template, current, "rtr_scripts/test.yaml")
+        change = provider.plan_update(_env(template), current, "rtr_scripts/test.yaml")
         assert change.action == ResourceAction.UPDATE
         assert "description" in change.changes
 
@@ -335,7 +353,7 @@ class TestRTRScriptProvider:
             "platform": ["windows"],  # list
             "content": "Get-Process",
         }
-        change = provider.plan_update(template, current, "rtr_scripts/test.yaml")
+        change = provider.plan_update(_env(template), current, "rtr_scripts/test.yaml")
         assert change.action == ResourceAction.NO_CHANGE
 
     def test_plan_delete(self, provider):
@@ -532,7 +550,7 @@ class TestRTRScriptProvider:
             "platform": ["windows"],
             "content": "echo hello",
         }
-        result = provider_with_api.apply_create(template)
+        result = provider_with_api.apply_create(_env(template))
         assert result["id"] == "id1"
 
     def test_apply_delete_alias(self, provider_with_api):
@@ -558,11 +576,11 @@ class TestRTRScriptProvider:
 
     def test_v03_metadata_maturity_validates_on_rtr_script(self, provider, minimal_rtr_script):
         minimal_rtr_script["metadata"] = {"maturity": {"created": "2026-04-16"}}
-        assert provider.validate_template(minimal_rtr_script) == []
+        assert provider.validate_template(_env(minimal_rtr_script)) == []
 
     def test_v03_metadata_ads_rejected_on_rtr_script(self, provider, minimal_rtr_script):
         minimal_rtr_script["metadata"] = {"ads": {"goal": "g"}}
-        errors = provider.validate_template(minimal_rtr_script)
+        errors = provider.validate_template(_env(minimal_rtr_script))
         assert any("metadata.ads is only supported on detection resources" in e and "rtr_script" in e for e in errors)
 
     def test_v03_metadata_edits_do_not_change_content_hash(self, provider, minimal_rtr_script):

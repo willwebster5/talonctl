@@ -1,0 +1,32 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://talonctl.dev/schemas/v2/envelope.schema.json",
+  "title": "talonctl v2 resource envelope",
+  "description": "Kubernetes-style envelope for a single talonctl resource. A file may contain one or more of these (multi-doc or list).",
+  "type": "object",
+  "required": ["apiVersion", "kind", "metadata", "spec"],
+  "properties": {
+    "apiVersion": { "const": "talon/v2" },
+    "kind": {
+      "type": "string",
+      "enum": ["Detection", "SavedSearch", "LookupFile", "Workflow", "Dashboard", "RtrScript", "RtrPutFile"]
+    },
+    "metadata": {
+      "type": "object",
+      "required": ["resource_id"],
+      "properties": {
+        "resource_id": { "type": "string", "minLength": 1 },
+        "name": { "type": "string" },
+        "labels": { "type": "object", "additionalProperties": { "type": "string" } },
+        "tags": { "type": "array" }
+      },
+      "additionalProperties": true
+    },
+    "spec": { "type": "object", "minProperties": 1 },
+    "status": {
+      "description": "READ-ONLY, server-assigned. Authoring it is an error.",
+      "not": {}
+    }
+  },
+  "additionalProperties": false
+}

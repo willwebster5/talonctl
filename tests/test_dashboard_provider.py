@@ -6,6 +6,19 @@ from unittest.mock import MagicMock
 import pytest
 import yaml
 
+from tests.unit._helpers import make_envelope
+
+
+def _env(flat):
+    """Wrap a legacy flat dashboard dict as an Envelope for the provider's
+    Envelope-consuming methods. Defaults a resource_id (which v1_to_v2 requires)
+    from the name when the test dict omits it — these tests assert on validation
+    errors / planned changes, not on resource_id, so the default is inert.
+    """
+    if "resource_id" not in flat:
+        flat = {**flat, "resource_id": "test_resource"}
+    return make_envelope(flat, "dashboard")
+
 
 @pytest.fixture
 def mock_falcon():
@@ -59,37 +72,41 @@ class TestGetResourceType:
 
 class TestValidateTemplate:
     def test_valid_template(self, provider, valid_template):
-        errors = provider.validate_template(valid_template)
+        errors = provider.validate_template(_env(valid_template))
         assert errors == []
 
     def test_missing_resource_id(self, provider, valid_template):
+        # In v2 the Envelope guarantees a resource_id (metadata.resource_id is
+        # mandatory); v1_to_v2 raises at load time when it is absent, so the
+        # provider's own resource_id check is unreachable through the Envelope
+        # path. Assert the v2 enforcement point instead.
         del valid_template["resource_id"]
-        errors = provider.validate_template(valid_template)
-        assert any("resource_id" in e for e in errors)
+        with pytest.raises(ValueError, match="resource_id"):
+            make_envelope(valid_template, "dashboard")
 
     def test_missing_name(self, provider, valid_template):
         del valid_template["name"]
-        errors = provider.validate_template(valid_template)
+        errors = provider.validate_template(_env(valid_template))
         assert any("name" in e for e in errors)
 
     def test_missing_sections(self, provider, valid_template):
         del valid_template["sections"]
-        errors = provider.validate_template(valid_template)
+        errors = provider.validate_template(_env(valid_template))
         assert any("sections" in e for e in errors)
 
     def test_missing_widgets(self, provider, valid_template):
         del valid_template["widgets"]
-        errors = provider.validate_template(valid_template)
+        errors = provider.validate_template(_env(valid_template))
         assert any("widgets" in e for e in errors)
 
     def test_widget_ref_not_in_widgets(self, provider, valid_template):
         valid_template["sections"]["section-1"]["widgetIds"] = ["nonexistent"]
-        errors = provider.validate_template(valid_template)
+        errors = provider.validate_template(_env(valid_template))
         assert any("nonexistent" in e for e in errors)
 
     def test_query_widget_missing_querystring(self, provider, valid_template):
         valid_template["widgets"]["widget-aaa"]["queryString"] = ""
-        errors = provider.validate_template(valid_template)
+        errors = provider.validate_template(_env(valid_template))
         assert any("queryString" in e for e in errors)
 
     def test_note_widget_no_querystring_ok(self, provider, valid_template):
@@ -102,7 +119,7 @@ class TestValidateTemplate:
             "type": "note",
             "text": "Hello",
         }
-        errors = provider.validate_template(valid_template)
+        errors = provider.validate_template(_env(valid_template))
         assert errors == []
 
     def test_parameter_panel_no_querystring_ok(self, provider, valid_template):
@@ -115,7 +132,7 @@ class TestValidateTemplate:
             "type": "parameterPanel",
             "parameterIds": ["param1"],
         }
-        errors = provider.validate_template(valid_template)
+        errors = provider.validate_template(_env(valid_template))
         assert errors == []
 
 
@@ -369,11 +386,13 @@ class TestPlanMethods:
     def test_plan_create(self, provider, valid_template):
         from talonctl.core.base_provider import ResourceAction
 
-        change = provider.plan_create(valid_template, "/path/to/template.yaml")
+        env = _env(valid_template)
+        change = provider.plan_create(env, "/path/to/template.yaml")
         assert change.action == ResourceAction.CREATE
         assert change.resource_type == "dashboard"
         assert change.resource_id == "test_dashboard"
         assert change.resource_name == "Test Dashboard"
+        assert change.envelope is env
 
     def test_plan_update(self, provider, valid_template):
         from talonctl.core.base_provider import ResourceAction
@@ -383,7 +402,7 @@ class TestPlanMethods:
             "content_hash": "different-hash",
             "provider_metadata": {"dashboard_id": "old-id"},
         }
-        change = provider.plan_update(valid_template, current_state, "/path/to/template.yaml")
+        change = provider.plan_update(_env(valid_template), current_state, "/path/to/template.yaml")
         assert change.action == ResourceAction.UPDATE
         assert change.resource_type == "dashboard"
 
@@ -392,7 +411,7 @@ class TestPlanMethods:
 
         content_hash = provider.compute_content_hash(valid_template)
         current_state = {"id": "old-id", "content_hash": content_hash, "provider_metadata": {"dashboard_id": "old-id"}}
-        change = provider.plan_update(valid_template, current_state, "/path/to/template.yaml")
+        change = provider.plan_update(_env(valid_template), current_state, "/path/to/template.yaml")
         assert change.action == ResourceAction.NO_CHANGE
 
     def test_plan_delete(self, provider):
@@ -410,7 +429,7 @@ class TestApplyAliases:
             "status_code": 200,
             "body": {"resources": [{"id": "new-id", "name": "Test"}]},
         }
-        result = provider.apply_create(valid_template)
+        result = provider.apply_create(_env(valid_template))
         assert result["id"] == "new-id"
 
     def test_apply_delete_calls_delete_resource(self, provider, mock_falcon):
@@ -625,16 +644,16 @@ def minimal_dashboard():
 class TestV03MetadataNamespace:
     def test_metadata_maturity_validates(self, provider, minimal_dashboard):
         minimal_dashboard["metadata"] = {"maturity": {"created": "2026-04-16", "confidence": "medium"}}
-        assert provider.validate_template(minimal_dashboard) == []
+        assert provider.validate_template(_env(minimal_dashboard)) == []
 
     def test_metadata_ads_rejected(self, provider, minimal_dashboard):
         minimal_dashboard["metadata"] = {"ads": {"goal": "g"}}
-        errors = provider.validate_template(minimal_dashboard)
+        errors = provider.validate_template(_env(minimal_dashboard))
         assert any("metadata.ads is only supported on detection resources" in e and "dashboard" in e for e in errors)
 
     def test_old_top_level_ads_rejected(self, provider, minimal_dashboard):
         minimal_dashboard["ads"] = {"goal": "g"}
-        errors = provider.validate_template(minimal_dashboard)
+        errors = provider.validate_template(_env(minimal_dashboard))
         assert any("Top-level 'ads:' is removed in v0.3.0" in e for e in errors)
 
     def test_metadata_edits_do_not_change_content_hash(self, provider, minimal_dashboard):

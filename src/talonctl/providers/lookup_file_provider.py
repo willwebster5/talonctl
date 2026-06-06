@@ -11,10 +11,13 @@ import os
 import json
 import hashlib
 import logging
-from typing import Dict, List, Optional, Any
+from typing import Dict, List, Optional, Any, TYPE_CHECKING
 from datetime import datetime, timezone
 
 from talonctl.core.base_provider import BaseResourceProvider, ResourceAction, ResourceChange
+
+if TYPE_CHECKING:
+    from talonctl.core.envelope import Envelope
 from talonctl.core.metadata_validators import reject_old_shape, validate_maturity
 from talonctl.core.template_sanitizer import strip_for_hash
 
@@ -63,16 +66,17 @@ class LookupFileProvider(BaseResourceProvider):
         """Return resource type identifier"""
         return "lookup_file"
 
-    def validate_template(self, template: Dict[str, Any]) -> List[str]:
+    def validate_template(self, env: "Envelope") -> List[str]:
         """
         Validate lookup file template
 
         Args:
-            template: Lookup file template data
+            env: Lookup file Envelope
 
         Returns:
             List of validation error messages (empty if valid)
         """
+        template = env.to_working_dict()
         errors = []
 
         # v0.3.0: reject pre-v0.3.0 shapes and validate metadata.maturity universally.
@@ -227,39 +231,40 @@ class LookupFileProvider(BaseResourceProvider):
             logger.debug(f"Lookup file {filename} not found in {search_domain}: {e}")
             return None
 
-    def plan_create(self, template: Dict[str, Any], template_path: str) -> ResourceChange:
+    def plan_create(self, env: "Envelope", template_path: str) -> ResourceChange:
         """
         Plan creation of a new lookup file
 
         Args:
-            template: Lookup file template
+            env: Lookup file Envelope
             template_path: Path to template file
 
         Returns:
             ResourceChange with action=CREATE
         """
+        template = env.to_working_dict()
         return ResourceChange(
             action=ResourceAction.CREATE,
             resource_type=self.get_resource_type(),
             resource_name=template["name"],
             new_value=template,
             template_path=template_path,
+            envelope=env,
         )
 
-    def plan_update(
-        self, template: Dict[str, Any], current_state: Dict[str, Any], template_path: str
-    ) -> ResourceChange:
+    def plan_update(self, env: "Envelope", current_state: Dict[str, Any], template_path: str) -> ResourceChange:
         """
         Plan update of an existing lookup file
 
         Args:
-            template: New lookup file template
+            env: New lookup file Envelope
             current_state: Current state from remote
             template_path: Path to template file
 
         Returns:
             ResourceChange with action=UPDATE or NO_CHANGE
         """
+        template = env.to_working_dict()
         # Compute hashes to detect changes
         new_hash = self.compute_content_hash(template)
         old_hash = current_state.get("content_hash", "")
@@ -273,6 +278,7 @@ class LookupFileProvider(BaseResourceProvider):
                 old_value=current_state,
                 new_value=template,
                 template_path=template_path,
+                envelope=env,
             )
         else:
             return ResourceChange(
@@ -281,6 +287,7 @@ class LookupFileProvider(BaseResourceProvider):
                 resource_name=template["name"],
                 resource_id=current_state.get("filename"),
                 template_path=template_path,
+                envelope=env,
             )
 
     def plan_delete(self, resource_id: str, resource_name: str) -> ResourceChange:
@@ -301,12 +308,12 @@ class LookupFileProvider(BaseResourceProvider):
             resource_id=resource_id,
         )
 
-    def apply_create(self, template: Dict[str, Any]) -> Dict[str, Any]:
+    def apply_create(self, env: "Envelope") -> Dict[str, Any]:
         """
         Create a new lookup file in NGSIEM
 
         Args:
-            template: Lookup file template
+            env: Lookup file Envelope
 
         Returns:
             Created lookup file metadata
@@ -314,6 +321,7 @@ class LookupFileProvider(BaseResourceProvider):
         Raises:
             RuntimeError: If creation fails
         """
+        template = env.to_working_dict()
         try:
             # Read file content
             source_path = template["source"]
@@ -357,13 +365,13 @@ class LookupFileProvider(BaseResourceProvider):
         except Exception as e:
             raise RuntimeError(f"Failed to create lookup file: {e}") from e
 
-    def apply_update(self, resource_id: str, template: Dict[str, Any], current_state: Dict[str, Any]) -> Dict[str, Any]:
+    def apply_update(self, resource_id: str, env: "Envelope", current_state: Dict[str, Any]) -> Dict[str, Any]:
         """
         Update an existing lookup file in NGSIEM
 
         Args:
             resource_id: Current filename
-            template: New lookup file template
+            env: New lookup file Envelope
             current_state: Current state (for comparison)
 
         Returns:
@@ -372,6 +380,7 @@ class LookupFileProvider(BaseResourceProvider):
         Raises:
             RuntimeError: If update fails
         """
+        template = env.to_working_dict()
         try:
             # Read file content
             source_path = template["source"]
@@ -635,15 +644,17 @@ class LookupFileProvider(BaseResourceProvider):
         return f"lookup_files/{resource_id}.yaml"
 
     # Convenience methods (aliases for apply_* methods)
-    def create_resource(self, template: Dict[str, Any]) -> Dict[str, Any]:
+    # WARNING: these forward to Envelope-taking apply_create/apply_update. They
+    # have no current callers; if reused, pass an Envelope, not a dict (a dict
+    # would AttributeError inside apply_* on .to_working_dict()). Reverse-alias
+    # direction differs from other providers — consolidation deferred.
+    def create_resource(self, env: "Envelope") -> Dict[str, Any]:
         """Alias for apply_create"""
-        return self.apply_create(template)
+        return self.apply_create(env)
 
-    def update_resource(
-        self, resource_id: str, template: Dict[str, Any], current_state: Dict[str, Any]
-    ) -> Dict[str, Any]:
+    def update_resource(self, resource_id: str, env: "Envelope", current_state: Dict[str, Any]) -> Dict[str, Any]:
         """Alias for apply_update"""
-        return self.apply_update(resource_id, template, current_state)
+        return self.apply_update(resource_id, env, current_state)
 
     def delete_resource(self, resource_id: str) -> bool:
         """Alias for apply_delete"""

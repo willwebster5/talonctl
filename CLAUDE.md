@@ -59,6 +59,11 @@ talonctl sync                        # Reconcile state with live tenant
 talonctl drift                       # Detect manual console changes
 talonctl show                        # Show current state
 talonctl destroy                     # Destroy managed resources
+talonctl migrate                     # Dry-run: preview v1->v2 template + v3->v4 state migration
+talonctl migrate --write             # Apply migration in place (git is the rollback)
+talonctl migrate --templates-only    # Rewrap templates only
+talonctl migrate --state-only        # Reconcile state only
+talonctl migrate --format json -o m.json  # Machine-readable report (orphans/unmanaged/conflicts)
 
 # Credential management
 talonctl auth setup                  # Interactive credential setup wizard

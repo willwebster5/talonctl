@@ -2,6 +2,63 @@
 
 ## [Unreleased]
 
+## v0.5.0 — v2 authoring layer, State v4, provider refactor, and `talonctl migrate`
+
+The foundation for talonctl v2: a unified Kubernetes-style resource envelope,
+`resource_id`-keyed state, and an idempotent migration command. **Backward
+compatible** — existing v1 templates and v3 state continue to load unchanged; v2
+adoption is opt-in via `talonctl migrate`.
+
+### Added
+
+- **Canonical v2 envelope** (`apiVersion: talon/v2` with `kind`/`metadata`/`spec`/`status`)
+  as the in-memory model every resource normalizes to. A dual-read loader
+  transparently reads both legacy v1 flat templates and v2 envelopes, so no
+  template changes are required to upgrade.
+- **Multi-resource files** — a single YAML file may declare one or many
+  independent resources (multi-doc `---` or a top-level list), each keyed by its
+  own `resource_id`. (There is no `kind: Module`; a file is 1..N independent
+  resources.)
+- **In-package JSON Schema + schema-driven validator** for the v2 envelope;
+  `talonctl validate` understands both v1 and v2 files.
+- **State v4** — state is keyed by stable `resource_id`; v3 (name-keyed) state
+  auto-migrates in memory on load, non-destructively. A read-only `status`
+  projection (`server_id`, `rule_id`, `deployed_at`, `content_hash`) is derived
+  from existing state fields; authors cannot write `status`.
+- **`talonctl migrate`** — idempotent, dry-run-by-default command that rewrites
+  v1 templates to v2 in place and reconciles v3 state to v4:
+  - `--write` applies changes (dry-run writes nothing — neither templates nor
+    state); `--templates-only` / `--state-only` scope each half;
+    `--format json -o FILE` emits a machine-readable report.
+  - Reports orphans (state with no template), unmanaged templates (template with
+    no state), and conflicts — **report-only; never deletes or creates** resources.
+  - Content hashes are preserved byte-for-byte through a rewrap, so already-deployed
+    resources do not show as changed on the next `plan`.
+
+### Changed
+
+- All seven providers now consume the canonical `Envelope`; `plan`, `apply`,
+  `validate`, and `drift` operate on v1 and v2 templates end-to-end through a
+  single parse path.
+- API-consumed fields (e.g. `_search_domain`) are classified into `spec`; the v1
+  top-level `metadata:` block routes to envelope `metadata`.
+
+### Internal
+
+- New modules: `core/envelope.py`, `core/envelope_loader.py`, `core/v1_compat.py`,
+  `core/envelope_validation.py`, `core/envelope_serializer.py`,
+  `core/status_projection.py`, `core/migrate.py`; `schemas/envelope.schema.json`.
+  `TemplateDiscovery` delegates to the shared envelope loader (one parse path).
+- Merge-blocking content-hash stability tests guarantee the v1→v2 transform and
+  the serializer never alter a deployed resource's content hash.
+
+### Migration
+
+Run `talonctl migrate` (dry-run) to preview, then `talonctl migrate --write` to
+convert templates to v2 and re-key state to v4 in place. Git is the rollback. v1
+templates and v3 state continue to work unmigrated; a future release will
+announce the v1-reader removal deadline.
+
 ## v0.4.0 — `find` command + fleet-wide CQL validation
 
 ### Added
