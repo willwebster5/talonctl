@@ -29,6 +29,22 @@ def test_dry_run_writes_nothing(tmp_path, monkeypatch):
     assert not (proj / ".crowdstrike" / "deployed_state.json").exists()
 
 
+def test_dry_run_in_non_project_dir_creates_no_crowdstrike(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)  # bare dir: no .crowdstrike anywhere up-tree
+    result = CliRunner().invoke(cli, ["migrate"])
+    assert result.exit_code == 0, result.output
+    assert not (tmp_path / ".crowdstrike").exists()
+
+
+def test_rerun_after_migration_reports_nothing(tmp_path, monkeypatch):
+    proj = _project(tmp_path)
+    monkeypatch.chdir(proj)
+    CliRunner().invoke(cli, ["migrate", "--write"])  # migrate everything
+    result = CliRunner().invoke(cli, ["migrate", "--templates-only"])  # second dry-run
+    assert result.exit_code == 0, result.output
+    assert "Nothing to migrate" in result.output
+
+
 def test_write_rewraps_templates_in_place(tmp_path, monkeypatch):
     proj = _project(tmp_path)
     monkeypatch.chdir(proj)
