@@ -71,6 +71,17 @@ class TemplateDiscovery:
         "dashboard",
     ]
 
+    # Resource type -> on-disk directory name.
+    TYPE_TO_DIR = {
+        "detection": "detections",
+        "workflow": "workflows",
+        "saved_search": "saved_searches",
+        "lookup_file": "lookup_files",
+        "rtr_script": "rtr_scripts",
+        "rtr_put_file": "rtr_put_files",
+        "dashboard": "dashboards",
+    }
+
     # Default resources directory
     DEFAULT_RESOURCES_DIR = "resources"
 
@@ -151,18 +162,7 @@ class TemplateDiscovery:
         """
         templates = []
 
-        # Map resource type to directory name
-        type_to_dir = {
-            "detection": "detections",
-            "workflow": "workflows",
-            "saved_search": "saved_searches",
-            "lookup_file": "lookup_files",
-            "rtr_script": "rtr_scripts",
-            "rtr_put_file": "rtr_put_files",
-            "dashboard": "dashboards",
-        }
-
-        dir_name = type_to_dir.get(resource_type)
+        dir_name = self.TYPE_TO_DIR.get(resource_type)
         if not dir_name:
             logger.warning(f"Unknown resource type: {resource_type}")
             return templates
