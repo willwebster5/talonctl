@@ -114,4 +114,4 @@ def _render_text(report: MigrationReport) -> None:
     actionable_templates = any(fr.status in ("rewrap", "error") for fr in report.rewraps)
     actionable_state = bool(s.rekeyed or s.orphans or s.unmanaged or s.conflicts)
     if not actionable_templates and not actionable_state:
-        console.print("[green]Nothing to migrate — templates are v2 and state is v4.[/green]")
+        console.print("[green]Nothing to migrate — templates are v2 and state is reconciled.[/green]")
