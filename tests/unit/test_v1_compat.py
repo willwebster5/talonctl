@@ -118,3 +118,29 @@ def test_existing_resource_id_preferred_over_minting():
 def test_missing_resource_id_for_non_rtr_kind_raises():
     with pytest.raises(ValueError, match="resource_id"):
         v1_to_v2({"name": "no id"}, resource_type="detection")
+
+
+def test_list_form_labels_preserved_in_metadata():
+    # Saved searches carry labels as a list of strings (LogScale's native model).
+    # They must survive v1->v2 normalization, not be silently dropped.
+    env = v1_to_v2(
+        {
+            "resource_id": "hunt_mfa_failures",
+            "name": "hunt_mfa_failures",
+            "queryString": "#x | count()",
+            "_search_domain": "all",
+            "labels": ["hunting", "identity", "mfa", "monitoring"],
+        },
+        resource_type="saved_search",
+    )
+    assert env.metadata["labels"] == ["hunting", "identity", "mfa", "monitoring"]
+    assert "labels" not in env.spec
+
+
+def test_dict_form_labels_still_preserved_in_metadata():
+    env = v1_to_v2(
+        {"resource_id": "r", "name": "n", "labels": {"team": "td", "tier": "1"}},
+        resource_type="detection",
+    )
+    assert env.metadata["labels"] == {"team": "td", "tier": "1"}
+    assert "labels" not in env.spec

@@ -20,12 +20,16 @@ _RENAME_MAP = {"queryString": "query_string"}
 _MINTABLE_TYPES = {"rtr_script", "rtr_put_file"}
 
 
-def _build_labels(data: Dict[str, Any]) -> Dict[str, str]:
-    labels: Dict[str, str] = {}
+def _build_labels(data: Dict[str, Any]) -> Any:
+    """Normalize the v1 `labels` field. Two shapes occur in the wild:
+    a key/value mapping (k8s-style) and a flat list of strings (LogScale saved
+    searches). Preserve whichever was authored; anything else yields no labels."""
     raw = data.get("labels")
     if isinstance(raw, dict):
-        labels.update({str(k): str(v) for k, v in raw.items()})
-    return labels
+        return {str(k): str(v) for k, v in raw.items()}
+    if isinstance(raw, list):
+        return [str(v) for v in raw]
+    return {}
 
 
 def v1_to_v2(data: Dict[str, Any], *, resource_type: str) -> Envelope:
