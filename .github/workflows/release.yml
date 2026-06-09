@@ -88,7 +88,15 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Create GitHub Release
-        run: gh release create "$GITHUB_REF_NAME" --generate-notes
+      - name: Create GitHub Release (if absent)
+        # Idempotent: the tag may already have a release if it was created
+        # manually (which also pushes the tag and triggers this workflow), so
+        # creating again would fail with HTTP 422 "tag already exists".
+        run: |
+          if gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
+            echo "Release $GITHUB_REF_NAME already exists — nothing to do."
+          else
+            gh release create "$GITHUB_REF_NAME" --generate-notes
+          fi
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
