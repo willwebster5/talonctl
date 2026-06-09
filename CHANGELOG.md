@@ -2,6 +2,26 @@
 
 ## [Unreleased]
 
+## v0.5.1 — migrate fidelity: preserve labels, emit block scalars
+
+Bug-fix release hardening `talonctl migrate`'s v1→v2 rewrap so it is lossless and
+produces readable v2 templates.
+
+### Fixed
+
+- **List-form `labels` are no longer dropped.** `v1_compat` only recognized
+  mapping-style labels; saved searches carry `labels` as a list of strings
+  (LogScale's native model), which were silently discarded on rewrap. Because the
+  same normalization also feeds the engine's loader, the loss made `plan`/`apply`
+  see those labels as absent and try to **strip them from deployed resources**.
+  Both shapes (list and mapping) now round-trip, and the v2 envelope schema accepts
+  either.
+- **Multiline strings serialize as `|` literal blocks** instead of double-quoted
+  scalars with `\n` escapes. The serializer hints block style for any string
+  containing newlines. It stays strictly lossless: strings PyYAML cannot
+  block-represent (trailing whitespace or embedded tabs) fall back to a quoted
+  scalar rather than being mutated — so content hashes and deployments do not churn.
+
 ## v0.5.0 — v2 authoring layer, State v4, provider refactor, and `talonctl migrate`
 
 The foundation for talonctl v2: a unified Kubernetes-style resource envelope,

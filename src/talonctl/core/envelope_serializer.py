@@ -20,6 +20,25 @@ from talonctl.core.envelope import IDENTITY_METADATA_KEYS, Envelope
 _METADATA_ORDER = ("resource_id", "name", "labels", "tags")
 
 
+class _BlockDumper(yaml.SafeDumper):
+    """SafeDumper that renders multiline strings as `|` literal blocks instead of
+    double-quoted strings with `\\n` escapes."""
+
+
+def _represent_str(dumper: yaml.Dumper, data: str):
+    # Request `|` literal block for multiline strings. This is style-only and
+    # never mutates content: PyYAML honors the hint when it can and falls back to
+    # a (lossless) quoted scalar for strings it cannot block-represent — i.e. those
+    # with trailing whitespace or embedded tabs. Mutating content to force block
+    # everywhere would change content hashes and churn deployments, so we don't.
+    if "\n" in data:
+        return dumper.represent_scalar("tag:yaml.org,2002:str", data, style="|")
+    return dumper.represent_scalar("tag:yaml.org,2002:str", data)
+
+
+_BlockDumper.add_representer(str, _represent_str)
+
+
 def _canonical(obj: Any) -> Any:
     """Rebuild dicts with sorted keys (lists recursed, scalars untouched) so
     PyYAML's ``sort_keys=False`` emits deterministic output while leaving our
@@ -50,8 +69,9 @@ def _document(env: Envelope) -> dict:
 
 def serialize_envelope(env: Envelope) -> str:
     """Render one envelope to canonical v2 YAML text (trailing newline)."""
-    return yaml.safe_dump(
+    return yaml.dump(
         _document(env),
+        Dumper=_BlockDumper,
         sort_keys=False,
         default_flow_style=False,
         allow_unicode=True,

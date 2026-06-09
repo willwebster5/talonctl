@@ -123,3 +123,43 @@ def test_metadata_order_covers_identity_keys():
     # _METADATA_ORDER encodes the emit-order of the identity set; if a key is
     # added to IDENTITY_METADATA_KEYS, this forces an explicit ordering decision.
     assert set(_METADATA_ORDER) == set(IDENTITY_METADATA_KEYS)
+
+
+def test_multiline_string_emits_literal_block_scalar():
+    # Multiline queries/descriptions must serialize as `|` literal blocks, not
+    # double-quoted strings with embedded \n escapes.
+    env = Envelope(
+        api_version="talon/v2",
+        kind="SavedSearch",
+        metadata={"resource_id": "q", "name": "Q"},
+        spec={"query_string": "#repo=x\n| head()\n| count()\n", "search_domain": "all"},
+    )
+    text = serialize_envelope(env)
+    assert "query_string: |" in text
+    assert "\\n" not in text  # no escaped newlines anywhere
+
+
+def test_multiline_with_trailing_whitespace_roundtrips_losslessly():
+    # Strings with trailing whitespace (or tabs) cannot be `|` block-represented;
+    # they fall back to a quoted scalar. The serializer must NEVER mutate content
+    # to force block style — doing so changes content hashes and churns deployments.
+    q = "#repo=x   \n| head()  \n| count()\n"
+    env = Envelope(
+        api_version="talon/v2",
+        kind="SavedSearch",
+        metadata={"resource_id": "q", "name": "Q"},
+        spec={"query_string": q, "search_domain": "all"},
+    )
+    text = serialize_envelope(env)
+    assert yaml.safe_load(text)["spec"]["query_string"] == q  # exact, no mutation
+
+
+def test_multiline_with_tabs_roundtrips_losslessly():
+    q = "#x\n| groupBy([a], function=([\n\tcount(),\n]))\n"
+    env = Envelope(
+        api_version="talon/v2",
+        kind="SavedSearch",
+        metadata={"resource_id": "q", "name": "Q"},
+        spec={"query_string": q, "search_domain": "all"},
+    )
+    assert yaml.safe_load(serialize_envelope(env))["spec"]["query_string"] == q
