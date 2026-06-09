@@ -1,6 +1,12 @@
+import re
 from pathlib import Path
 from click.testing import CliRunner
 from talonctl.cli import cli
+
+
+def _plain(s: str) -> str:
+    # strip ANSI color codes and collapse whitespace (rich wraps long lines)
+    return re.sub(r"\s+", " ", re.sub(r"\x1b\[[0-9;]*m", "", s)).lower()
 
 
 def _project(tmp_path: Path):
@@ -51,3 +57,25 @@ def test_malformed_yaml_file_is_reported(tmp_path, monkeypatch):
     result = CliRunner().invoke(cli, ["validate"])
     assert result.exit_code != 0
     assert "parse error" in result.output.lower() or "yaml" in result.output.lower()
+
+
+def test_trailing_whitespace_in_block_scalar_fails(tmp_path, monkeypatch):
+    proj = _project(tmp_path)
+    # filter block scalar whose first content line has trailing whitespace
+    (proj / "resources" / "detections" / "ws.yaml").write_text(
+        "apiVersion: talon/v2\n"
+        "kind: Detection\n"
+        "metadata:\n"
+        "  resource_id: d1\n"
+        "  name: D1\n"
+        "spec:\n"
+        "  severity: 50\n"
+        "  search:\n"
+        "    filter: |\n"
+        "      #repo=test   \n"
+        "      | head()\n"
+    )
+    monkeypatch.chdir(proj)
+    result = CliRunner().invoke(cli, ["validate"])
+    assert result.exit_code != 0
+    assert "trailing whitespace" in _plain(result.output)

@@ -47,6 +47,37 @@ def validate_authored_envelope(env: Envelope) -> List[str]:
     return errors
 
 
+def check_whitespace_hygiene(env: Envelope) -> List[str]:
+    """Flag multiline string values that cannot serialize as a clean ``|`` block
+    scalar — those with trailing whitespace on a line, or an embedded tab. PyYAML
+    falls back to a quoted ``"...\\n..."`` scalar for these, producing unreadable
+    templates, so they are rejected to keep authored v2 files canonical.
+    """
+    errors: List[str] = []
+
+    def walk(value: Any, path: str) -> None:
+        if isinstance(value, str):
+            if "\n" in value:  # only multiline strings render as block scalars
+                if any(line != line.rstrip() for line in value.split("\n")):
+                    errors.append(
+                        f"{path}: multiline string has trailing whitespace (prevents a clean '|' block scalar)"
+                    )
+                if "\t" in value:
+                    errors.append(
+                        f"{path}: multiline string contains a tab (prevents a clean '|' block scalar; use spaces)"
+                    )
+        elif isinstance(value, dict):
+            for k, v in value.items():
+                walk(v, f"{path}.{k}")
+        elif isinstance(value, list):
+            for i, v in enumerate(value):
+                walk(v, f"{path}[{i}]")
+
+    walk(env.metadata, "metadata")
+    walk(env.spec, "spec")
+    return errors
+
+
 def check_depends_on_cycles(envs: List[Envelope]) -> List[str]:
     """Detect cycles in the depends_on graph (Kahn's algorithm)."""
     nodes = {e.ref for e in envs}
