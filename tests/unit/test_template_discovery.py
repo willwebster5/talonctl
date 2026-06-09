@@ -483,9 +483,10 @@ class TestFsTemplateDiscoveryEnvelopeDelegation:
         """Drift guard: VALID_RESOURCE_TYPES and TYPE_TO_DIR must cover the same keys."""
         assert set(FsTemplateDiscovery.VALID_RESOURCE_TYPES) == set(FsTemplateDiscovery.TYPE_TO_DIR)
 
-    def test_kind_dir_mismatch_skipped_with_warning(self, tmp_path, caplog):
+    def test_v2_resource_routed_by_kind_regardless_of_directory(self, tmp_path):
+        # A v2 resource is routed by its `kind`, not its directory — so a Detection
+        # authored under saved_searches/ is discovered as a detection (not skipped).
         resources = tmp_path / "resources"
-        # A Detection authored under saved_searches/ — kind/dir mismatch.
         self._write(
             resources / "saved_searches" / "wrong.yaml",
             """
@@ -500,9 +501,56 @@ class TestFsTemplateDiscoveryEnvelopeDelegation:
             """,
         )
         disco = FsTemplateDiscovery(resources_dir=resources, project_root=tmp_path)
-
-        with caplog.at_level("WARNING"):
-            discovered = disco.discover_all(resource_types=["saved_search"])
-
+        discovered = disco.discover_all()
+        assert "misplaced" in {t.name for t in discovered["detection"]}
         assert discovered["saved_search"] == []
-        assert "mismatch" in caplog.text.lower()
+
+    def test_mixed_kind_multi_resource_file_routes_each_by_kind(self, tmp_path):
+        # One file (under detections/) declaring a LookupFile AND a Detection. Both
+        # are discovered, each routed to its own type bucket by kind.
+        resources = tmp_path / "resources"
+        self._write(
+            resources / "detections" / "box_group.yaml",
+            """
+            apiVersion: talon/v2
+            kind: LookupFile
+            metadata:
+              resource_id: approved_box_services
+              name: approved_box_services.csv
+            spec:
+              format: csv
+              source: ./data/approved.csv
+            ---
+            apiVersion: talon/v2
+            kind: Detection
+            metadata:
+              resource_id: box___unknown_service
+              name: Box Unknown Service
+            spec:
+              depends_on:
+                - lookup_file.approved_box_services
+              search:
+                filter: '#Vendor=box'
+            """,
+        )
+        disco = FsTemplateDiscovery(resources_dir=resources, project_root=tmp_path)
+        discovered = disco.discover_all()
+        assert "box___unknown_service" in {t.name for t in discovered["detection"]}
+        assert "approved_box_services" in {t.name for t in discovered["lookup_file"]}
+
+    def test_v1_still_routes_by_directory(self, tmp_path):
+        # v1 docs carry no kind — their type must still come from the directory.
+        resources = tmp_path / "resources"
+        self._write(
+            resources / "lookup_files" / "legacy.yaml",
+            """
+            resource_id: legacy_lookup
+            name: legacy.csv
+            type: lookup_file
+            format: csv
+            source: ./data/legacy.csv
+            """,
+        )
+        disco = FsTemplateDiscovery(resources_dir=resources, project_root=tmp_path)
+        discovered = disco.discover_all()
+        assert "legacy_lookup" in {t.name for t in discovered["lookup_file"]}

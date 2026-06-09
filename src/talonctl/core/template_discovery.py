@@ -81,6 +81,8 @@ class TemplateDiscovery:
         "rtr_put_file": "rtr_put_files",
         "dashboard": "dashboards",
     }
+    # Inverse: top-level directory name -> resource type (for v1's directory routing).
+    _DIR_TO_TYPE = {d: t for t, d in TYPE_TO_DIR.items()}
 
     # Default resources directory
     DEFAULT_RESOURCES_DIR = "resources"
@@ -128,83 +130,75 @@ class TemplateDiscovery:
         """
         discovered: Dict[str, List[DiscoveredTemplate]] = {rt: [] for rt in self.VALID_RESOURCE_TYPES}
 
-        # Apply resource type filter
-        types_to_scan = resource_types if resource_types else self.VALID_RESOURCE_TYPES
+        # One recursive pass over resources/; each resource is routed by its own
+        # type (v2 by `kind`, v1 by its top-level directory). A file may therefore
+        # declare resources of any kind regardless of where it lives.
+        for template in self._discover_all_templates():
+            discovered[template.resource_type].append(template)
 
-        for resource_type in types_to_scan:
-            if resource_type not in self.VALID_RESOURCE_TYPES:
-                logger.warning(f"Invalid resource type: {resource_type}")
+        type_filter = set(resource_types) if resource_types else None
+        for resource_type in self.VALID_RESOURCE_TYPES:
+            if type_filter is not None and resource_type not in type_filter:
+                discovered[resource_type] = []
                 continue
-
-            templates = self._discover_by_type(resource_type)
-
-            # Apply tag filter
+            templates = discovered[resource_type]
             if tags:
                 templates = self._filter_by_tags(templates, tags)
-
-            # Apply name filter
             if names:
                 templates = self._filter_by_names(templates, names)
-
             discovered[resource_type] = templates
 
         return discovered
 
-    def _discover_by_type(self, resource_type: str) -> List[DiscoveredTemplate]:
-        """
-        Discover all templates of a specific type
+    def _dir_resource_type(self, yaml_file: Path) -> Optional[str]:
+        """The resource type implied by a file's top-level directory under
+        resources/ (e.g. ``resources/detections/...`` -> ``detection``). This is
+        the default type for v1 docs, which carry no ``kind``; None if the file is
+        not under a recognized type directory."""
+        try:
+            rel = yaml_file.relative_to(self.resources_dir)
+        except ValueError:
+            return None
+        if len(rel.parts) < 2:  # a file directly in resources/, not under a type dir
+            return None
+        return self._DIR_TO_TYPE.get(rel.parts[0])
 
-        Args:
-            resource_type: Resource type to discover
-
-        Returns:
-            List of discovered templates
-        """
-        templates = []
-
-        dir_name = self.TYPE_TO_DIR.get(resource_type)
-        if not dir_name:
-            logger.warning(f"Unknown resource type: {resource_type}")
+    def _discover_all_templates(self) -> List[DiscoveredTemplate]:
+        """Recursively discover every resource under resources/, routing each by
+        its type (v2 ``kind``; v1 top-level directory)."""
+        templates: List[DiscoveredTemplate] = []
+        if not self.resources_dir.exists():
+            logger.debug(f"Resources directory not found: {self.resources_dir}")
             return templates
-
-        type_dir = self.resources_dir / dir_name
-
-        if not type_dir.exists():
-            logger.debug(f"Directory not found: {type_dir}")
-            return templates
-
-        # Recursively find all YAML files
-        for yaml_file in type_dir.rglob("*.yaml"):
+        for yaml_file in sorted(self.resources_dir.rglob("*.yaml")):
             try:
-                for template in self._load_template(yaml_file, resource_type):
+                for template in self._load_template(yaml_file, self._dir_resource_type(yaml_file)):
                     templates.append(template)
-                    # Cache template
                     self._template_cache[template.resource_id] = template
             except Exception as e:
                 logger.error(f"Error loading template {yaml_file}: {e}")
-
-        logger.info(f"Discovered {len(templates)} {resource_type} templates")
+        logger.info(f"Discovered {len(templates)} templates")
         return templates
 
-    def _load_template(self, file_path: Path, expected_type: str) -> List[DiscoveredTemplate]:
+    def _load_template(self, file_path: Path, default_resource_type: Optional[str]) -> List[DiscoveredTemplate]:
         """
-        Load and validate a template file via the single envelope parse path.
+        Load a template file via the single envelope parse path.
 
         Delegates to ``load_envelopes`` so v1 (flat dict) and v2 (apiVersion:
         talon/v2) files share one parser. A single file may declare multiple
-        resources (multi-doc ``---`` or a top-level list), so this returns a
-        list of templates.
+        resources of any kind (multi-doc ``---`` or a top-level list); each is
+        routed by its own type — v2 by ``kind``, v1 by ``default_resource_type``
+        (the file's top-level directory, since v1 carries no kind).
 
         Args:
             file_path: Path to template YAML file
-            expected_type: Expected resource type (from the directory)
+            default_resource_type: Type for v1 docs (from the directory), or None
 
         Returns:
-            List of DiscoveredTemplate (empty if the file fails to parse or
-            every declared resource is a kind/dir mismatch).
+            List of DiscoveredTemplate (empty if the file fails to parse).
         """
         try:
-            envelopes = load_envelopes(file_path, default_resource_type=expected_type)
+            envelopes = load_envelopes(file_path, default_resource_type=default_resource_type)
         except Exception as e:
             logger.error(f"Error loading {file_path}: {e}")
             return []
@@ -213,13 +207,8 @@ class TemplateDiscovery:
         origin = str(file_path.resolve())
 
         for env in envelopes:
-            # Envelope validation owns identity/name checks; here we only guard
-            # the kind/dir invariant (a resource authored in the wrong dir).
-            if env.resource_type != expected_type:
-                logger.warning(
-                    f"Template {file_path} kind/dir mismatch: directory implies "
-                    f"'{expected_type}' but kind '{env.kind}' maps to '{env.resource_type}' — skipping"
-                )
+            if env.resource_type not in self.VALID_RESOURCE_TYPES:
+                logger.warning(f"{file_path}: unknown resource type '{env.resource_type}' — skipping")
                 continue
 
             env.origin_path = origin  # re-injected as _template_path by to_working_dict
@@ -301,12 +290,10 @@ class TemplateDiscovery:
 
         resource_type, name = parts
 
-        # Discover templates of this type
-        templates = self._discover_by_type(resource_type)
-
-        # Find matching template
-        for template in templates:
-            if template.name == name:
+        # Discover across resources/ (v2 resources may live in any directory) and
+        # match on both type and stable id.
+        for template in self._discover_all_templates():
+            if template.resource_type == resource_type and template.name == name:
                 return template
 
         return None
