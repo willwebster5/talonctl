@@ -396,5 +396,62 @@ class TestLookupFileProvider:
         assert provider.compute_content_hash(with_metadata) == base_hash
 
 
+class TestSourcePathResolution:
+    """`source:` resolves against the template's project root, not the CWD.
+
+    Lookup `source:` paths are authored project-root-relative (e.g.
+    ``resources/lookup_files/x.csv``) and the CSV lives next to the templates.
+    Under ``talonctl --path`` — or any invocation from a foreign CWD — the old
+    ``os.path.abspath(source)`` resolved against the wrong base and reported the
+    file missing. Resolution must anchor to the project root walked up from the
+    template's own location (``_template_path``).
+    """
+
+    def _project(self, tmp_path):
+        """Build a minimal talonctl project; return (relative_source, abs_yaml_path)."""
+        (tmp_path / ".crowdstrike").mkdir()
+        csv_rel = "resources/lookup_files/test/ips.csv"
+        csv_abs = tmp_path / csv_rel
+        csv_abs.parent.mkdir(parents=True)
+        csv_abs.write_text("ip\n1.2.3.4\n")
+        return csv_rel, str(tmp_path / "resources/lookup_files/test/ips.yaml")
+
+    def _env(self, csv_rel, yaml_abs):
+        from tests.unit._helpers import make_envelope
+
+        return make_envelope(
+            {"resource_id": "ips", "name": "ips", "format": "csv", "source": csv_rel},
+            "lookup_file",
+            origin_path=yaml_abs,
+        )
+
+    def test_validate_resolves_relative_source_from_foreign_cwd(self, tmp_path, monkeypatch):
+        provider = LookupFileProvider(Mock())
+        csv_rel, yaml_abs = self._project(tmp_path)
+        env = self._env(csv_rel, yaml_abs)
+
+        other = tmp_path / "elsewhere"
+        other.mkdir()
+        monkeypatch.chdir(other)
+
+        errors = provider.validate_template(env)
+        assert not any("not found" in e.lower() for e in errors), errors
+
+    def test_content_hash_reads_relative_source_from_foreign_cwd(self, tmp_path, monkeypatch):
+        provider = LookupFileProvider(Mock())
+        csv_rel, yaml_abs = self._project(tmp_path)
+        working = self._env(csv_rel, yaml_abs).to_working_dict()
+
+        other = tmp_path / "elsewhere"
+        other.mkdir()
+        monkeypatch.chdir(other)
+
+        # Absolute source always resolves; equality proves the relative source
+        # was found and its bytes hashed (not the empty-file fallback).
+        abs_working = dict(working, source=str(tmp_path / csv_rel))
+        abs_working.pop("_template_path", None)
+        assert provider.compute_content_hash(working) == provider.compute_content_hash(abs_working)
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])

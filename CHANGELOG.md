@@ -2,6 +2,25 @@
 
 ## [Unreleased]
 
+## v0.5.5 — lookup `source:` resolves against the template's project root
+
+### Fixed
+
+- **Lookup-file `source:` CSV/JSON paths no longer resolve relative to the
+  current working directory.** Relative sources are authored project-root-relative
+  (e.g. `resources/lookup_files/x.csv`) and the data file lives next to the
+  templates, so resolving against CWD broke `validate`, `plan`, and `apply`
+  whenever talonctl ran from anywhere but the project root — most visibly under
+  `--path DIR` invoked from an unrelated directory, which reported every
+  relative-source lookup as "source file not found". Resolution now anchors to
+  the project root walked up from each template's own location
+  (`_template_path`), via a single `LookupFileProvider._resolve_source_path`
+  helper shared by `validate_template`, `compute_content_hash`, `apply_create`,
+  and `apply_update`. Absolute sources are unchanged; when a template's origin is
+  unknown (hand-built dicts), it falls back to the previous CWD-relative
+  behavior. Closes the follow-up noted in v0.5.4. Content hashes for existing
+  lookups are unaffected (same bytes hashed), so no deploy churn.
+
 ## v0.5.2 — validate: block-scalar whitespace hygiene
 
 ### Added

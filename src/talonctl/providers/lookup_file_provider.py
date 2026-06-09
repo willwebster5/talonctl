@@ -11,10 +11,12 @@ import os
 import json
 import hashlib
 import logging
+from pathlib import Path
 from typing import Dict, List, Optional, Any, TYPE_CHECKING
 from datetime import datetime, timezone
 
 from talonctl.core.base_provider import BaseResourceProvider, ResourceAction, ResourceChange
+from talonctl.project import find_project_root
 
 if TYPE_CHECKING:
     from talonctl.core.envelope import Envelope
@@ -66,6 +68,26 @@ class LookupFileProvider(BaseResourceProvider):
         """Return resource type identifier"""
         return "lookup_file"
 
+    def _resolve_source_path(self, template: Dict[str, Any]) -> str:
+        """Resolve a lookup file's ``source`` to an absolute path.
+
+        Absolute sources pass through. Relative sources are authored
+        project-root-relative (e.g. ``resources/lookup_files/x.csv``), so they
+        anchor to the project root walked up from the template's own location
+        (``_template_path``) — never the current working directory. This keeps
+        ``talonctl --path`` (and any run from a foreign CWD) correct. When the
+        template's origin is unknown (e.g. a hand-built dict in tests), fall
+        back to CWD-relative resolution to preserve historical behavior.
+        """
+        source = template["source"]
+        if os.path.isabs(source):
+            return source
+        template_path = template.get("_template_path")
+        if template_path:
+            root = find_project_root(Path(template_path).parent)
+            return str((root / source).resolve())
+        return os.path.abspath(source)
+
     def validate_template(self, env: "Envelope") -> List[str]:
         """
         Validate lookup file template
@@ -107,12 +129,8 @@ class LookupFileProvider(BaseResourceProvider):
         # Validate source file exists
         source_path = template.get("source")
         if source_path:
-            # Resolve relative to project root or absolute path
-            if not os.path.isabs(source_path):
-                # Try relative to current working directory
-                abs_path = os.path.abspath(source_path)
-            else:
-                abs_path = source_path
+            # Relative sources anchor to the template's project root, not CWD.
+            abs_path = self._resolve_source_path(template)
 
             if not os.path.exists(abs_path):
                 errors.append(f"Source file not found: {source_path} (resolved to {abs_path})")
@@ -323,10 +341,8 @@ class LookupFileProvider(BaseResourceProvider):
         """
         template = env.to_working_dict()
         try:
-            # Read file content
-            source_path = template["source"]
-            if not os.path.isabs(source_path):
-                source_path = os.path.abspath(source_path)
+            # Read file content (relative source anchors to template's project root)
+            source_path = self._resolve_source_path(template)
 
             with open(source_path, "rb") as f:
                 file_content = f.read()
@@ -382,10 +398,8 @@ class LookupFileProvider(BaseResourceProvider):
         """
         template = env.to_working_dict()
         try:
-            # Read file content
-            source_path = template["source"]
-            if not os.path.isabs(source_path):
-                source_path = os.path.abspath(source_path)
+            # Read file content (relative source anchors to template's project root)
+            source_path = self._resolve_source_path(template)
 
             with open(source_path, "rb") as f:
                 file_content = f.read()
@@ -482,12 +496,11 @@ class LookupFileProvider(BaseResourceProvider):
         Returns:
             SHA256 hash as hex string
         """
+        # Resolve the source against the template's project root BEFORE stripping
+        # internal fields — strip_for_hash drops `_template_path`, the anchor.
+        source_path = self._resolve_source_path(template)
         # v0.3.0: strip universal IaC-only + internal + metadata fields first.
         template = strip_for_hash(template)
-        # Read file content
-        source_path = template["source"]
-        if not os.path.isabs(source_path):
-            source_path = os.path.abspath(source_path)
 
         try:
             with open(source_path, "rb") as f:
