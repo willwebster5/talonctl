@@ -2,6 +2,7 @@
 
 import logging
 from datetime import datetime
+from pathlib import Path
 
 import click
 
@@ -42,11 +43,19 @@ class _TalonGroup(click.Group):
 @click.group(cls=_TalonGroup)
 @click.version_option(version=__version__, prog_name="talonctl")
 @click.option("--verbose", "-v", is_flag=True, help="Enable verbose output")
+@click.option(
+    "--path",
+    "resources_path",
+    type=click.Path(file_okay=False, path_type=Path),
+    default=None,
+    help="Directory to discover resources from (default: <project-root>/resources).",
+)
 @click.pass_context
-def cli(ctx, verbose):
+def cli(ctx, verbose, resources_path):
     """Infrastructure as code for CrowdStrike NGSIEM."""
     ctx.ensure_object(dict)
     ctx.obj["verbose"] = verbose
+    ctx.obj["resources_dir"] = resources_path
 
     if verbose:
         logging.getLogger().setLevel(logging.DEBUG)

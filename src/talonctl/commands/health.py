@@ -170,7 +170,11 @@ class DetectionHealthChecker:
         ngsiem_query_fn=None,
         alert_volume_fn=None,
     ):
-        self._discovery = template_discovery or TemplateDiscovery()
+        if template_discovery is None:
+            from talonctl.commands._common import resolve_resources_dir
+
+            template_discovery = TemplateDiscovery(resolve_resources_dir())
+        self._discovery = template_discovery
         self._dep_validator = dependency_validator or DependencyValidator(self._discovery)
         self._ngsiem_query_fn = ngsiem_query_fn
         self._alert_volume_fn = alert_volume_fn

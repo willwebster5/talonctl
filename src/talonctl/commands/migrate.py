@@ -12,7 +12,13 @@ from pathlib import Path
 import click
 from rich.table import Table
 
-from talonctl.commands._common import console, get_state_file_path, state_options
+from talonctl.commands._common import (
+    console,
+    get_resources_dir,
+    get_state_file_path,
+    resolve_resources_dir,
+    state_options,
+)
 from talonctl.core.migrate import (
     MigrationReport,
     build_template_index,
@@ -21,7 +27,6 @@ from talonctl.core.migrate import (
 )
 from talonctl.core.state_manager import StateManager
 from talonctl.core.template_discovery import TemplateDiscovery
-from talonctl.project import find_project_root
 
 
 @click.command()
@@ -42,7 +47,7 @@ def migrate(state_file, write, templates_only, state_only, fmt, output):
     report = MigrationReport(dry_run=not write)
 
     if do_templates:
-        resources_dir = find_project_root() / TemplateDiscovery.DEFAULT_RESOURCES_DIR
+        resources_dir = get_resources_dir()
         report.rewraps = scan_templates(resources_dir)
         if write:
             for fr in report.rewraps:
@@ -53,7 +58,7 @@ def migrate(state_file, write, templates_only, state_only, fmt, output):
         state_path = get_state_file_path(state_file)
         sm = StateManager(state_file_path=state_path) if state_path.exists() else None
         resources = sm.export_to_dict().get("resources", {}) if sm else {}
-        index = build_template_index(TemplateDiscovery().discover_all())
+        index = build_template_index(TemplateDiscovery(resolve_resources_dir()).discover_all())
         report.state = reconcile_state(resources, index)
         if write and sm is not None and report.state.rekeyed:
             for rtype, old, new in report.state.rekeyed:

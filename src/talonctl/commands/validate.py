@@ -19,7 +19,7 @@ def _validate_v2_files(console) -> bool:
     handled here; v1 files are left to the existing validation path.
     """
     import yaml
-    from talonctl.project import find_project_root
+    from talonctl.commands._common import get_resources_dir
     from talonctl.core.envelope import API_VERSION
     from talonctl.core.envelope_loader import load_envelopes
     from talonctl.core.envelope_validation import (
@@ -29,7 +29,7 @@ def _validate_v2_files(console) -> bool:
     )
 
     try:
-        resources_dir = find_project_root() / "resources"
+        resources_dir = get_resources_dir()
     except Exception:
         return False
     if not resources_dir.exists():
