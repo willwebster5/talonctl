@@ -20,6 +20,44 @@
   unknown (hand-built dicts), it falls back to the previous CWD-relative
   behavior. Closes the follow-up noted in v0.5.4. Content hashes for existing
   lookups are unaffected (same bytes hashed), so no deploy churn.
+  
+## v0.5.4 — global `--path` to point at any resources directory
+
+### Added
+
+- **Global `--path DIR` option** on the `talonctl` group: discover resources from
+  an arbitrary directory instead of the hardwired `<project-root>/resources`.
+  Available to every command (`validate`, `plan`, `apply`, `find`, `show`, `drift`,
+  `sync`, `import`, `migrate`, `health`, …) via the shared context, so
+  `talonctl --path /opt/detections plan` just works. Default is unchanged, so
+  existing repos behave identically. State location is independent — set it with
+  `--state-file` (or the `.crowdstrike/` project root); `--path` only governs where
+  templates are discovered.
+
+  Note: lookup-file `source:` CSV paths are still resolved relative to the current
+  working directory, so running with `--path` from an unrelated CWD can report
+  "source file not found" for lookups with relative sources — use absolute `source`
+  paths or run from the project for now. Anchoring lookup sources to the resources
+  directory is a follow-up.
+  
+## v0.5.3 — discovery routes resources by kind, not directory
+
+### Changed
+
+- **Template discovery is now kind-routed.** It makes a single recursive pass over
+  `resources/` and routes each resource by its own type — v2 by `kind`, v1 by its
+  top-level directory (v1 carries no kind). Previously discovery scanned per
+  type-directory and **skipped** any resource whose `kind` didn't match its
+  directory, which meant a **mixed-kind multi-resource file** (e.g. a lookup grouped
+  with the detection that uses it) silently dropped its off-type resources on
+  plan/apply — even though the loader and `validate` accepted it. Now a file may
+  declare resources of any kind regardless of where it lives, and they all deploy.
+  v1 directory routing is unchanged (fully backward compatible); standard one-type-
+  per-directory layouts produce identical results.
+
+  Removes the `kind/dir mismatch … skipping` warning (a misplaced v2 resource is now
+  routed by kind instead of dropped). `find_template_by_id` resolves across all of
+  `resources/` too.
 
 ## v0.5.2 — validate: block-scalar whitespace hygiene
 

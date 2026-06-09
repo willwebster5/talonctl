@@ -46,6 +46,25 @@ def get_state_file_path(state_file: Optional[str] = None) -> Path:
     return project_root / ".crowdstrike" / "deployed_state.json"
 
 
+def resolve_resources_dir() -> Optional[Path]:
+    """The resources directory set by the global ``--path`` option, or None.
+
+    Read from the active Click context so any command (and the orchestrator)
+    picks it up without threading the value through every call site. Returns
+    None when there is no context (e.g. direct function calls in tests) or when
+    ``--path`` was not given."""
+    ctx = click.get_current_context(silent=True)
+    if ctx is not None and ctx.obj:
+        return ctx.obj.get("resources_dir")
+    return None
+
+
+def get_resources_dir() -> Path:
+    """The effective resources directory: the ``--path`` override if set,
+    otherwise the default ``<project-root>/resources``."""
+    return resolve_resources_dir() or (find_project_root() / "resources")
+
+
 def init_orchestrator(
     state_file: Optional[str] = None,
     require_credentials: bool = True,
@@ -73,6 +92,7 @@ def init_orchestrator(
     return DeploymentOrchestrator(
         falcon_client=falcon,
         state_file_path=state_file_path,
+        resources_dir=resolve_resources_dir(),
         remote_state_enabled=remote_state,
         remote_state_search_domain=remote_state_search_domain,
         remote_state_filename=remote_state_filename,
