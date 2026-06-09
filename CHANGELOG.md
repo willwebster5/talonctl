@@ -2,6 +2,25 @@
 
 ## [Unreleased]
 
+## v0.5.4 — global `--path` to point at any resources directory
+
+### Added
+
+- **Global `--path DIR` option** on the `talonctl` group: discover resources from
+  an arbitrary directory instead of the hardwired `<project-root>/resources`.
+  Available to every command (`validate`, `plan`, `apply`, `find`, `show`, `drift`,
+  `sync`, `import`, `migrate`, `health`, …) via the shared context, so
+  `talonctl --path /opt/detections plan` just works. Default is unchanged, so
+  existing repos behave identically. State location is independent — set it with
+  `--state-file` (or the `.crowdstrike/` project root); `--path` only governs where
+  templates are discovered.
+
+  Note: lookup-file `source:` CSV paths are still resolved relative to the current
+  working directory, so running with `--path` from an unrelated CWD can report
+  "source file not found" for lookups with relative sources — use absolute `source`
+  paths or run from the project for now. Anchoring lookup sources to the resources
+  directory is a follow-up.
+
 ## v0.5.2 — validate: block-scalar whitespace hygiene
 
 ### Added

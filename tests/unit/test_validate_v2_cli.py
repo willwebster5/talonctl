@@ -79,3 +79,25 @@ def test_trailing_whitespace_in_block_scalar_fails(tmp_path, monkeypatch):
     result = CliRunner().invoke(cli, ["validate"])
     assert result.exit_code != 0
     assert "trailing whitespace" in _plain(result.output)
+
+
+def test_global_path_redirects_discovery(tmp_path, monkeypatch):
+    # Project root (for state) has NO resources/. Templates live in a separate dir.
+    proj = tmp_path / "proj"
+    (proj / ".crowdstrike").mkdir(parents=True)
+    custom = tmp_path / "elsewhere"
+    (custom / "detections").mkdir(parents=True)
+    # A schema-invalid v2 detection (authored `status`) — only caught if discovery
+    # actually scans the custom path.
+    (custom / "detections" / "bad.yaml").write_text(
+        "apiVersion: talon/v2\nkind: Detection\nmetadata: {resource_id: d1}\nspec: {severity: 1}\nstatus: {rule_id: x}\n"
+    )
+    monkeypatch.chdir(proj)
+
+    # Without --path: nothing under proj/resources, so validate passes.
+    assert CliRunner().invoke(cli, ["validate"]).exit_code == 0
+
+    # With --path: discovery is redirected to the custom dir and the bad file fails.
+    result = CliRunner().invoke(cli, ["--path", str(custom), "validate"])
+    assert result.exit_code != 0
+    assert "status" in _plain(result.output)

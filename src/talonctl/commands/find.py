@@ -39,8 +39,9 @@ def _discover_templates():
     """Walk the resources/ tree; returns a list of DiscoveredTemplate or []."""
     try:
         from talonctl.core.template_discovery import TemplateDiscovery
+        from talonctl.commands._common import resolve_resources_dir
 
-        discovery = TemplateDiscovery()
+        discovery = TemplateDiscovery(resolve_resources_dir())
         all_templates = discovery.discover_all()
         flat = []
         for templates in all_templates.values():
