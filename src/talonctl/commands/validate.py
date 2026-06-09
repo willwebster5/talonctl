@@ -22,7 +22,11 @@ def _validate_v2_files(console) -> bool:
     from talonctl.project import find_project_root
     from talonctl.core.envelope import API_VERSION
     from talonctl.core.envelope_loader import load_envelopes
-    from talonctl.core.envelope_validation import validate_authored_envelope, check_depends_on_cycles
+    from talonctl.core.envelope_validation import (
+        validate_authored_envelope,
+        check_depends_on_cycles,
+        check_whitespace_hygiene,
+    )
 
     try:
         resources_dir = find_project_root() / "resources"
@@ -52,7 +56,7 @@ def _validate_v2_files(console) -> bool:
             had_errors = True
             continue
         for env in envs:
-            errs = validate_authored_envelope(env)
+            errs = validate_authored_envelope(env) + check_whitespace_hygiene(env)
             if errs:
                 had_errors = True
                 for msg in errs:

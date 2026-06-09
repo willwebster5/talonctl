@@ -1,5 +1,9 @@
 from talonctl.core.envelope import Envelope
-from talonctl.core.envelope_validation import validate_authored_envelope, check_depends_on_cycles
+from talonctl.core.envelope_validation import (
+    validate_authored_envelope,
+    check_depends_on_cycles,
+    check_whitespace_hygiene,
+)
 
 
 def _det(rid, depends_on=None):
@@ -57,3 +61,30 @@ def test_duplicate_depends_on_is_not_a_cycle():
     a = _det("a", ["detection.b", "detection.b"])
     b = _det("b")
     assert check_depends_on_cycles([a, b]) == []
+
+
+def _ss(query):
+    return Envelope("talon/v2", "SavedSearch", {"resource_id": "s1"}, {"query_string": query, "search_domain": "all"})
+
+
+def test_whitespace_hygiene_passes_clean_multiline():
+    assert check_whitespace_hygiene(_ss("#x\n| head()\n| count()\n")) == []
+
+
+def test_whitespace_hygiene_flags_trailing_whitespace():
+    errs = check_whitespace_hygiene(_ss("#x   \n| head()\n"))
+    assert errs and any("trailing whitespace" in e and "query_string" in e for e in errs)
+
+
+def test_whitespace_hygiene_flags_tab():
+    errs = check_whitespace_hygiene(_ss("#x\n| groupBy([a], function=([\n\tcount()\n]))\n"))
+    assert errs and any("tab" in e.lower() and "query_string" in e for e in errs)
+
+
+def test_whitespace_hygiene_checks_metadata_and_nested():
+    # nested spec values (e.g. dashboard widget queries) and a single-line value
+    # with no newline are not block scalars, so they're not flagged.
+    env = Envelope("talon/v2", "Dashboard", {"resource_id": "d"},
+                   {"widgets": {"w1": {"queryString": "#a\n| b  \n"}}})
+    errs = check_whitespace_hygiene(env)
+    assert any("trailing whitespace" in e and "widgets.w1.queryString" in e for e in errs)

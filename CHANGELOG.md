@@ -2,6 +2,18 @@
 
 ## [Unreleased]
 
+## v0.5.2 — validate: block-scalar whitespace hygiene
+
+### Added
+
+- **`validate` now flags block-unsafe whitespace in v2 templates.** Any multiline
+  string value (descriptions, CQL filters, queries) with trailing whitespace on a
+  line, or an embedded tab, fails validation with the offending field path. These
+  force PyYAML to emit an unreadable quoted `"...\n..."` scalar instead of a clean
+  `|` literal block, so the check keeps authored v2 files canonical and catches the
+  problem at PR time. Implemented as `check_whitespace_hygiene` in
+  `core/envelope_validation.py`, wired into `talonctl validate`.
+
 ## v0.5.1 — migrate fidelity: preserve labels, emit block scalars
 
 Bug-fix release hardening `talonctl migrate`'s v1→v2 rewrap so it is lossless and
