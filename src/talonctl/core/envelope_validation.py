@@ -59,9 +59,13 @@ def check_whitespace_hygiene(env: Envelope) -> List[str]:
         if isinstance(value, str):
             if "\n" in value:  # only multiline strings render as block scalars
                 if any(line != line.rstrip() for line in value.split("\n")):
-                    errors.append(f"{path}: multiline string has trailing whitespace (prevents a clean '|' block scalar)")
+                    errors.append(
+                        f"{path}: multiline string has trailing whitespace (prevents a clean '|' block scalar)"
+                    )
                 if "\t" in value:
-                    errors.append(f"{path}: multiline string contains a tab (prevents a clean '|' block scalar; use spaces)")
+                    errors.append(
+                        f"{path}: multiline string contains a tab (prevents a clean '|' block scalar; use spaces)"
+                    )
         elif isinstance(value, dict):
             for k, v in value.items():
                 walk(v, f"{path}.{k}")

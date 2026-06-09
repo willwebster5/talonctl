@@ -84,7 +84,6 @@ def test_whitespace_hygiene_flags_tab():
 def test_whitespace_hygiene_checks_metadata_and_nested():
     # nested spec values (e.g. dashboard widget queries) and a single-line value
     # with no newline are not block scalars, so they're not flagged.
-    env = Envelope("talon/v2", "Dashboard", {"resource_id": "d"},
-                   {"widgets": {"w1": {"queryString": "#a\n| b  \n"}}})
+    env = Envelope("talon/v2", "Dashboard", {"resource_id": "d"}, {"widgets": {"w1": {"queryString": "#a\n| b  \n"}}})
     errs = check_whitespace_hygiene(env)
     assert any("trailing whitespace" in e and "widgets.w1.queryString" in e for e in errs)
