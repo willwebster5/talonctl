@@ -436,6 +436,38 @@ def query_ngsiem_with_client(
         return None
 
 
+def make_health_query_fn(time_range_default: str = "7d"):
+    """Build a query callable compatible with ``DetectionHealthChecker``.
+
+    ``DetectionHealthChecker`` expects an ``ngsiem_query_fn`` that is called as
+    ``fn(query=<cql>, time_range=<"Nd">)`` and returns a dict it can read with
+    ``result.get("events", [])``. ``NGSIEMClient.execute_query`` neither takes a
+    ``time_range`` kwarg (it's ``start_time``) nor returns a dict (it returns a
+    ``QueryResult`` dataclass), so this adapter bridges both gaps.
+
+    The client is constructed lazily on first use and reused across calls. Any
+    auth/query failure degrades to ``{"events": []}`` with a logged warning so
+    callers (e.g. ``talonctl health`` in CI without credentials) still produce a
+    report rather than crashing.
+
+    Returns:
+        A callable ``fn(query, time_range=time_range_default) -> {"events": [...]}``.
+    """
+    state: Dict[str, Optional["NGSIEMClient"]] = {"client": None}
+
+    def query_fn(query: str, time_range: str = time_range_default) -> Dict[str, List[Dict]]:
+        try:
+            if state["client"] is None:
+                state["client"] = NGSIEMClient()
+            result = state["client"].execute_query(query, start_time=time_range)
+            return {"events": result.events if result.success else []}
+        except Exception as e:
+            logger.warning(f"Alert volume query failed, returning empty volumes: {e}")
+            return {"events": []}
+
+    return query_fn
+
+
 # Enhanced query builders for common patterns
 class QueryBuilder:
     """Helper class to build common NGSIEM queries"""
