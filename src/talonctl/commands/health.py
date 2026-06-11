@@ -287,7 +287,13 @@ def health(ctx, period, output, fmt):
     """Check detection health across deployed rules."""
     console.print("[bold cyan]talonctl health[/bold cyan]\n")
 
-    checker = DetectionHealthChecker()
+    # Wire an authenticated NGSIEM query function so alert volumes are actually
+    # fetched. Without this the checker reports every detection as zero-hits.
+    # The adapter degrades to empty volumes (with a logged warning) if auth or
+    # the query fails, so the inventory report still renders.
+    from talonctl.utils.ngsiem_client import make_health_query_fn
+
+    checker = DetectionHealthChecker(ngsiem_query_fn=make_health_query_fn())
     report = checker.run(period_days=period)
 
     if fmt == "json" or output:

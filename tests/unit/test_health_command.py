@@ -63,3 +63,21 @@ class TestHealthCommand:
         result = runner.invoke(health, ["--output", str(out_file)])
         assert result.exit_code == 0
         assert out_file.exists()
+
+    @patch("talonctl.commands.health.DetectionHealthChecker")
+    def test_health_wires_ngsiem_query_fn(self, MockChecker):
+        """Regression: the checker must be built WITH an ngsiem_query_fn.
+
+        Without it, query_alert_volumes() returns empty volumes and every
+        detection is misreported as zero-hits.
+        """
+        mock_report = MagicMock()
+        mock_report.format_text.return_value = "ok"
+        MockChecker.return_value.run.return_value = mock_report
+
+        runner = CliRunner()
+        runner.invoke(health, [])
+
+        _, kwargs = MockChecker.call_args
+        assert kwargs.get("ngsiem_query_fn") is not None
+        assert callable(kwargs["ngsiem_query_fn"])
