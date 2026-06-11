@@ -36,9 +36,7 @@ def test_time_range_is_mapped_to_start_time_kwarg():
 def test_unsuccessful_query_returns_empty_events():
     """A failed (but non-raising) query degrades to empty events, not None."""
     with patch("talonctl.utils.ngsiem_client.NGSIEMClient") as MockClient:
-        MockClient.return_value.execute_query.return_value = QueryResult(
-            success=False, error="boom"
-        )
+        MockClient.return_value.execute_query.return_value = QueryResult(success=False, error="boom")
         fn = make_health_query_fn()
         out = fn(query="cql", time_range="7d")
 
