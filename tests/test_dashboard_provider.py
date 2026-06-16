@@ -348,6 +348,23 @@ class TestCreateResource:
         with pytest.raises(RuntimeError, match="Create failed"):
             provider.create_resource(valid_template)
 
+    def test_success_resources_as_id_strings(self, provider, mock_falcon, valid_template):
+        # NGSIEM dashboards endpoints may return resources as bare ID strings
+        # rather than {"id": ...} objects. A successful call must not crash.
+        mock_falcon.command.return_value = {
+            "status_code": 200,
+            "body": {"resources": ["new-dash-uuid"]},
+        }
+        result = provider.create_resource(valid_template)
+        assert result["id"] == "new-dash-uuid"
+        assert result["dashboard_id"] == "new-dash-uuid"
+
+    def test_failure_with_string_errors(self, provider, mock_falcon, valid_template):
+        # Errors may be bare strings; formatting must not raise AttributeError.
+        mock_falcon.command.return_value = {"status_code": 500, "body": {"errors": ["boom"]}}
+        with pytest.raises(RuntimeError, match="boom"):
+            provider.create_resource(valid_template)
+
 
 class TestUpdateResource:
     def test_success_returns_new_id(self, provider, mock_falcon, valid_template):
@@ -365,6 +382,18 @@ class TestUpdateResource:
         current_state = {"id": "old-id", "provider_metadata": {"dashboard_id": "old-id"}}
         with pytest.raises(RuntimeError, match="Update failed"):
             provider.update_resource("old-id", valid_template, current_state)
+
+    def test_success_resources_as_id_strings(self, provider, mock_falcon, valid_template):
+        # Regression: PATCH returns resources as bare ID strings; a successful
+        # update previously crashed with "'str' object has no attribute 'get'".
+        mock_falcon.command.return_value = {
+            "status_code": 200,
+            "body": {"resources": ["new-id-after-patch"]},
+        }
+        current_state = {"id": "old-dash-uuid", "provider_metadata": {"dashboard_id": "old-dash-uuid"}}
+        result = provider.update_resource("old-dash-uuid", valid_template, current_state)
+        assert result["id"] == "new-id-after-patch"
+        assert result["dashboard_id"] == "new-id-after-patch"
 
 
 class TestDeleteResource:

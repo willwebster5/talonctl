@@ -294,6 +294,36 @@ class DashboardProvider(BaseResourceProvider):
         self._remote_dashboards_cache = dashboards
         return dashboards
 
+    # ── Response Helpers ────────────────────────────────────────
+
+    @staticmethod
+    def _resource_id_from_response(resource: Any, fallback: str = "") -> str:
+        """Extract a dashboard ID from a resources[] entry.
+
+        The NGSIEM dashboards endpoints may return resources as full objects
+        ({"id": ...}) OR as bare ID strings (like the saved-search endpoints).
+        Handle both so a successful API call is never misread as a crash.
+        """
+        if isinstance(resource, str):
+            return resource
+        if isinstance(resource, dict):
+            return resource.get("id", fallback)
+        return str(resource)
+
+    @staticmethod
+    def _first_error_message(errors: List[Any], status: int) -> str:
+        """Extract a human-readable message from an API errors[] list.
+
+        Errors may be dicts ({"message": ...}) or bare strings; handle both so
+        error formatting never masks the real failure with an AttributeError.
+        """
+        if errors:
+            first = errors[0]
+            if isinstance(first, dict):
+                return first.get("message", "Unknown error")
+            return str(first)
+        return f"HTTP {status}"
+
     # ── Create ──────────────────────────────────────────────────
 
     def create_resource(self, template: Dict[str, Any]) -> Dict[str, Any]:
@@ -313,11 +343,10 @@ class DashboardProvider(BaseResourceProvider):
         errors = body.get("errors", [])
 
         if status != 200 or not resources:
-            error_msg = errors[0].get("message", "Unknown error") if errors else f"HTTP {status}"
+            error_msg = self._first_error_message(errors, status)
             raise RuntimeError(f"Failed to create dashboard '{name}': {error_msg}")
 
-        resource = resources[0]
-        dashboard_id = resource.get("id", "")
+        dashboard_id = self._resource_id_from_response(resources[0])
         logger.info(f"Created dashboard '{name}' with ID {dashboard_id}")
 
         return {"id": dashboard_id, "dashboard_id": dashboard_id, "name": name}
@@ -346,11 +375,10 @@ class DashboardProvider(BaseResourceProvider):
         errors = body.get("errors", [])
 
         if status != 200 or not resources:
-            error_msg = errors[0].get("message", "Unknown error") if errors else f"HTTP {status}"
+            error_msg = self._first_error_message(errors, status)
             raise RuntimeError(f"Failed to update dashboard '{name}': {error_msg}")
 
-        resource = resources[0]
-        new_id = resource.get("id", dashboard_id)
+        new_id = self._resource_id_from_response(resources[0], fallback=dashboard_id)
 
         if new_id != dashboard_id:
             logger.info(f"Dashboard '{name}' ID changed: {dashboard_id} -> {new_id}")
