@@ -13,7 +13,6 @@ RESOURCE_DIRS = [
     "detections",
     "saved_searches",
     "dashboards",
-    "workflows",
     "lookup_files",
     "rtr_scripts",
     "rtr_put_files",

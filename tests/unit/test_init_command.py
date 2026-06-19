@@ -18,7 +18,8 @@ class TestInitCommand:
         assert (project / "resources" / "detections").is_dir()
         assert (project / "resources" / "saved_searches").is_dir()
         assert (project / "resources" / "dashboards").is_dir()
-        assert (project / "resources" / "workflows").is_dir()
+        # workflow support is temporarily deprecated (#23) — not scaffolded
+        assert not (project / "resources" / "workflows").exists()
         assert (project / "resources" / "lookup_files").is_dir()
         assert (project / "resources" / "rtr_scripts").is_dir()
         assert (project / "resources" / "rtr_put_files").is_dir()
