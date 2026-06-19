@@ -3,7 +3,7 @@ Resource Providers
 
 This package contains all resource provider implementations:
 - DetectionProvider: NGSIEM detection rules
-- WorkflowProvider: SOAR workflows
+- WorkflowProvider: SOAR workflows (temporarily deprecated — issue #23; kept but unregistered)
 - SavedSearchProvider: NGSIEM saved queries
 - LookupFileProvider: NGSIEM lookup files
 - RTRScriptProvider: RTR custom scripts for runscript command
