@@ -6,7 +6,7 @@ Pip-installable CLI tool for CrowdStrike NGSIEM infrastructure as code. Terrafor
 
 This repo is the **tool** -- a pip-installable Python package. It does not contain detection templates, knowledge bases, or project-specific content. Those live in user projects (e.g., [talonctl-demo](https://github.com/willwebster5/talonctl-demo)).
 
-- **Seven resource types** -- detections, saved searches, dashboards, workflows, lookup files, RTR scripts, RTR put files
+- **Six resource types** -- detections, saved searches, dashboards, lookup files, RTR scripts, RTR put files (workflows temporarily deprecated — see issue #23)
 - **Terraform-like lifecycle** -- validate, plan, apply, import, sync, drift
 - **State management** -- tracks deployed resources and their CrowdStrike API IDs
 - **Scaffolding** -- `talonctl init` creates new projects with the correct directory structure

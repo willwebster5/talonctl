@@ -1,4 +1,9 @@
 # Example: Falcon Fusion Workflow
+#
+# DEPRECATED (issue #23): talonctl workflow support is temporarily deprecated.
+# This file is kept for format reference only — workflow templates are ignored
+# by validate/plan/apply/sync/drift until support is rebuilt and tested.
+#
 # A simple notification workflow triggered by a high-severity detection.
 # NOTE: No workflows existed in the source repo — this is a synthetic example
 # showing the YAML template format the IaC engine expects.

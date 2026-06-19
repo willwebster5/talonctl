@@ -18,7 +18,7 @@ Providers are the bridge between YAML templates and CrowdStrike APIs. Each provi
 | Provider | Resource Type | CrowdStrike API | Template Location |
 |----------|---------------|-----------------|-------------------|
 | **DetectionProvider** | NGSIEM detection rules | Custom IOA API | `resources/detections/` |
-| **WorkflowProvider** | SOAR automation workflows | Workflows API | `resources/workflows/` |
+| **WorkflowProvider** | SOAR automation workflows _(temporarily deprecated — #23)_ | Workflows API | `resources/workflows/` |
 | **SavedSearchProvider** | Reusable FQL query functions | Saved Searches API | `resources/saved_searches/` |
 | **LookupFileProvider** | CSV/JSON correlation data | Lookup Tables API | `resources/lookup_files/` |
 | **RTRScriptProvider** | Real-Time Response scripts | RTR Admin API | `resources/rtr_scripts/` |

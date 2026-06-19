@@ -8,7 +8,7 @@ One example of each resource type managed by the talonctl IaC engine.
 | `saved_search_function.yaml` | Saved Search | 90-day baseline builder function (real, deployable) |
 | `saved_search_hunting.yaml` | Saved Search | Certutil LOLBIN hunting query (real, deployable) |
 | `lookup_file.yaml` | Lookup File | Tor exit node IP list metadata (needs CSV data) |
-| `workflow.yaml` | Workflow | Notification workflow (synthetic — shows format) |
+| `workflow.yaml` | Workflow | Notification workflow (synthetic — shows format) _(temporarily deprecated — see issue #23)_ |
 | `rtr_script.yaml` | RTR Script | Windows service lister (needs PowerShell file) |
 | `rtr_put_file.yaml` | RTR Put File | Config file push (synthetic — shows format) |
 

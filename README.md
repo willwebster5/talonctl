@@ -8,7 +8,8 @@ A pip-installable CLI tool for managing CrowdStrike NGSIEM resources as code. It
 
 What you get:
 - **Terraform-like deployment** -- plan/apply/import/drift/sync for CrowdStrike NGSIEM resources
-- **Seven resource types** -- detections, saved searches, dashboards, workflows, lookup files, RTR scripts, RTR put files
+- **Six resource types** -- detections, saved searches, dashboards, lookup files, RTR scripts, RTR put files
+- **Workflows are temporarily deprecated** -- see [issue #23](https://github.com/willwebster5/talonctl/issues/23); the CrowdStrike Workflows API has no delete and a non-working update, so workflow templates are ignored until support is rebuilt and tested.
 - **State management** -- tracks deployed resources, content hashes, and CrowdStrike API IDs
 - **Dependency resolution** -- DAG-based ordering so resources deploy in the right sequence
 - **Drift detection** -- catch manual console changes that diverge from your templates
@@ -86,7 +87,7 @@ talonctl backup restore <tag>        # Restore from backup
 | Detection | `resources/detections/` | Correlation rules (CQL queries with severity, MITRE mapping) |
 | Saved Search | `resources/saved_searches/` | Reusable CQL functions called with `$function_name()` |
 | Dashboard | `resources/dashboards/` | LogScale dashboards with sections and widgets |
-| Workflow | `resources/workflows/` | Falcon Fusion automation workflows |
+| Workflow | `resources/workflows/` | Falcon Fusion automation workflows _(temporarily deprecated — #23)_ |
 | Lookup File | `resources/lookup_files/` | CSV lookup tables for enrichment |
 | RTR Script | `resources/rtr_scripts/` | Real Time Response scripts |
 | RTR Put File | `resources/rtr_put_files/` | Files pushed to endpoints via RTR |
@@ -107,7 +108,7 @@ talonctl backup restore <tag>        # Restore from backup
 | Saved Search | `ngsiem:read` | `ngsiem:write` |
 | Dashboard | `ngsiem:read` | `ngsiem:write` |
 | Lookup File | `ngsiem:read` | `ngsiem:write` |
-| Workflow | `workflow:read` | `workflow:write` |
+| Workflow | `workflow:read` | `workflow:write` _(deprecated — #23)_ |
 | RTR Script | `real-time-response-admin:write` | `real-time-response-admin:write` |
 | RTR Put File | `real-time-response-admin:write` | `real-time-response-admin:write` |
 

@@ -40,9 +40,8 @@ class TestProviderAdapter:
     def adapter(self, mock_falcon, temp_state_file):
         """Create ProviderAdapter instance"""
         with patch("talonctl.providers.detection_provider.DetectionProvider"):
-            with patch("talonctl.providers.workflow_provider.WorkflowProvider"):
-                adapter = ProviderAdapter(mock_falcon, temp_state_file)
-                return adapter
+            adapter = ProviderAdapter(mock_falcon, temp_state_file)
+            return adapter
 
     def test_plan_detection_changes_create(self, adapter):
         """Test planning detection creation"""
@@ -142,11 +141,12 @@ class TestProviderAdapter:
     def test_get_provider(self, adapter):
         """Test getting provider by type"""
         detection_provider = adapter.get_provider("detection")
+        # workflow support is temporarily deprecated (#23) — not registered
         workflow_provider = adapter.get_provider("workflow")
         unknown_provider = adapter.get_provider("unknown")
 
         assert detection_provider is not None
-        assert workflow_provider is not None
+        assert workflow_provider is None
         assert unknown_provider is None
 
     def test_get_provider_registry_returns_all_types(self, adapter):
@@ -155,7 +155,6 @@ class TestProviderAdapter:
         assert isinstance(registry, dict)
         expected_types = {
             "detection",
-            "workflow",
             "saved_search",
             "lookup_file",
             "rtr_script",
@@ -163,6 +162,8 @@ class TestProviderAdapter:
             "dashboard",
         }
         assert set(registry.keys()) == expected_types
+        # workflow support is temporarily deprecated (#23) — not registered
+        assert "workflow" not in registry
         for provider in registry.values():
             assert provider is not None
 

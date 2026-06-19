@@ -2,6 +2,19 @@
 
 ## [Unreleased]
 
+### Changed
+
+- **Workflow support is temporarily deprecated** ([#23](https://github.com/willwebster5/talonctl/issues/23)).
+  The workflow provider was non-functional: it called FalconPy `Workflows` methods
+  that don't exist (`delete_definition`, `get_definitions`), and the CrowdStrike
+  Workflows API has no workflow-definition delete plus an `update_definition` that
+  500s — so the provider's delete+recreate strategy was structurally impossible and
+  any workflow change crashed `apply` (and `sync`/`drift` raised `AttributeError`).
+  Workflow templates are now discovered with a clear deprecation warning and skipped
+  by `validate`/`plan`/`apply`/`sync`/`drift`; `talonctl init` no longer scaffolds a
+  `workflows/` directory. The provider code and example are retained (with deprecation
+  notices) for a future, live-tenant-tested rewrite.
+
 ## v0.5.5 — lookup `source:` resolves against the template's project root
 
 ### Fixed

@@ -50,7 +50,6 @@ class ProviderAdapter:
         # Initialize providers (lazy import to avoid circular dependency)
         from talonctl.providers import (
             DetectionProvider,
-            WorkflowProvider,
             SavedSearchProvider,
             LookupFileProvider,
             RTRScriptProvider,
@@ -62,7 +61,6 @@ class ProviderAdapter:
         provider_config = {"credentials": credentials} if credentials else {}
 
         self.detection_provider = DetectionProvider(falcon_client, config=provider_config)
-        self.workflow_provider = WorkflowProvider(falcon_client)
         self.saved_search_provider = SavedSearchProvider(falcon_client)
         self.lookup_file_provider = LookupFileProvider(falcon_client)
 
@@ -74,7 +72,6 @@ class ProviderAdapter:
         # Provider registry
         self.providers: Dict[str, BaseResourceProvider] = {
             "detection": self.detection_provider,
-            "workflow": self.workflow_provider,
             "saved_search": self.saved_search_provider,
             "lookup_file": self.lookup_file_provider,
             "rtr_script": self.rtr_script_provider,
