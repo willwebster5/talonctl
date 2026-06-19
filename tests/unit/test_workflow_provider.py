@@ -1,5 +1,11 @@
 """
-Unit tests for WorkflowProvider
+Unit tests for WorkflowProvider.
+
+NOTE: workflow support is temporarily deprecated (issue #23). These tests cover
+only the provider's offline logic (validation, hashing, dependency extraction,
+template conversion) — the SDK lifecycle (create/fetch/delete/update) is
+intentionally untested because the underlying CrowdStrike Workflows API is
+non-functional for our use (no delete; update_definition 500s).
 """
 
 import pytest
@@ -103,40 +109,6 @@ class TestWorkflowProvider:
         errors = provider.validate_template(_env(template))
         assert any("actions" in err.lower() for err in errors)
 
-    def test_fetch_remote_state(self, provider, mock_workflows_client):
-        """Test fetching remote workflow state"""
-        mock_workflows_client.get_definitions.return_value = {
-            "status_code": 200,
-            "body": {
-                "resources": [
-                    {
-                        "id": "wf123",
-                        "name": "test_workflow",
-                        "enabled": True,
-                        "trigger": {"event": "test"},
-                        "actions": {"action1": {}},
-                    }
-                ]
-            },
-        }
-
-        provider._remote_workflows_cache = {
-            "test_workflow": {
-                "id": "wf123",
-                "name": "test_workflow",
-                "enabled": True,
-                "trigger": {"event": "test"},
-                "actions": {"action1": {}},
-            }
-        }
-
-        result = provider.fetch_remote_state("wf123")
-
-        assert result is not None
-        assert result["id"] == "wf123"
-        assert result["name"] == "test_workflow"
-        assert result["enabled"] is True
-
     def test_fetch_remote_state_not_found(self, provider, mock_workflows_client):
         """Test fetching non-existent workflow"""
         provider._remote_workflows_cache = {}
@@ -236,13 +208,6 @@ class TestWorkflowProvider:
         """apply_update should raise NotImplementedError since API doesn't support updates."""
         with pytest.raises(NotImplementedError):
             provider.apply_update("test_id", {}, {})
-
-    def test_apply_delete(self, provider, mock_workflows_client):
-        """apply_delete should return a dict with 'id' on success."""
-        mock_workflows_client.delete_definition.return_value = {"status_code": 200}
-        result = provider.apply_delete("wf123")
-        assert isinstance(result, dict)
-        assert result["id"] == "wf123"
 
     def test_compute_content_hash_identical(self, provider):
         """Test hash computation produces identical results for same content"""
