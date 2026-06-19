@@ -64,7 +64,7 @@ class DriftDetector:
     """
 
     # Resource types that support bulk remote fetch
-    FETCHABLE_TYPES = {"detection", "saved_search", "rtr_script", "rtr_put_file", "workflow", "lookup_file"}
+    FETCHABLE_TYPES = {"detection", "saved_search", "rtr_script", "rtr_put_file", "lookup_file"}
 
     def __init__(self, falcon_client: Any, state_manager: Any, provider_adapter: Any, template_discovery: Any):
         self.falcon = falcon_client
