@@ -15,7 +15,7 @@ from talonctl.core.resource_finder import FindOutput, ResourceFinder
 _RESOURCE_TYPES = [
     "detection",
     "saved_search",
-    "workflow",
+    # workflow support is temporarily deprecated (#23) — not an active filter choice
     "lookup_file",
     "rtr_script",
     "rtr_put_file",
