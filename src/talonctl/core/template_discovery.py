@@ -63,13 +63,19 @@ class TemplateDiscovery:
     # Valid resource types
     VALID_RESOURCE_TYPES = [
         "detection",
-        "workflow",
         "saved_search",
         "lookup_file",
         "rtr_script",
         "rtr_put_file",
         "dashboard",
     ]
+
+    # Resource types whose talonctl support is temporarily deprecated. Templates
+    # of these types are still scanned (so we can warn) but excluded from results
+    # and never reach plan/apply/sync/drift. See issue #23: the workflow provider
+    # is non-functional (CrowdStrike Workflows API has no delete, update_definition
+    # 500s) and cannot be validated without live-tenant access.
+    DEPRECATED_RESOURCE_TYPES = {"workflow"}
 
     # Resource type -> on-disk directory name.
     TYPE_TO_DIR = {
@@ -104,6 +110,9 @@ class TemplateDiscovery:
         self.resources_dir = Path(resources_dir)
         self.project_root = Path(project_root)
         self._template_cache: Dict[str, DiscoveredTemplate] = {}
+        # Deprecated resource types already warned about this discovery pass
+        # (keeps the warning to once-per-run instead of once-per-file).
+        self._warned_deprecated: Set[str] = set()
 
     def _find_project_root(self) -> Path:
         """Find project root directory by walking up from CWD looking for .crowdstrike/."""
@@ -167,6 +176,7 @@ class TemplateDiscovery:
         """Recursively discover every resource under resources/, routing each by
         its type (v2 ``kind``; v1 top-level directory)."""
         templates: List[DiscoveredTemplate] = []
+        self._warned_deprecated = set()
         if not self.resources_dir.exists():
             logger.debug(f"Resources directory not found: {self.resources_dir}")
             return templates
@@ -207,6 +217,15 @@ class TemplateDiscovery:
         origin = str(file_path.resolve())
 
         for env in envelopes:
+            if env.resource_type in self.DEPRECATED_RESOURCE_TYPES:
+                if env.resource_type not in self._warned_deprecated:
+                    self._warned_deprecated.add(env.resource_type)
+                    logger.warning(
+                        f"{env.resource_type} support is temporarily deprecated "
+                        f"(see issue #23) — {env.resource_type} template(s) will be "
+                        f"ignored by validate/plan/apply/sync/drift."
+                    )
+                continue
             if env.resource_type not in self.VALID_RESOURCE_TYPES:
                 logger.warning(f"{file_path}: unknown resource type '{env.resource_type}' — skipping")
                 continue

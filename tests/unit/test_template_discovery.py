@@ -480,8 +480,15 @@ class TestFsTemplateDiscoveryEnvelopeDelegation:
         assert v2.template_data["_template_path"].endswith("v2_rule.yaml")
 
     def test_valid_resource_types_matches_type_to_dir(self):
-        """Drift guard: VALID_RESOURCE_TYPES and TYPE_TO_DIR must cover the same keys."""
-        assert set(FsTemplateDiscovery.VALID_RESOURCE_TYPES) == set(FsTemplateDiscovery.TYPE_TO_DIR)
+        """Drift guard: TYPE_TO_DIR must cover every active and deprecated type.
+
+        Deprecated types (e.g. workflow) keep their TYPE_TO_DIR entry so their
+        directory is still scanned and the deprecation warning fires, but they
+        are excluded from VALID_RESOURCE_TYPES. See issue #23.
+        """
+        assert set(FsTemplateDiscovery.TYPE_TO_DIR) == (
+            set(FsTemplateDiscovery.VALID_RESOURCE_TYPES) | FsTemplateDiscovery.DEPRECATED_RESOURCE_TYPES
+        )
 
     def test_v2_resource_routed_by_kind_regardless_of_directory(self, tmp_path):
         # A v2 resource is routed by its `kind`, not its directory — so a Detection
@@ -554,3 +561,34 @@ class TestFsTemplateDiscoveryEnvelopeDelegation:
         disco = FsTemplateDiscovery(resources_dir=resources, project_root=tmp_path)
         discovered = disco.discover_all()
         assert "legacy_lookup" in {t.name for t in discovered["lookup_file"]}
+
+
+def test_workflow_templates_are_deprecated_and_skipped(tmp_path, caplog):
+    """Workflow templates must be excluded from discovery with a clear
+    deprecation warning (issue #23), not surface as an active resource type."""
+    import logging
+    from talonctl.core.template_discovery import TemplateDiscovery
+
+    resources = tmp_path / "resources"
+    (resources / "workflows").mkdir(parents=True)
+    (resources / "workflows" / "wf.yaml").write_text(
+        "type: workflow\n"
+        "resource_id: example_wf\n"
+        "name: Example Workflow\n"
+        "trigger:\n  event: detection\n  type: detection\n"
+        "actions:\n  notify:\n    type: email\n"
+    )
+
+    discovery = TemplateDiscovery(resources_dir=resources, project_root=tmp_path)
+
+    # workflow is no longer an active type, and no "workflow" key is emitted
+    assert "workflow" not in TemplateDiscovery.VALID_RESOURCE_TYPES
+    assert "workflow" in TemplateDiscovery.DEPRECATED_RESOURCE_TYPES
+
+    with caplog.at_level(logging.WARNING):
+        discovered = discovery.discover_all()
+
+    assert "workflow" not in discovered
+    assert any("deprecated" in r.message.lower() and "workflow" in r.message.lower() for r in caplog.records), (
+        "expected a workflow deprecation warning"
+    )
