@@ -1,8 +1,25 @@
 """
 Workflow Provider - CrowdStrike SOAR Workflows
 
-This provider implements the BaseResourceProvider interface for managing
-CrowdStrike SOAR workflows as Infrastructure as Code resources.
+DEPRECATION NOTICE (issue #23): talonctl workflow support is temporarily
+deprecated and this provider is NOT registered (see core/provider_adapter.py)
+nor discovered (see core/template_discovery.DEPRECATED_RESOURCE_TYPES). The
+code is retained as the starting point for a future, tested rewrite.
+
+Why it's shelved — verified against FalconPy ``Workflows`` (v1.6.1):
+  * No delete method exists on the API at all, so the provider's REPLACE
+    (delete + recreate) strategy is structurally impossible.
+  * ``update_definition`` (PUT) exists but 500s on a naive compiled-model
+    round-trip; the correct payload shape is unknown.
+  * ``import_definition`` is create-only (no id targeting / upsert).
+  * ``search_definitions`` already returns full definition models, so the old
+    ``get_definitions`` batch loop (which called a non-existent method) was
+    never needed — normalize ``search_definitions`` resources directly.
+  * ``workflow_definition_action`` supports enable/disable/cancel — the likely
+    basis for a future "disable-as-destroy" semantics.
+
+A working rewrite requires live-tenant testing (and possibly a CrowdStrike
+support ticket on the update 500), which is out of scope here.
 """
 
 import json
