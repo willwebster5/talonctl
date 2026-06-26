@@ -2,6 +2,34 @@
 
 ## [Unreleased]
 
+## v0.5.8 — case management resources (notification groups, SLAs, templates)
+
+### Added
+
+- **Three new resource types for CrowdStrike Case Management**, managed as v2 IaC
+  through the standard lifecycle (validate / plan / apply / import / sync /
+  destroy): `case_notification_group`, `case_sla`, and `case_template`. They form
+  a dependency chain — notification groups → SLAs → templates — and deploy/destroy
+  in that order automatically.
+- **Cross-resource references by stable `resource_id`.** A template names its SLA
+  via `sla_ref`, and an SLA's escalation steps name a notification group via
+  `notification_group_ref`. A new shared `RefResolver` (`core/ref_resolver.py`)
+  substitutes the live API id (`sla_id`, `notification_group_id`) at apply time,
+  and `extract_dependencies` derives the ordering graph from those refs. Content
+  hashing uses the stable ref rather than the resolved API id, so redeploying a
+  referenced resource never spuriously marks its dependents as drifted.
+- **`import` / `sync` support** for all three types via paginated bulk-fetch, with
+  API ids reverse-mapped back to `*_ref` (the raw id is preserved and a warning is
+  logged when a sibling cannot be resolved).
+- **Reference templates** for the three types in `examples/resources/`, plus
+  scaffolding of their directories in `talonctl init` and registration in
+  `find --type`.
+
+### Notes
+
+- `drift` does not yet cover the case types, consistent with the existing
+  `dashboard` type.
+
 ## v0.5.5 — lookup `source:` resolves against the template's project root
 
 ### Fixed
