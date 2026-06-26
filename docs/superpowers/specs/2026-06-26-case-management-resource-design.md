@@ -117,9 +117,11 @@ used only as a convenience for `import` scaffolding, not as the source of truth.
 
 ### Components
 
-- **`utils/case_management_client.py`** — factory that builds a single `CaseManagement`
-  FalconPy client from `~/.config/falcon/credentials.json` (`base_url` honored), mirroring
-  `utils/ngsiem_client.py`. Shared by all three providers.
+- **FalconPy client** — the three providers share the existing single `APIHarnessV2`
+  `falcon_client` (like all seven current providers) and call
+  `self.falcon.command(override="POST,/casemgmt/...", body=...)`. No separate
+  `CaseManagement` client factory is needed (refined during planning — see the plan's
+  "Implementation notes").
 - **`providers/case_notification_group_provider.py`**
 - **`providers/case_sla_provider.py`**
 - **`providers/case_template_provider.py`**
@@ -155,8 +157,11 @@ class RefResolver:
         Raises UnresolvedRefError if not deployed or not in state."""
 ```
 
-- The orchestrator constructs one `RefResolver` over the live `StateManager` and passes it
-  to providers at **apply** time only.
+- The orchestrator constructs one `RefResolver` over the live `StateManager` and injects it
+  into the case providers at construction time (used only at **apply**). It matches a sibling
+  by the `resource_id` each case provider stamps into its apply-result `provider_metadata`,
+  so resolution is independent of state-key naming. State is committed after each deploy wave,
+  so a sibling deployed in an earlier wave is always resolvable.
 - Authors write only the `*_ref` field (the sibling's `resource_id`). The provider's
   `extract_dependencies` **derives** the `depends_on` edge from it (e.g.
   `case_sla.standard_sla`), exactly as `dashboard_provider` derives lookup deps. Authors
@@ -291,9 +296,10 @@ mocked — no live API calls:
    `TYPE_TO_DIR`.
 5. `core/envelope.py` — add three kinds to `KIND_TO_TYPE`.
 6. `commands/init.py` — add the three directories to `RESOURCE_DIRS`.
-7. `utils/case_management_client.py` — shared `CaseManagement` client factory.
-8. `core/ref_resolver.py` — shared `RefResolver` + `UnresolvedRefError`; wire into the
-   orchestrator apply path.
+7. (No new client — reuse the shared `APIHarnessV2` `falcon_client` via
+   `self.falcon.command(override="...,/casemgmt/...")`.)
+8. `core/ref_resolver.py` — shared `RefResolver` + `UnresolvedRefError`; construct over
+   `StateManager` in `provider_adapter.py` and inject into the case providers.
 9. `examples/resources/case_notification_group.yaml`, `case_sla.yaml`,
    `case_template.yaml` — annotated reference templates.
 10. `src/talonctl/templates/init/` — scaffold the three directories for new projects.
