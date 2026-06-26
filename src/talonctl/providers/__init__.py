@@ -9,6 +9,9 @@ This package contains all resource provider implementations:
 - RTRScriptProvider: RTR custom scripts for runscript command
 - RTRPutFileProvider: RTR put files for put/put-and-run commands
 - DashboardProvider: NGSIEM dashboards
+- CaseNotificationGroupProvider: Case management notification groups
+- CaseSlaProvider: Case management SLA policies
+- CaseTemplateProvider: Case management templates
 - CorrelationRuleProvider: Correlation rules (Future)
 """
 
@@ -19,6 +22,9 @@ from .lookup_file_provider import LookupFileProvider
 from .rtr_script_provider import RTRScriptProvider
 from .rtr_put_file_provider import RTRPutFileProvider
 from .dashboard_provider import DashboardProvider
+from .case_notification_group_provider import CaseNotificationGroupProvider
+from .case_sla_provider import CaseSlaProvider
+from .case_template_provider import CaseTemplateProvider
 
 __all__ = [
     "DetectionProvider",
@@ -28,4 +34,7 @@ __all__ = [
     "RTRScriptProvider",
     "RTRPutFileProvider",
     "DashboardProvider",
+    "CaseNotificationGroupProvider",
+    "CaseSlaProvider",
+    "CaseTemplateProvider",
 ]

@@ -1,0 +1,16 @@
+# Case Management — SLA (reference template)
+# References a notification group by resource_id via notification_group_ref.
+apiVersion: talon/v2
+kind: CaseSla
+metadata:
+  resource_id: standard_sla
+  name: Standard Response SLA
+spec:
+  description: Default time-to-resolution targets
+  goals:
+    - type: time_to_resolution
+      duration_seconds: 86400            # 24h
+      escalation_policy:
+        steps:
+          - escalate_after_seconds: 3600
+            notification_group_ref: secops_email_oncall   # -> notification_group_id at apply

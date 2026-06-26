@@ -23,6 +23,9 @@ KIND_TO_TYPE: Dict[str, str] = {
     "Dashboard": "dashboard",
     "RtrScript": "rtr_script",
     "RtrPutFile": "rtr_put_file",
+    "CaseNotificationGroup": "case_notification_group",
+    "CaseSla": "case_sla",
+    "CaseTemplate": "case_template",
 }
 TYPE_TO_KIND: Dict[str, str] = {v: k for k, v in KIND_TO_TYPE.items()}
 VALID_KINDS = frozenset(KIND_TO_TYPE)

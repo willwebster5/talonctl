@@ -17,6 +17,9 @@ RESOURCE_DIRS = [
     "lookup_files",
     "rtr_scripts",
     "rtr_put_files",
+    "case_notification_groups",
+    "case_slas",
+    "case_templates",
 ]
 
 

@@ -20,6 +20,9 @@ _RESOURCE_TYPES = [
     "rtr_script",
     "rtr_put_file",
     "dashboard",
+    "case_notification_group",
+    "case_sla",
+    "case_template",
 ]
 
 

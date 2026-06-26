@@ -1465,6 +1465,29 @@ class DeploymentOrchestrator:
                 else:
                     logger.warning("Dashboard provider missing _fetch_all_remote_dashboards method")
 
+            elif resource_type == "case_notification_group":
+                if hasattr(provider, "_fetch_all_remote_notification_groups"):
+                    deployed = provider._fetch_all_remote_notification_groups()
+                    logger.info(f"Fetched {len(deployed)} case notification groups from CrowdStrike")
+                else:
+                    logger.warning(
+                        "Case notification group provider missing _fetch_all_remote_notification_groups method"
+                    )
+
+            elif resource_type == "case_sla":
+                if hasattr(provider, "_fetch_all_remote_slas"):
+                    deployed = provider._fetch_all_remote_slas()
+                    logger.info(f"Fetched {len(deployed)} case SLAs from CrowdStrike")
+                else:
+                    logger.warning("Case SLA provider missing _fetch_all_remote_slas method")
+
+            elif resource_type == "case_template":
+                if hasattr(provider, "_fetch_all_remote_templates"):
+                    deployed = provider._fetch_all_remote_templates()
+                    logger.info(f"Fetched {len(deployed)} case templates from CrowdStrike")
+                else:
+                    logger.warning("Case template provider missing _fetch_all_remote_templates method")
+
         except Exception as e:
             logger.error(f"Error fetching {resource_type} resources: {e}")
 

@@ -161,6 +161,9 @@ class TestProviderAdapter:
             "rtr_script",
             "rtr_put_file",
             "dashboard",
+            "case_notification_group",
+            "case_sla",
+            "case_template",
         }
         assert set(registry.keys()) == expected_types
         for provider in registry.values():
