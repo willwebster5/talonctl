@@ -1,0 +1,13 @@
+# Case Management — Notification Group (reference template)
+# Escalation recipients referenced by case SLAs.
+apiVersion: talon/v2
+kind: CaseNotificationGroup
+metadata:
+  resource_id: secops_email_oncall      # stable state key — never change after deploy
+  name: SecOps On-Call (Email)
+spec:
+  description: Primary escalation distro for SecOps cases
+  channels:
+    - type: email                        # one of: email, slack, webhook
+      recipients: [secops-oncall@example.com]
+      severity: high

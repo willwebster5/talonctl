@@ -1,0 +1,24 @@
+# Case Management — Case Template (reference template)
+# References an SLA by resource_id via sla_ref. Custom fields are authored inline.
+apiVersion: talon/v2
+kind: CaseTemplate
+metadata:
+  resource_id: phishing_investigation
+  name: Phishing Investigation
+spec:
+  sla_ref: standard_sla                  # -> sla_id at apply
+  description: Standard intake for reported phishing
+  fields:
+    - name: Reported By
+      data_type: string                  # one of: string, number, boolean, datetime
+      input_type: text                   # one of: text, textarea, select, multiselect, checkbox, date
+      required: true
+      multivalued: false
+    - name: Phishing Category
+      data_type: string
+      input_type: select
+      multivalued: false
+      required: false
+      options:
+        - value: Credential Harvesting
+        - value: Malware Delivery
