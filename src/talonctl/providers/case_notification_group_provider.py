@@ -44,6 +44,9 @@ class CaseNotificationGroupProvider(BaseResourceProvider):
         content = json.dumps(strip_for_hash(template), sort_keys=True, default=str)
         return hashlib.sha256(content.encode("utf-8")).hexdigest()
 
+    def extract_dependencies(self, template: Dict[str, Any]) -> List[str]:
+        return sorted(set(template.get("dependencies", []) or []))
+
     def _build_body(self, template: Dict[str, Any]) -> Dict[str, Any]:
         return strip_for_api(template)
 

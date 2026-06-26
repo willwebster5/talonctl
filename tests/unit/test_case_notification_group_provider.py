@@ -101,3 +101,12 @@ def test_apply_delete_raises_on_failure(provider):
     }
     with pytest.raises(RuntimeError):
         provider.apply_delete("api-ng-123")
+
+
+def test_extract_dependencies_passthrough(provider):
+    flat = _flat(dependencies=["case_sla.standard_sla"])
+    assert provider.extract_dependencies(_env(flat).to_working_dict()) == ["case_sla.standard_sla"]
+
+
+def test_extract_dependencies_empty_by_default(provider):
+    assert provider.extract_dependencies(_env(_flat()).to_working_dict()) == []
