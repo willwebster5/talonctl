@@ -72,6 +72,7 @@ class BaseResourceProvider(ABC):
         """
         self.falcon = falcon_client
         self.config = config or {}
+        self.ref_resolver = None  # injected post-init by ProviderAdapter when cross-ref resolution is needed
         self.resource_type = self.get_resource_type()
 
     @abstractmethod

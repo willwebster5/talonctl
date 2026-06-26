@@ -56,7 +56,11 @@ class ProviderAdapter:
             RTRScriptProvider,
             RTRPutFileProvider,
             DashboardProvider,
+            CaseNotificationGroupProvider,
+            CaseSlaProvider,
+            CaseTemplateProvider,
         )
+        from talonctl.core.ref_resolver import RefResolver
 
         # All providers get credentials config for customer_id and other auth needs
         provider_config = {"credentials": credentials} if credentials else {}
@@ -71,6 +75,17 @@ class ProviderAdapter:
         self.rtr_put_file_provider = RTRPutFileProvider(falcon_client, config=provider_config)
         self.dashboard_provider = DashboardProvider(falcon_client)
 
+        ref_resolver = RefResolver(self.state_manager)
+        self.case_notification_group_provider = CaseNotificationGroupProvider(falcon_client)
+        self.case_sla_provider = CaseSlaProvider(falcon_client)
+        self.case_template_provider = CaseTemplateProvider(falcon_client)
+        for _p in (
+            self.case_notification_group_provider,
+            self.case_sla_provider,
+            self.case_template_provider,
+        ):
+            _p.ref_resolver = ref_resolver
+
         # Provider registry
         self.providers: Dict[str, BaseResourceProvider] = {
             "detection": self.detection_provider,
@@ -80,6 +95,9 @@ class ProviderAdapter:
             "rtr_script": self.rtr_script_provider,
             "rtr_put_file": self.rtr_put_file_provider,
             "dashboard": self.dashboard_provider,
+            "case_notification_group": self.case_notification_group_provider,
+            "case_sla": self.case_sla_provider,
+            "case_template": self.case_template_provider,
         }
 
     def plan_detection_changes(
