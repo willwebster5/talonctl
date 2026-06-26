@@ -14,6 +14,7 @@ if TYPE_CHECKING:
 
 _VALID_CHANNEL_TYPES = {"email", "slack", "webhook"}
 _BASE = "/casemgmt/entities/notification-groups/v2"
+_QUERY = "/casemgmt/queries/notification-groups/v2"
 
 
 class CaseNotificationGroupProvider(BaseResourceProvider):
@@ -137,6 +138,26 @@ class CaseNotificationGroupProvider(BaseResourceProvider):
         result["id"] = api_id
         result["resource_id"] = resource_id  # stamped for RefResolver matching
         return result
+
+    def _fetch_all_remote_notification_groups(self) -> Dict[str, Dict[str, Any]]:
+        """List + fetch all notification groups, keyed by display name (for import/sync)."""
+        out: Dict[str, Dict[str, Any]] = {}
+        offset = 0
+        limit = 100
+        while True:
+            q = self.falcon.command(override=f"GET,{_QUERY}", parameters={"limit": limit, "offset": offset})
+            ids = (q.get("body") or {}).get("resources") or []
+            if not ids:
+                break
+            g = self.falcon.command(override=f"GET,{_BASE}", parameters={"ids": ids})
+            for r in (g.get("body") or {}).get("resources") or []:
+                name = r.get("name")
+                if name:
+                    out[name] = r
+            if len(ids) < limit:
+                break
+            offset += limit
+        return out
 
     def to_template(self, remote_resource: dict) -> dict:
         data = dict(remote_resource)

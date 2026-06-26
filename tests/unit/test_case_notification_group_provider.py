@@ -110,3 +110,12 @@ def test_extract_dependencies_passthrough(provider):
 
 def test_extract_dependencies_empty_by_default(provider):
     assert provider.extract_dependencies(_env(_flat()).to_working_dict()) == []
+
+
+def test_fetch_all_remote_notification_groups(provider):
+    provider.falcon.command.side_effect = [
+        {"status_code": 200, "body": {"resources": ["id1"]}},  # query (page 1)
+        {"status_code": 200, "body": {"resources": [{"id": "id1", "name": "NG One"}]}},  # get
+    ]
+    out = provider._fetch_all_remote_notification_groups()
+    assert out == {"NG One": {"id": "id1", "name": "NG One"}}

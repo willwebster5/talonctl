@@ -5,6 +5,7 @@ from __future__ import annotations
 import copy
 import hashlib
 import json
+import logging
 from typing import Any, Dict, List, Optional, TYPE_CHECKING
 
 from talonctl.core.base_provider import BaseResourceProvider, ResourceAction, ResourceChange
@@ -13,7 +14,12 @@ from talonctl.core.template_sanitizer import strip_for_api, strip_for_hash
 if TYPE_CHECKING:
     from talonctl.core.envelope import Envelope
 
+logger = logging.getLogger(__name__)
+
 _BASE = "/casemgmt/entities/templates/v1"
+_QUERY = "/casemgmt/queries/templates/v1"
+_SLA_QUERY = "/casemgmt/queries/slas/v1"
+_SLA_BASE = "/casemgmt/entities/slas/v1"
 _VALID_DATA_TYPES = {"string", "number", "boolean", "datetime"}
 _VALID_INPUT_TYPES = {"text", "textarea", "select", "multiselect", "checkbox", "date"}
 
@@ -156,6 +162,49 @@ class CaseTemplateProvider(BaseResourceProvider):
         result["resource_id"] = resource_id  # stamped for RefResolver matching
         return result
 
+    def _fetch_all_remote_templates(self) -> Dict[str, Dict[str, Any]]:
+        """List + fetch all templates, keyed by display name (for import/sync)."""
+        out: Dict[str, Dict[str, Any]] = {}
+        offset = 0
+        limit = 100
+        while True:
+            q = self.falcon.command(override=f"GET,{_QUERY}", parameters={"limit": limit, "offset": offset})
+            ids = (q.get("body") or {}).get("resources") or []
+            if not ids:
+                break
+            g = self.falcon.command(override=f"GET,{_BASE}", parameters={"ids": ids})
+            for r in (g.get("body") or {}).get("resources") or []:
+                name = r.get("name")
+                if name:
+                    out[name] = r
+            if len(ids) < limit:
+                break
+            offset += limit
+        return out
+
+    def _sla_reverse_map(self) -> Dict[str, str]:
+        """Map live SLA api_id -> its stable resource_id, for import. Cached per instance."""
+        if getattr(self, "_sla_reverse_cache", None) is not None:
+            return self._sla_reverse_cache
+        cache: Dict[str, str] = {}
+        offset = 0
+        limit = 100
+        while True:
+            q = self.falcon.command(override=f"GET,{_SLA_QUERY}", parameters={"limit": limit, "offset": offset})
+            ids = (q.get("body") or {}).get("resources") or []
+            if not ids:
+                break
+            g = self.falcon.command(override=f"GET,{_SLA_BASE}", parameters={"ids": ids})
+            for r in (g.get("body") or {}).get("resources") or []:
+                api_id, name = r.get("id"), r.get("name")
+                if api_id and name:
+                    cache[api_id] = self._name_to_resource_id(name)
+            if len(ids) < limit:
+                break
+            offset += limit
+        self._sla_reverse_cache = cache
+        return cache
+
     def to_template(self, remote_resource: dict) -> dict:
         data = dict(remote_resource)
         name = data.get("name", "")
@@ -166,8 +215,14 @@ class CaseTemplateProvider(BaseResourceProvider):
             "description": data.get("description", ""),
             "fields": data.get("fields", []),
         }
-        if data.get("sla_id"):
-            template["sla_id"] = data["sla_id"]
+        sla_id = data.get("sla_id")
+        if sla_id:
+            ref = self._sla_reverse_map().get(sla_id)
+            if ref:
+                template["sla_ref"] = ref
+            else:
+                template["sla_id"] = sla_id  # unresolved; preserve
+                logger.warning("case_template import: could not resolve sla_id=%r to a ref; preserving raw id", sla_id)
         return template
 
     def suggest_path(self, template: dict) -> str:

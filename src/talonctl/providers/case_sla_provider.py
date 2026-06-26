@@ -5,6 +5,7 @@ from __future__ import annotations
 import copy
 import hashlib
 import json
+import logging
 from typing import Any, Dict, List, Optional, TYPE_CHECKING
 
 from talonctl.core.base_provider import BaseResourceProvider, ResourceAction, ResourceChange
@@ -13,7 +14,12 @@ from talonctl.core.template_sanitizer import strip_for_api, strip_for_hash
 if TYPE_CHECKING:
     from talonctl.core.envelope import Envelope
 
+logger = logging.getLogger(__name__)
+
 _BASE = "/casemgmt/entities/slas/v1"
+_QUERY = "/casemgmt/queries/slas/v1"
+_NG_QUERY = "/casemgmt/queries/notification-groups/v2"
+_NG_BASE = "/casemgmt/entities/notification-groups/v2"
 
 
 class CaseSlaProvider(BaseResourceProvider):
@@ -147,15 +153,75 @@ class CaseSlaProvider(BaseResourceProvider):
         result["resource_id"] = resource_id
         return result
 
+    def _fetch_all_remote_slas(self) -> Dict[str, Dict[str, Any]]:
+        """List + fetch all SLAs, keyed by display name (for import/sync)."""
+        out: Dict[str, Dict[str, Any]] = {}
+        offset = 0
+        limit = 100
+        while True:
+            q = self.falcon.command(override=f"GET,{_QUERY}", parameters={"limit": limit, "offset": offset})
+            ids = (q.get("body") or {}).get("resources") or []
+            if not ids:
+                break
+            g = self.falcon.command(override=f"GET,{_BASE}", parameters={"ids": ids})
+            for r in (g.get("body") or {}).get("resources") or []:
+                name = r.get("name")
+                if name:
+                    out[name] = r
+            if len(ids) < limit:
+                break
+            offset += limit
+        return out
+
+    def _notification_group_reverse_map(self) -> Dict[str, str]:
+        """Map live notification-group api_id -> its stable resource_id, for import. Cached per instance."""
+        if getattr(self, "_ng_reverse_cache", None) is not None:
+            return self._ng_reverse_cache
+        cache: Dict[str, str] = {}
+        offset = 0
+        limit = 100
+        while True:
+            q = self.falcon.command(override=f"GET,{_NG_QUERY}", parameters={"limit": limit, "offset": offset})
+            ids = (q.get("body") or {}).get("resources") or []
+            if not ids:
+                break
+            g = self.falcon.command(override=f"GET,{_NG_BASE}", parameters={"ids": ids})
+            for r in (g.get("body") or {}).get("resources") or []:
+                api_id, name = r.get("id"), r.get("name")
+                if api_id and name:
+                    cache[api_id] = self._name_to_resource_id(name)
+            if len(ids) < limit:
+                break
+            offset += limit
+        self._ng_reverse_cache = cache
+        return cache
+
     def to_template(self, remote_resource: dict) -> dict:
-        data = dict(remote_resource)
+        data = copy.deepcopy(remote_resource)
         name = data.get("name", "")
+        ng_map = None
+        goals = data.get("goals", [])
+        for g in goals or []:
+            for step in (g.get("escalation_policy") or {}).get("steps", []) or []:
+                ng_id = step.pop("notification_group_id", None)
+                if ng_id is None:
+                    continue
+                if ng_map is None:
+                    ng_map = self._notification_group_reverse_map()
+                ref = ng_map.get(ng_id)
+                if ref:
+                    step["notification_group_ref"] = ref
+                else:
+                    step["notification_group_id"] = ng_id  # unresolved; preserve
+                    logger.warning(
+                        "case_sla import: could not resolve notification_group_id=%r to a ref; preserving raw id", ng_id
+                    )
         return {
             "resource_id": self._name_to_resource_id(name),
             "name": name,
             "type": "case_sla",
             "description": data.get("description", ""),
-            "goals": data.get("goals", []),
+            "goals": goals,
         }
 
     def suggest_path(self, template: dict) -> str:

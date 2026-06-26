@@ -102,3 +102,55 @@ def test_apply_delete_raises_on_failure(provider):
 def test_apply_delete_success(provider):
     provider.falcon.command.return_value = {"status_code": 200, "body": {"resources": [], "errors": []}}
     assert provider.apply_delete("api-sla-1")["id"] == "api-sla-1"
+
+
+def test_fetch_all_remote_slas(provider):
+    provider.falcon.command.side_effect = [
+        {"status_code": 200, "body": {"resources": ["s1"]}},
+        {"status_code": 200, "body": {"resources": [{"id": "s1", "name": "Std SLA"}]}},
+    ]
+    assert provider._fetch_all_remote_slas() == {"Std SLA": {"id": "s1", "name": "Std SLA"}}
+
+
+def test_to_template_reverse_maps_notification_group(provider):
+    # First two calls satisfy the NG reverse-map (query then get).
+    provider.falcon.command.side_effect = [
+        {"status_code": 200, "body": {"resources": ["ng1"]}},
+        {"status_code": 200, "body": {"resources": [{"id": "ng1", "name": "SecOps On-Call (Email)"}]}},
+    ]
+    remote = {
+        "name": "Std SLA",
+        "description": "x",
+        "goals": [
+            {
+                "type": "ttr",
+                "duration_seconds": 3600,
+                "escalation_policy": {"steps": [{"escalate_after_seconds": 60, "notification_group_id": "ng1"}]},
+            }
+        ],
+    }
+    tmpl = provider.to_template(remote)
+    step = tmpl["goals"][0]["escalation_policy"]["steps"][0]
+    assert step["notification_group_ref"] == provider._name_to_resource_id("SecOps On-Call (Email)")
+    assert "notification_group_id" not in step
+    assert tmpl["resource_id"] == provider._name_to_resource_id("Std SLA")
+
+
+def test_to_template_preserves_unresolved_notification_group(provider):
+    provider.falcon.command.side_effect = [
+        {"status_code": 200, "body": {"resources": []}},  # no NGs -> empty reverse map
+    ]
+    remote = {
+        "name": "Std SLA",
+        "goals": [
+            {
+                "type": "ttr",
+                "duration_seconds": 3600,
+                "escalation_policy": {"steps": [{"escalate_after_seconds": 60, "notification_group_id": "ng_unknown"}]},
+            }
+        ],
+    }
+    tmpl = provider.to_template(remote)
+    step = tmpl["goals"][0]["escalation_policy"]["steps"][0]
+    assert step["notification_group_id"] == "ng_unknown"
+    assert "notification_group_ref" not in step

@@ -113,3 +113,30 @@ def test_apply_delete_raises_on_failure(provider):
 def test_apply_delete_success(provider):
     provider.falcon.command.return_value = {"status_code": 200, "body": {"resources": [], "errors": []}}
     assert provider.apply_delete("api-tmpl-1")["id"] == "api-tmpl-1"
+
+
+def test_fetch_all_remote_templates(provider):
+    provider.falcon.command.side_effect = [
+        {"status_code": 200, "body": {"resources": ["t1"]}},
+        {"status_code": 200, "body": {"resources": [{"id": "t1", "name": "Phishing"}]}},
+    ]
+    assert provider._fetch_all_remote_templates() == {"Phishing": {"id": "t1", "name": "Phishing"}}
+
+
+def test_to_template_reverse_maps_sla(provider):
+    provider.falcon.command.side_effect = [
+        {"status_code": 200, "body": {"resources": ["s1"]}},
+        {"status_code": 200, "body": {"resources": [{"id": "s1", "name": "Standard Response SLA"}]}},
+    ]
+    tmpl = provider.to_template({"name": "Phishing", "description": "x", "fields": [], "sla_id": "s1"})
+    assert tmpl["sla_ref"] == provider._name_to_resource_id("Standard Response SLA")
+    assert "sla_id" not in tmpl
+
+
+def test_to_template_preserves_unresolved_sla(provider):
+    provider.falcon.command.side_effect = [
+        {"status_code": 200, "body": {"resources": []}},  # no SLAs -> empty reverse map
+    ]
+    tmpl = provider.to_template({"name": "Phishing", "fields": [], "sla_id": "unknown"})
+    assert tmpl["sla_id"] == "unknown"
+    assert "sla_ref" not in tmpl
