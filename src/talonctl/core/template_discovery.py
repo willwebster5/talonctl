@@ -69,6 +69,9 @@ class TemplateDiscovery:
         "rtr_script",
         "rtr_put_file",
         "dashboard",
+        "case_notification_group",
+        "case_sla",
+        "case_template",
     ]
 
     # Resource type -> on-disk directory name.
@@ -80,6 +83,9 @@ class TemplateDiscovery:
         "rtr_script": "rtr_scripts",
         "rtr_put_file": "rtr_put_files",
         "dashboard": "dashboards",
+        "case_notification_group": "case_notification_groups",
+        "case_sla": "case_slas",
+        "case_template": "case_templates",
     }
     # Inverse: top-level directory name -> resource type (for v1's directory routing).
     _DIR_TO_TYPE = {d: t for t, d in TYPE_TO_DIR.items()}
