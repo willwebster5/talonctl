@@ -93,7 +93,8 @@ def test_validate_authored_envelope_accepts_case_kinds():
     """Schema kind enum must include all three case management kinds."""
     for kind in ("CaseNotificationGroup", "CaseSla", "CaseTemplate"):
         env = Envelope(
-            "talon/v2", kind,
+            "talon/v2",
+            kind,
             {"resource_id": "test_resource", "name": "Test"},
             {"name": "Test"},
         )
