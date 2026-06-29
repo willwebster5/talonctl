@@ -2,6 +2,21 @@
 
 ## [Unreleased]
 
+## v0.5.9 — hotfix: accept case management kinds in schema validator
+
+### Fixed
+
+- **`talonctl validate` now accepts `CaseNotificationGroup`, `CaseSla`, and
+  `CaseTemplate` envelopes.** The JSON Schema enum in
+  `schemas/envelope.schema.json` was never updated when the three case kinds
+  were added to `KIND_TO_TYPE`, causing `validate_authored_envelope()` to
+  reject all case management templates with an "is not one of" error. The
+  Python code (provider registry, template discovery, `VALID_KINDS`) was
+  correct; only the JSON Schema enum was stale.
+- **Drift-guard test added** (`test_schema_kind_enum_matches_kind_to_type`)
+  that asserts the schema's kind enum exactly matches `KIND_TO_TYPE.keys()`,
+  so the two sources of truth cannot diverge again.
+
 ## v0.5.8 — case management resources (notification groups, SLAs, templates)
 
 ### Added

@@ -87,3 +87,28 @@ def test_whitespace_hygiene_checks_metadata_and_nested():
     env = Envelope("talon/v2", "Dashboard", {"resource_id": "d"}, {"widgets": {"w1": {"queryString": "#a\n| b  \n"}}})
     errs = check_whitespace_hygiene(env)
     assert any("trailing whitespace" in e and "widgets.w1.queryString" in e for e in errs)
+
+
+def test_validate_authored_envelope_accepts_case_kinds():
+    """Schema kind enum must include all three case management kinds."""
+    for kind in ("CaseNotificationGroup", "CaseSla", "CaseTemplate"):
+        env = Envelope(
+            "talon/v2",
+            kind,
+            {"resource_id": "test_resource", "name": "Test"},
+            {"name": "Test"},
+        )
+        errors = validate_authored_envelope(env)
+        assert errors == [], f"{kind} rejected by schema: {errors}"
+
+
+def test_schema_kind_enum_matches_kind_to_type():
+    """Schema kind enum must stay in sync with KIND_TO_TYPE (drift guard)."""
+    import json
+    from importlib import resources as importlib_resources
+    from talonctl.core.envelope import KIND_TO_TYPE
+
+    text = importlib_resources.files("talonctl.schemas").joinpath("envelope.schema.json").read_text()
+    schema = json.loads(text)
+    schema_kinds = set(schema["properties"]["kind"]["enum"])
+    assert schema_kinds == set(KIND_TO_TYPE.keys())
