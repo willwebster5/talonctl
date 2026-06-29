@@ -9,7 +9,7 @@
     "apiVersion": { "const": "talon/v2" },
     "kind": {
       "type": "string",
-      "enum": ["Detection", "SavedSearch", "LookupFile", "Workflow", "Dashboard", "RtrScript", "RtrPutFile"]
+      "enum": ["Detection", "SavedSearch", "LookupFile", "Workflow", "Dashboard", "RtrScript", "RtrPutFile", "CaseNotificationGroup", "CaseSla", "CaseTemplate"]
     },
     "metadata": {
       "type": "object",
