@@ -13,9 +13,32 @@ from pathlib import Path
 from typing import Dict, List, Any, Optional
 from datetime import datetime, timezone
 
+import yaml
+
 from talonctl.core.base_provider import ResourceChange, ResourceAction
+from talonctl.core.envelope import API_VERSION
 
 logger = logging.getLogger(__name__)
+
+
+def _contains_v2_document(raw_text: str) -> bool:
+    """True if any mapping document in `raw_text` declares `apiVersion: talon/v2`.
+
+    Mirrors ``envelope_loader._iter_documents``' flattening (multi-doc streams and
+    top-level lists). Unparseable YAML returns False so the caller falls back to
+    its legacy line-based path rather than silently skipping a v1 template.
+    """
+    try:
+        raw_docs = list(yaml.safe_load_all(raw_text))
+    except yaml.YAMLError:
+        return False
+    for item in raw_docs:
+        if isinstance(item, list):
+            if any(isinstance(d, dict) and d.get("apiVersion") == API_VERSION for d in item):
+                return True
+        elif isinstance(item, dict) and item.get("apiVersion") == API_VERSION:
+            return True
+    return False
 
 
 class StateSynchronizer:
@@ -353,8 +376,24 @@ class StateSynchronizer:
                 return
 
             # Read template file preserving formatting
-            with open(template_file, "r", encoding="utf-8") as f:
-                lines = f.readlines()
+            raw_text = template_file.read_text(encoding="utf-8")
+
+            # talon/v2 has no authored home for rule_id: the envelope schema is
+            # `additionalProperties: false` at the top level, and v1_compat drops
+            # the key on load. The permanent rule UUID already lives in state as
+            # provider_metadata.rule_id and surfaces through the read-only
+            # `status` projection, so there is nothing to write back. The
+            # line-based insert below assumes the first `name:` line is the
+            # top-level name -- in v2 it is the indented `metadata.name`, and a
+            # column-0 insert there corrupts the file (issue #37).
+            if _contains_v2_document(raw_text):
+                logger.debug(
+                    f"Skipping rule_id write-back for talon/v2 template: {template_file.name} "
+                    f"(rule_id lives in state, not the template)"
+                )
+                return
+
+            lines = raw_text.splitlines(keepends=True)
 
             # Find where to insert rule_id (after name field)
             modified_lines = []

@@ -7,6 +7,7 @@ import json
 import logging
 import tempfile
 from pathlib import Path
+import yaml
 from unittest.mock import Mock
 from datetime import datetime, timezone
 
@@ -170,3 +171,77 @@ class TestUpdateAfterDeploymentFastPath:
         assert any("neither" in r.message.lower() for r in caplog.records), (
             f"Expected a warning about missing 'id'/'rule_id'. Records: {[r.message for r in caplog.records]}"
         )
+
+
+class TestWriteResourceIdToTemplate:
+    """rule_id write-back must never corrupt a talon/v2 template.
+
+    In v1 flat templates the first `name:` line is the top-level name, so a
+    column-0 insert after it is valid. In v2 the first `name:` is the indented
+    `metadata.name`, and a column-0 insert lands in the middle of the metadata
+    mapping. v2 has no authored home for rule_id at all (the envelope schema is
+    `additionalProperties: false` and `v1_compat` drops the key), so the
+    write-back is skipped for v2 files.
+    """
+
+    def _write(self, synchronizer, tmp_path, text):
+        path = tmp_path / "detection.yaml"
+        path.write_text(text)
+        synchronizer._write_resource_id_to_template(
+            template_path=str(path),
+            resource_id="ABC123",
+            resource_type="detection",
+            resource_name="Demo Rule",
+        )
+        return path
+
+    def test_v1_template_gets_rule_id(self, synchronizer, tmp_path):
+        path = self._write(
+            synchronizer,
+            tmp_path,
+            "resource_id: demo_rule\nname: Demo Rule\ndescription: demo\n",
+        )
+        assert yaml.safe_load(path.read_text())["rule_id"] == "ABC123"
+
+    def test_v1_existing_rule_id_is_updated_in_place(self, synchronizer, tmp_path):
+        path = self._write(
+            synchronizer,
+            tmp_path,
+            "resource_id: demo_rule\nname: Demo Rule\nrule_id: OLD\n",
+        )
+        assert yaml.safe_load(path.read_text())["rule_id"] == "ABC123"
+
+    def test_v2_template_is_left_untouched(self, synchronizer, tmp_path):
+        original = (
+            "apiVersion: talon/v2\n"
+            "kind: Detection\n"
+            "metadata:\n"
+            "  resource_id: demo_rule\n"
+            "  name: Demo Rule\n"
+            "  labels:\n"
+            "    team: soc\n"
+            "spec:\n"
+            "  description: demo\n"
+        )
+        path = self._write(synchronizer, tmp_path, original)
+        # Must still parse — the bug produced "mapping values are not allowed here".
+        assert yaml.safe_load(path.read_text()) is not None
+        assert path.read_text() == original
+
+    def test_multi_doc_file_containing_a_v2_doc_is_left_untouched(self, synchronizer, tmp_path):
+        original = (
+            "resource_id: legacy\n"
+            "name: Legacy Rule\n"
+            "---\n"
+            "apiVersion: talon/v2\n"
+            "kind: Detection\n"
+            "metadata:\n"
+            "  resource_id: demo_rule\n"
+            "  name: Demo Rule\n"
+            "  labels:\n"
+            "    team: soc\n"
+            "spec:\n"
+            "  description: demo\n"
+        )
+        path = self._write(synchronizer, tmp_path, original)
+        assert path.read_text() == original

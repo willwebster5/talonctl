@@ -2,6 +2,19 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- **Deployment write-back no longer corrupts `talon/v2` detection templates.**
+  On first-time `rule_id` assignment the state synchronizer inserted
+  `rule_id: <id>` at column 0 after the first line matching `name:`. In a v2
+  envelope that line is the indented `metadata.name`, so the column-0 key landed
+  in the middle of the metadata mapping and the file stopped parsing
+  (`mapping values are not allowed here`). The write-back is now skipped
+  entirely for files containing a `talon/v2` document: v2 has no authored home
+  for `rule_id` (the envelope schema is `additionalProperties: false` and
+  `v1_compat` drops the key on load), and the permanent rule UUID already lives
+  in state as `provider_metadata.rule_id`, surfaced through the read-only
+  `status` projection. v1 flat templates are unaffected. Closes #37.
 ## v0.5.11b1 — beta: `apply` verifies its own writes
 
 Pre-release for validation against a live tenant. `pip install talonctl==0.5.11b1`.
