@@ -13,9 +13,32 @@ from pathlib import Path
 from typing import Dict, List, Any, Optional
 from datetime import datetime, timezone
 
+import yaml
+
 from talonctl.core.base_provider import ResourceChange, ResourceAction
+from talonctl.core.envelope import API_VERSION
 
 logger = logging.getLogger(__name__)
+
+
+def _contains_v2_document(raw_text: str) -> bool:
+    """True if any mapping document in `raw_text` declares `apiVersion: talon/v2`.
+
+    Mirrors ``envelope_loader._iter_documents``' flattening (multi-doc streams and
+    top-level lists). Unparseable YAML returns False so the caller falls back to
+    its legacy line-based path rather than silently skipping a v1 template.
+    """
+    try:
+        raw_docs = list(yaml.safe_load_all(raw_text))
+    except yaml.YAMLError:
+        return False
+    for item in raw_docs:
+        if isinstance(item, list):
+            if any(isinstance(d, dict) and d.get("apiVersion") == API_VERSION for d in item):
+                return True
+        elif isinstance(item, dict) and item.get("apiVersion") == API_VERSION:
+            return True
+    return False
 
 
 class StateSynchronizer:
@@ -353,27 +376,51 @@ class StateSynchronizer:
                 return
 
             # Read template file preserving formatting
-            with open(template_file, "r", encoding="utf-8") as f:
-                lines = f.readlines()
+            raw_text = template_file.read_text(encoding="utf-8")
 
-            # Find where to insert rule_id (after name field)
+            # talon/v2 has no authored home for rule_id: the envelope schema is
+            # `additionalProperties: false` at the top level, and v1_compat drops
+            # the key on load. The permanent rule UUID already lives in state as
+            # provider_metadata.rule_id and surfaces through the read-only
+            # `status` projection, so there is nothing to write back. The
+            # line-based insert below assumes the first `name:` line is the
+            # top-level name -- in v2 it is the indented `metadata.name`, and a
+            # column-0 insert there corrupts the file (issue #37).
+            if _contains_v2_document(raw_text):
+                logger.debug(
+                    f"Skipping rule_id write-back for talon/v2 template: {template_file.name} "
+                    f"(rule_id lives in state, not the template)"
+                )
+                return
+
+            # splitlines() -- not readlines() -- because it also breaks on \x85, \u2028
+            # and \u2029, which YAML 1.1 counts as line breaks. That keeps this
+            # line-based scan aligned with the parser's own view of the file.
+            lines = raw_text.splitlines(keepends=True)
+
+            # Whether a rule_id line exists must be decided over the WHOLE file
+            # before rewriting: a single forward pass that inserts after `name:`
+            # on the way to a later `rule_id:` line writes a duplicate key.
+            rule_id_exists = any(line.strip().startswith("rule_id:") for line in lines)
+
             modified_lines = []
             rule_id_written = False
-            rule_id_exists = False
 
-            for i, line in enumerate(lines):
-                # Check if rule_id already exists
-                if line.strip().startswith("rule_id:"):
-                    rule_id_exists = True
-                    # Update existing rule_id
-                    modified_lines.append(f"rule_id: {resource_id}\n")
-                    rule_id_written = True
+            for line in lines:
+                if rule_id_exists:
+                    # Update the existing rule_id in place (first occurrence wins;
+                    # any further ones are left alone rather than multiplied).
+                    if not rule_id_written and line.strip().startswith("rule_id:"):
+                        modified_lines.append(f"rule_id: {resource_id}\n")
+                        rule_id_written = True
+                        continue
+                    modified_lines.append(line)
                     continue
 
                 modified_lines.append(line)
 
-                # Insert rule_id after name field if it doesn't exist
-                if not rule_id_exists and not rule_id_written and line.strip().startswith("name:"):
+                # No rule_id anywhere in the file: insert one after the name field.
+                if not rule_id_written and line.strip().startswith("name:"):
                     modified_lines.append(f"rule_id: {resource_id}\n")
                     rule_id_written = True
 

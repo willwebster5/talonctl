@@ -2,6 +2,34 @@
 
 ## [Unreleased]
 
+## v0.5.11 — deployment write-back no longer corrupts templates
+
+Promotes the `v0.5.11b1` beta (`apply` verifies its own writes) to stable, with
+two write-back fixes on top. Its upgrade note still applies: deployments that
+previously reported false success now fail loudly.
+
+### Fixed
+
+- **Deployment write-back no longer corrupts `talon/v2` detection templates.**
+  On first-time `rule_id` assignment the state synchronizer inserted
+  `rule_id: <id>` at column 0 after the first line matching `name:`. In a v2
+  envelope that line is the indented `metadata.name`, so the column-0 key landed
+  in the middle of the metadata mapping and the file stopped parsing
+  (`mapping values are not allowed here`). The write-back is now skipped
+  entirely for files containing a `talon/v2` document: v2 has no authored home
+  for `rule_id` (the envelope schema is `additionalProperties: false` and
+  `v1_compat` drops the key on load), and the permanent rule UUID already lives
+  in state as `provider_metadata.rule_id`, surfaced through the read-only
+  `status` projection. v1 flat templates are unaffected. Closes #37.
+
+- **Write-back no longer writes a duplicate `rule_id` key into v1 templates.**
+  Found while reviewing the above. The rewrite loop decided "insert after
+  `name:`" in a single forward pass, before it knew whether a `rule_id:` line
+  appeared later in the file. Any v1 template ordering `rule_id` after `name`
+  therefore ended up with two top-level `rule_id` keys. Existence is now
+  determined over the whole file before rewriting, and the write-back is
+  idempotent.
+
 ## v0.5.11b1 — beta: `apply` verifies its own writes
 
 Pre-release for validation against a live tenant. `pip install talonctl==0.5.11b1`.
@@ -45,6 +73,31 @@ first run against a drifted tenant to surface real failures rather than silent
 no-ops. Sending `name` on PATCH is based on observed API behaviour (a description
 propagated from the same request that dropped the name) — verify against a
 throwaway rule before promoting this beta.
+
+## v0.5.10 — `validate-query` surfaces LogScale's real syntax errors
+
+### Fixed
+
+- **`validate-query` reported "no detail returned by API" for every invalid
+  query**, discarding a full LogScale diagnostic with named error codes and
+  caret positions. Two defects stacked: the response was read from a `body`
+  key that `NGSIEM.start_search()` pops and re-exposes as `resources`, and the
+  diagnostic bypass that recovers the raw payload was not reached on the paths
+  that mattered.
+- **The diagnostic bypass no longer orphans a LogScale query job.** `_raw_syntax_error()`
+  runs only after `start_search()` returned non-200, so its own request is
+  expected to fail too — but on a transient first failure it returns 200,
+  creating a real query job it then dropped without stopping. It now calls
+  `_cleanup_search()` like the primary path, defensively: a 200 whose body is
+  not JSON, or carries no id, must not raise out of a best-effort helper.
+
+### Build
+
+- **Pinned `ruff<0.16` for development.** `ruff>=0.8.0` resolved to 0.16, which
+  widened the default rule set and altered formatter output, turning CI red with
+  no source change (1,378 findings against an unmodified tree). The 0.16 findings
+  are largely legitimate and worth adopting, but that migration touches most of
+  the tree and belongs in its own PR.
 
 ## v0.5.9 — hotfix: accept case management kinds in schema validator
 
