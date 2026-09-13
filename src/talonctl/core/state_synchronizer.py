@@ -393,26 +393,34 @@ class StateSynchronizer:
                 )
                 return
 
+            # splitlines() -- not readlines() -- because it also breaks on \x85, \u2028
+            # and \u2029, which YAML 1.1 counts as line breaks. That keeps this
+            # line-based scan aligned with the parser's own view of the file.
             lines = raw_text.splitlines(keepends=True)
 
-            # Find where to insert rule_id (after name field)
+            # Whether a rule_id line exists must be decided over the WHOLE file
+            # before rewriting: a single forward pass that inserts after `name:`
+            # on the way to a later `rule_id:` line writes a duplicate key.
+            rule_id_exists = any(line.strip().startswith("rule_id:") for line in lines)
+
             modified_lines = []
             rule_id_written = False
-            rule_id_exists = False
 
-            for i, line in enumerate(lines):
-                # Check if rule_id already exists
-                if line.strip().startswith("rule_id:"):
-                    rule_id_exists = True
-                    # Update existing rule_id
-                    modified_lines.append(f"rule_id: {resource_id}\n")
-                    rule_id_written = True
+            for line in lines:
+                if rule_id_exists:
+                    # Update the existing rule_id in place (first occurrence wins;
+                    # any further ones are left alone rather than multiplied).
+                    if not rule_id_written and line.strip().startswith("rule_id:"):
+                        modified_lines.append(f"rule_id: {resource_id}\n")
+                        rule_id_written = True
+                        continue
+                    modified_lines.append(line)
                     continue
 
                 modified_lines.append(line)
 
-                # Insert rule_id after name field if it doesn't exist
-                if not rule_id_exists and not rule_id_written and line.strip().startswith("name:"):
+                # No rule_id anywhere in the file: insert one after the name field.
+                if not rule_id_written and line.strip().startswith("name:"):
                     modified_lines.append(f"rule_id: {resource_id}\n")
                     rule_id_written = True
 

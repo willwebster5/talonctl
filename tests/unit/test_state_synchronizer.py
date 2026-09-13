@@ -245,3 +245,43 @@ class TestWriteResourceIdToTemplate:
         )
         path = self._write(synchronizer, tmp_path, original)
         assert path.read_text() == original
+
+    def test_v1_rule_id_after_a_yaml_1_1_line_break_is_updated_not_duplicated(self, synchronizer, tmp_path):
+        """U+2028 is a line break to YAML 1.1, so PyYAML already sees a real
+        top-level `rule_id: fake` here. splitlines() agrees with the parser and
+        updates it; readlines() would miss it and append a duplicate key."""
+        path = self._write(
+            synchronizer,
+            tmp_path,
+            "resource_id: demo_rule\nname: Demo Rule\ndescription: |\n  line\u2028rule_id: fake\n",
+        )
+        text = path.read_text()
+        assert yaml.safe_load(text)["rule_id"] == "ABC123"
+        assert text.count("rule_id:") == 1, f"duplicate rule_id key: {text!r}"
+
+    def test_v1_rule_id_after_name_is_updated_not_duplicated(self, synchronizer, tmp_path):
+        """A single forward pass would insert after `name:` on its way to the
+        later `rule_id:` line, leaving two top-level rule_id keys."""
+        path = self._write(
+            synchronizer,
+            tmp_path,
+            "resource_id: demo_rule\nname: Demo Rule\ndescription: demo\nrule_id: OLD\n",
+        )
+        text = path.read_text()
+        assert text.count("rule_id:") == 1, f"duplicate rule_id key: {text!r}"
+        assert yaml.safe_load(text)["rule_id"] == "ABC123"
+
+    def test_write_back_is_idempotent(self, synchronizer, tmp_path):
+        path = self._write(
+            synchronizer,
+            tmp_path,
+            "resource_id: demo_rule\nname: Demo Rule\ndescription: demo\n",
+        )
+        first = path.read_text()
+        synchronizer._write_resource_id_to_template(
+            template_path=str(path),
+            resource_id="ABC123",
+            resource_type="detection",
+            resource_name="Demo Rule",
+        )
+        assert path.read_text() == first

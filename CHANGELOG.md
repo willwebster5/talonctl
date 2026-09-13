@@ -59,6 +59,14 @@ no-ops. Sending `name` on PATCH is based on observed API behaviour (a descriptio
 propagated from the same request that dropped the name) — verify against a
 throwaway rule before promoting this beta.
 
+- **Write-back no longer writes a duplicate `rule_id` key into v1 templates.**
+  Found while reviewing the above. The rewrite loop decided "insert after
+  `name:`" in a single forward pass, before it knew whether a `rule_id:` line
+  appeared later in the file. Any v1 template ordering `rule_id` after `name`
+  therefore ended up with two top-level `rule_id` keys. Existence is now
+  determined over the whole file before rewriting, and the write-back is
+  idempotent.
+
 ## v0.5.9 — hotfix: accept case management kinds in schema validator
 
 ### Fixed
