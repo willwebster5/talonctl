@@ -230,6 +230,40 @@ class TestApplyVerifiesItsOwnWrites:
         assert result["name"] == new["name"]
         assert result["verified"] is True
 
+    def test_platform_default_execution_mode_is_not_a_difference(self, provider):
+        """The platform fills search.execution_mode='scheduled' on every scheduled rule.
+
+        Templates never send it, so a read-back that counted it as a difference
+        failed every create and update against a live tenant, and the failed
+        resources were left out of state.
+        """
+        name = "Microsoft - Entra ID - Multiple Failed Login"
+        old = _raw_rule("Testing - " + name)
+        new = _raw_rule(name)
+        new["search"] = {**new["search"], "execution_mode": "scheduled"}
+        env = make_envelope({**_template(name), "resource_id": "entra_failed_login"}, "detection")
+
+        self._wire(provider, old, new)
+
+        result = provider.apply_update("r1", env, {})
+
+        assert result["verified"] is True
+
+    def test_non_default_execution_mode_is_still_a_difference(self, provider):
+        """Only the platform default is ignored; any other mode must still match."""
+        name = "Microsoft - Entra ID - Multiple Failed Login"
+        old = _raw_rule("Testing - " + name)
+        new = _raw_rule(name)
+        new["search"] = {**new["search"], "execution_mode": "realtime"}
+        env = make_envelope({**_template(name), "resource_id": "entra_failed_login"}, "detection")
+
+        self._wire(provider, old, new)
+
+        with pytest.raises(RuntimeError) as exc:
+            provider.apply_update("r1", env, {})
+
+        assert "search" in str(exc.value)
+
 
 class TestDuplicateNamedRulesStayAddressable:
     """Defects 2 and 4: the remote cache was keyed by rule *name*.

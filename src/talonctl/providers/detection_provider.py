@@ -1094,6 +1094,10 @@ class DetectionProvider(BaseResourceProvider):
         # Remove use_ingest_time if it's false (default)
         if search_config.get("use_ingest_time") is False:
             search_config.pop("use_ingest_time", None)
+        # Remove execution_mode if it's scheduled (the platform fills it in on every
+        # scheduled rule; templates never send it)
+        if search_config.get("execution_mode") == "scheduled":
+            search_config.pop("execution_mode", None)
 
         normalized_content["search"] = search_config
 
