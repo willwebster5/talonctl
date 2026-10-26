@@ -2,6 +2,19 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- **`apply` no longer fails every detection write on a platform default.** The
+  post-apply read-back compared `search.execution_mode`, which CrowdStrike fills
+  in as `scheduled` on every scheduled rule while templates never send it. Every
+  create and update therefore raised "Verification failed ... differs on
+  ['search']" against a live tenant even though the write had landed, and the
+  orchestrator left those resources out of state, so the next `apply` created
+  them again. `execution_mode: scheduled` is now treated as the default, like
+  `use_ingest_time: false`. Templates never set it, so content hashes do not
+  change. Measured against a live tenant: 694 of 694 deployed rules differed
+  before the fix, 0 on this field after.
+
 ## v0.5.11 — deployment write-back no longer corrupts templates
 
 Promotes the `v0.5.11b1` beta (`apply` verifies its own writes) to stable, with
