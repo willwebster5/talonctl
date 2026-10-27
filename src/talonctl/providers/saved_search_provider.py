@@ -271,6 +271,7 @@ class SavedSearchProvider(BaseResourceProvider):
                     break
 
             logger.info(f"Discovered {len(saved_queries)} saved queries in domain '{search_domain}'")
+            self._remote_searches_cache = saved_queries
             return saved_queries
 
         except Exception as e:

@@ -285,3 +285,53 @@ class TestWriteResourceIdToTemplate:
             resource_name="Demo Rule",
         )
         assert path.read_text() == first
+
+
+class TestRemoteCachePrefetch:
+    """The name-keyed remote cache is only a fallback for creates whose provider
+    response carried no ID. Fetching it when every create already has one cost a
+    full listing of the tenant's saved queries (~1,000 sequential calls) per wave."""
+
+    @pytest.fixture
+    def search_provider(self):
+        p = Mock(
+            spec=["compute_content_hash", "fetch_remote_state", "_fetch_all_remote_searches", "_remote_searches_cache"]
+        )
+        p.compute_content_hash.return_value = "hash123"
+        p.fetch_remote_state.return_value = None
+        p._remote_searches_cache = None
+        return p
+
+    @pytest.fixture
+    def sync(self, state_manager, search_provider):
+        adapter = Mock()
+        adapter.providers = {"saved_search": search_provider}
+        return StateSynchronizer(state_manager, adapter)
+
+    def _create(self):
+        return ResourceChange(
+            action=ResourceAction.CREATE,
+            resource_type="saved_search",
+            resource_id="saved_search.my_search",
+            resource_name="my_search",
+            new_value={"name": "My Search", "queryString": "..."},
+            template_path="resources/saved_searches/my_search.yaml",
+        )
+
+    def test_no_prefetch_when_every_create_result_carries_an_id(self, sync, search_provider):
+        deploy_results = {"saved_search.my_search": {"id": "real-uuid-abc123", "name": "My Search"}}
+
+        sync.update_after_deployment(
+            deployed=["saved_search.my_search"], changes=[self._create()], deploy_results=deploy_results
+        )
+
+        search_provider._fetch_all_remote_searches.assert_not_called()
+
+    def test_prefetch_once_when_a_create_result_has_no_id(self, sync, search_provider):
+        deploy_results = {"saved_search.my_search": {"name": "My Search"}}
+
+        sync.update_after_deployment(
+            deployed=["saved_search.my_search"], changes=[self._create()], deploy_results=deploy_results
+        )
+
+        search_provider._fetch_all_remote_searches.assert_called_once()

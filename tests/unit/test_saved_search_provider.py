@@ -148,6 +148,22 @@ description: Test query
         # _search_domain will be 'all' since that's the first domain checked
         assert result["_search_domain"] == "all"
 
+    def test_fetch_all_remote_searches_populates_the_cache(self, provider, mock_falcon):
+        """The state synchronizer's create fallback reads _remote_searches_cache."""
+
+        def command(override=None, parameters=None, **kwargs):
+            if override.endswith("/queries/savedqueries/v1"):
+                return {"status_code": 200, "body": {"resources": ["a", "b"], "meta": {"pagination": {"total": 2}}}}
+            qid = parameters["ids"]
+            return {"status_code": 200, "body": {"resources": [f"name: q_{qid}\nqueryString: '*'\n"]}}
+
+        mock_falcon.command.side_effect = command
+
+        result = provider._fetch_all_remote_searches()
+
+        assert set(result) == {"q_a", "q_b"}
+        assert provider._remote_searches_cache == result
+
     def test_fetch_remote_state_not_found(self, provider, mock_falcon):
         """Test fetch when query doesn't exist"""
         # Mock API response - not found
