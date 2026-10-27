@@ -95,12 +95,15 @@ class StateSynchronizer:
         """
         state = self.state_manager.export_to_dict()
 
-        # Pre-fetch remote caches ONCE for all CREATE actions (optimization)
-        # This prevents fetching all rules N times for N CREATE actions
+        # Pre-fetch remote caches ONCE for the CREATE actions that need them (optimization)
+        # This prevents fetching all rules N times for N CREATE actions. A create whose
+        # provider response carries its ID takes the fast path below and never reads the
+        # cache, so it does not trigger a fetch of every remote resource of its type.
         create_resources = [
             r
             for r in deployed
             if any(c.resource_id == r and c.action in (ResourceAction.CREATE, ResourceAction.REPLACE) for c in changes)
+            and not self.select_persisted_id((deploy_results or {}).get(r, {}))
         ]
         if create_resources:
             self._prefetch_remote_caches(create_resources, changes)

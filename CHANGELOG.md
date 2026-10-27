@@ -4,6 +4,22 @@
 
 ### Fixed
 
+- **A deploy that creates a saved search no longer lists every saved query in the
+  tenant.** After each wave, the state step pre-fetched every remote saved query
+  (one detail request per query) before recording any create, although each
+  create's provider response already carries its ID and the fetched list was only
+  a fallback for a response without one. In a tenant with ~1,000 saved queries
+  that took 7–14 minutes per wave, long enough for a deploy to look hung and be
+  cancelled before state was written. The pre-fetch now runs only for creates
+  whose response has no ID (0 calls in the normal case, against 100 a minute
+  before). `_fetch_all_remote_searches()` also now fills
+  `_remote_searches_cache`; before, it returned its result without storing it,
+  so the fallback it existed for never found anything.
+
+## v0.5.12 — apply verification no longer fails every detection write
+
+### Fixed
+
 - **`apply` no longer fails every detection write on a platform default.** The
   post-apply read-back compared `search.execution_mode`, which CrowdStrike fills
   in as `scheduled` on every scheduled rule while templates never send it. Every
